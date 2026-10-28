@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Potoo IDE
+Comment=Programação em pseudolinguagens
+Exec=potoo-ide
+Icon=applications-development
+Terminal=false
+Type=Application
+Categories=Development;IDE;GTK;
+StartupNotify=true

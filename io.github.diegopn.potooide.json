@@ -1,0 +1,47 @@
+{
+  "app-id": "io.github.diegopn.potooide",
+  "runtime": "org.gnome.Platform",
+  "runtime-version": "51",
+  "sdk": "org.gnome.Sdk",
+  "sdk-extensions": [
+    "org.freedesktop.Sdk.Extension.rust-stable"
+  ],
+  "command": "potoo-ide",
+  "build-options": {
+    "append-path": "/usr/lib/sdk/rust-stable/bin",
+    "build-args": [
+      "--share=network"
+    ]
+  },
+  "finish-args": [
+    "--share=ipc",
+    "--socket=wayland",
+    "--socket=fallback-x11"
+  ],
+  "modules": [
+    {
+      "name": "potoo-ide",
+      "buildsystem": "simple",
+      "build-commands": [
+        "cargo generate-lockfile --manifest-path Cargo.toml",
+        "cargo build --manifest-path Cargo.toml --release",
+        "install -Dm0755 target/release/potoo-ide /app/bin/potoo-ide",
+        "install -Dm0644 data/io.github.diegopn.potooide.desktop /app/share/applications/io.github.diegopn.potooide.desktop"
+      ],
+      "sources": [
+        {
+          "type": "dir",
+          "path": ".",
+          "skip": [
+            ".git",
+            "docs",
+            "target",
+            "build",
+            ".flatpak-build",
+            ".flatpak-builder"
+          ]
+        }
+      ]
+    }
+  ]
+}

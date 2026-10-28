@@ -1,0 +1,7 @@
+/target/
+/build/
+/.flatpak-build/
+/.flatpak-builder/
+/docs/
+*.swp
+*~
