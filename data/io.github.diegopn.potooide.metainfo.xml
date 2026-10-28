@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.diegopn.potooide</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Potoo IDE</name>
+  <summary>Aprenda lógica de programação com linguagens educacionais</summary>
+  <description>
+    <p>Uma IDE desktop para estudantes e professores praticarem lógica de programação com Portugol, VisuAlg e Potigol.</p>
+  </description>
+  <launchable type="desktop-id">io.github.diegopn.potooide.desktop</launchable>
+  <url type="homepage">https://diegopn.github.io/potoo-site/</url>
+  <url type="help">https://diegopn.github.io/potoo-site/manual/</url>
+  <url type="bugtracker">https://github.com/diegopn/potoo-ide/issues</url>
+  <url type="donation">https://github.com/sponsors/diegopn</url>
+  <url type="contact">https://diegopn.github.io/#contato</url>
+  <url type="vcs-browser">https://github.com/diegopn/potoo-ide</url>
+</component>

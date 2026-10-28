@@ -1,20 +1,20 @@
-# Política de segurança
+# Security Policy
 
-## Versões com suporte
+## Supported versions
 
-O Potoo IDE ainda não publicou versões estáveis. Enquanto o projeto estiver em desenvolvimento, relatos sobre o código atual na branch `develop` serão considerados. Quando houver versões estáveis, a prioridade será corrigir a versão mais recente; versões anteriores poderão deixar de receber atualizações de segurança.
+Potoo IDE has not published stable releases yet. While the project is under development, reports affecting the current code on the `develop` branch will be considered. Once stable releases are available, the latest release will receive priority; older releases may no longer receive security updates.
 
-## Como relatar uma vulnerabilidade
+## Report a vulnerability
 
-Não publique detalhes de uma vulnerabilidade em issues, pull requests, discussões ou comentários públicos.
+Do not publish vulnerability details in issues, pull requests, discussions, or public comments.
 
-Se o GitHub mostrar a opção **Report a vulnerability** na página de segurança do repositório, use o formulário privado. Se a opção não estiver disponível, entre em contato pela [página de contato](https://diegopn.github.io/#contato) apenas para solicitar um canal privado. Não inclua detalhes técnicos nessa primeira mensagem nem envie uma prova de conceito por um canal público.
+If GitHub shows **Report a vulnerability** on the repository's security page, use the private reporting form. If that option is unavailable, use the [contact page](https://diegopn.github.io/#contato) only to request a private channel. Do not include technical details in that first message or send a proof of concept through a public channel.
 
-Depois de combinar um canal privado, inclua, se possível:
+After arranging a private channel, include the following where possible:
 
-- a versão ou o commit afetado;
-- o sistema operacional e a plataforma;
-- os passos para reproduzir o problema e seu impacto;
-- uma prova de conceito mínima, sem credenciais, dados pessoais ou outros segredos.
+- the affected version or commit;
+- the operating system and platform;
+- steps to reproduce the issue and its impact;
+- a minimal proof of concept without credentials, personal data, or other secrets.
 
-Não há um prazo formal de resposta. Os mantenedores combinarão em particular os próximos passos e a divulgação do problema, buscando coordená-la com a correção ou uma mitigação.
+There is no formal response deadline. Maintainers will privately coordinate next steps and disclosure, aiming to align it with a fix or mitigation.
