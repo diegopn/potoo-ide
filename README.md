@@ -1,12 +1,13 @@
 # Potoo IDE
 
-Uma IDE desktop para aprender lógica de programação usando pseudolinguagens em português.
+Uma IDE desktop para aprender lógica de programação com linguagens educacionais em português, incluindo Portugol, VisuAlg e Potigol.
 
 O projeto busca oferecer um espaço simples e intuitivo para estudantes praticarem e professores acompanharem os conceitos apresentados no código. A interface é feita em Rust, GTK 4 e libadwaita, com inspiração no GNOME Builder.
 
 ## Linguagens
 
-- **Portugol** e **VisuAlg** são as linguagens previstas para a primeira etapa.
+- **Portugol**, **VisuAlg** e **Potigol** estão planejados para a primeira etapa.
+- Potigol é uma linguagem para iniciantes com palavras-chave em português, tipagem estática forte e inferência de tipos ([projeto oficial](https://github.com/potigol/potigol)).
 - **PSeInt** e **Linotte** são possibilidades para uma etapa futura.
 
 A estrutura atual é inicial e ainda não inclui editor de código nem interpretadores. O trabalho de compatibilidade e integração será feito em etapas.
