@@ -2,7 +2,7 @@
 Name=Potoo IDE
 Comment=Programação em pseudolinguagens
 Exec=potoo-ide
-Icon=applications-development
+Icon=io.github.diegopn.potooide
 Terminal=false
 Type=Application
 Categories=Development;IDE;GTK;

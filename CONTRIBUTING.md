@@ -1,27 +1,27 @@
-# Como contribuir
+# Contributing
 
-Toda ajuda é bem-vinda: relatar um problema, testar o aplicativo, melhorar a documentação ou contribuir com código. A estrutura ainda está no começo, então sugestões sobre a experiência de estudantes e professores também ajudam.
+Contributions are welcome, including bug reports, application testing, documentation improvements, and code. The project is still at an early stage, so feedback on the experience for students and teachers is also valuable.
 
-## Relatar um problema
+## Report a bug
 
-Abra uma [issue](https://github.com/diegopn/potoo-ide/issues) com:
+Open an [issue](https://github.com/diegopn/potoo-ide/issues) with:
 
-- sistema operacional e versão;
-- o que você tentou fazer;
-- o que esperava que acontecesse e o que aconteceu;
-- passos para reproduzir o problema.
+- your operating system and version;
+- what you were trying to do;
+- what you expected to happen and what happened;
+- steps to reproduce the problem.
 
-Use exemplos criados para o relato. Não envie documentos pessoais, dados privados ou credenciais.
+Use examples created for the report. Do not send personal documents, private data, or credentials.
 
-## Preparar o ambiente
+## Set up the development environment
 
-Instale Rust 1.92 ou posterior e as bibliotecas de desenvolvimento de GTK 4.20 e libadwaita 1.8 disponíveis para sua distribuição. Depois, execute:
+Install Rust 1.92 or later and the GTK 4.20 and libadwaita 1.8 development libraries available for your distribution. Then run:
 
 ```sh
 cargo run --locked
 ```
 
-Antes de abrir um pull request, formate o código e confira se o projeto compila:
+Before opening a pull request, format the code and check that the project builds:
 
 ```sh
 cargo fmt --all
@@ -30,12 +30,12 @@ cargo check --locked
 
 ## Pull requests
 
-- Mantenha cada pull request focado em uma mudança.
-- Descreva o problema ou melhoria e como revisar o resultado.
-- Informe os comandos de verificação que executou.
-- Direcione as mudanças de desenvolvimento para `develop`; `main` fica reservada para versões estáveis.
-- Ao incluir código ou arquivos de terceiros, confira a compatibilidade de licença e preserve os avisos de autoria e licença.
+- Keep each pull request focused on one change.
+- Describe the problem or improvement and how to review the result.
+- List the verification commands you ran.
+- Target `develop` for development changes; `main` is reserved for stable releases.
+- When including third-party code or files, check license compatibility and preserve copyright and license notices.
 
-## Licença
+## License
 
-As contribuições ao código do Potoo IDE serão distribuídas sob a GNU GPL versão 3 ou posterior, conforme [LICENSE](LICENSE).
+Contributions to Potoo IDE's code will be distributed under the GNU GPL version 3 or later, as described in [LICENSE](LICENSE).

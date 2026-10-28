@@ -26,7 +26,9 @@
         "cargo generate-lockfile --manifest-path Cargo.toml",
         "cargo build --manifest-path Cargo.toml --release",
         "install -Dm0755 target/release/potoo-ide /app/bin/potoo-ide",
-        "install -Dm0644 data/io.github.diegopn.potooide.desktop /app/share/applications/io.github.diegopn.potooide.desktop"
+        "install -Dm0644 data/io.github.diegopn.potooide.desktop /app/share/applications/io.github.diegopn.potooide.desktop",
+        "install -Dm0644 data/io.github.diegopn.potooide.metainfo.xml /app/share/metainfo/io.github.diegopn.potooide.metainfo.xml",
+        "install -Dm0644 data/icons/hicolor/scalable/apps/io.github.diegopn.potooide.svg /app/share/icons/hicolor/scalable/apps/io.github.diegopn.potooide.svg"
       ],
       "sources": [
         {
