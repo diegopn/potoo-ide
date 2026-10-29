@@ -151,7 +151,7 @@ headerbar.potoo-linux-titlebar button.titlebutton {
   background-color: var(--potoo-accent);
   background-image: none;
   border: 1px solid var(--potoo-accent);
-  border-radius: 3px;
+  border-radius: 0;
   color: var(--potoo-surface-bg);
   font-size: 12px;
   font-weight: 780;
@@ -274,7 +274,7 @@ headerbar.potoo-linux-titlebar button.titlebutton {
   background-color: var(--potoo-panel-bg);
   background-image: none;
   border: 0;
-  border-radius: 2px;
+  border-radius: 0;
   color: var(--potoo-text-secondary);
   font-size: 12px;
   font-weight: 600;
