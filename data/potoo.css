@@ -797,7 +797,7 @@ dropdown.potoo-settings-picker popover listview row:selected {
 }
 
 button.potoo-theme-choice {
-  min-width: 92px;
+  min-width: 76px;
   min-height: 34px;
   padding: 0 10px;
   background-color: var(--potoo-panel-bg);

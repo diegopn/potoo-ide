@@ -2202,21 +2202,10 @@ fn build_settings_window(
 
     let appearance = settings_section(tr(language, "Aparência"));
     let theme_buttons = [
-        ("theme-system", "Sistema"),
-        ("theme-light", "Claro"),
-        ("theme-dark", "Escuro"),
-    ]
-    .map(|(icon_name, label)| {
-        let button = gtk::Button::new();
-        let content = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        let glyph = icon(icon_name);
-        glyph.set_pixel_size(18);
-        glyph.add_css_class("potoo-theme-icon");
-        content.append(&glyph);
-        content.append(&gtk::Label::new(Some(tr(language, label))));
-        button.set_child(Some(&content));
-        button
-    });
+        gtk::Button::with_label(tr(language, "Sistema")),
+        gtk::Button::with_label(tr(language, "Claro")),
+        gtk::Button::with_label(tr(language, "Escuro")),
+    ];
     for button in &theme_buttons {
         button.add_css_class("potoo-theme-choice");
     }
