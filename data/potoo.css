@@ -3,7 +3,19 @@ window.potoo-window {
   color: #174332;
 }
 
+.potoo-root {
+  background-color: #ffffff;
+  color: #174332;
+  font-family: Inter, "Segoe UI", sans-serif;
+  font-size: 13px;
+}
+
 window.potoo-window.potoo-dark {
+  background-color: #0a0b0a;
+  color: #ffffff;
+}
+
+window.potoo-window.potoo-dark .potoo-root {
   background-color: #0a0b0a;
   color: #ffffff;
 }
@@ -18,6 +30,7 @@ headerbar.potoo-linux-titlebar {
   min-height: 58px;
   padding: 0 8px 0 14px;
   background-color: #eef9f0;
+  background-image: none;
   border: 0;
   border-bottom: 1px solid #b4dfc2;
   border-radius: 0;
@@ -47,6 +60,7 @@ headerbar.potoo-linux-titlebar button.titlebutton {
 .potoo-language-picker {
   min-height: 34px;
   background-color: #e5f6e9;
+  background-image: none;
   border: 1px solid #b4dfc2;
   border-radius: 2px;
   color: #174332;
@@ -59,6 +73,7 @@ headerbar.potoo-linux-titlebar button.titlebutton {
   min-height: 32px;
   padding: 0 9px;
   background-color: transparent;
+  background-image: none;
   border: 0;
   border-radius: 0;
   box-shadow: none;
@@ -70,6 +85,7 @@ headerbar.potoo-linux-titlebar button.titlebutton {
   min-height: 34px;
   padding: 0;
   background-color: #e5f6e9;
+  background-image: none;
   border: 1px solid #b4dfc2;
   border-radius: 2px;
   color: #174332;
@@ -86,6 +102,7 @@ headerbar.potoo-linux-titlebar button.titlebutton {
   min-height: 34px;
   padding: 0 13px;
   background-color: #15945b;
+  background-image: none;
   border: 1px solid #15945b;
   border-radius: 2px;
   color: #ffffff;
@@ -112,6 +129,7 @@ headerbar.potoo-linux-titlebar button.titlebutton {
   min-height: 32px;
   padding: 0;
   background-color: #e5f6e9;
+  background-image: none;
   border: 1px solid #b4dfc2;
   border-radius: 2px;
   color: #174332;
@@ -128,6 +146,7 @@ headerbar.potoo-linux-titlebar button.titlebutton {
   min-height: 36px;
   padding: 0;
   background-color: transparent;
+  background-image: none;
   border: 0;
   border-radius: 2px;
   color: #174332;
@@ -167,6 +186,7 @@ headerbar.potoo-linux-titlebar button.titlebutton {
   min-height: 41px;
   padding: 0;
   background-color: transparent;
+  background-image: none;
   border: 0;
   border-top: 2px solid transparent;
   border-radius: 0;
@@ -186,6 +206,7 @@ headerbar.potoo-linux-titlebar button.titlebutton {
   margin: 7px 4px 7px 0;
   padding: 0;
   background-color: transparent;
+  background-image: none;
   border: 0;
   border-radius: 2px;
   color: #397553;
@@ -284,9 +305,14 @@ label.potoo-line-numbers.potoo-font-17 {
 }
 
 .potoo-learning-panel {
-  min-width: 300px;
+  min-width: 370px;
   background-color: #eef9f0;
   border-left: 1px solid #b4dfc2;
+}
+
+.potoo-learning-panel separator {
+  min-height: 1px;
+  background-color: #b4dfc2;
 }
 
 .potoo-learning-title {
@@ -446,6 +472,10 @@ window.potoo-window.potoo-dark .potoo-file-sidebar,
 window.potoo-window.potoo-dark .potoo-learning-panel {
   background-color: #151815;
   border-color: #35443a;
+}
+
+window.potoo-window.potoo-dark .potoo-learning-panel separator {
+  background-color: #35443a;
 }
 
 window.potoo-window.potoo-dark .potoo-toolbar-button,

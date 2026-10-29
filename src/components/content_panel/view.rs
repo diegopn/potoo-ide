@@ -78,24 +78,27 @@ pub(crate) fn rebuild_editor_tabs(
 }
 
 pub(crate) fn build_learning_panel(language: UiLanguage) -> gtk::Widget {
-    let panel = gtk::Box::new(gtk::Orientation::Vertical, 16);
+    let panel = gtk::Box::new(gtk::Orientation::Vertical, 0);
     panel.add_css_class("potoo-learning-panel");
-    panel.set_size_request(320, -1);
-    panel.set_margin_start(18);
-    panel.set_margin_end(18);
-    panel.set_margin_top(18);
-    panel.set_margin_bottom(18);
+    panel.set_size_request(370, -1);
+
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 16);
+    content.set_margin_start(18);
+    content.set_margin_end(18);
+    content.set_margin_top(18);
+    content.set_margin_bottom(18);
+    panel.append(&content);
 
     let title = gtk::Label::new(Some(tr(language, "Aprenda enquanto programa")));
     title.set_xalign(0.0);
     title.add_css_class("potoo-learning-title");
     title.set_wrap(true);
-    panel.append(&title);
+    content.append(&title);
 
     let line_title = gtk::Label::new(Some(tr(language, "Linha 7 · decisão")));
     line_title.set_xalign(0.0);
     line_title.add_css_class("heading");
-    panel.append(&line_title);
+    content.append(&line_title);
 
     let explanation = gtk::Label::new(Some(tr(
         language,
@@ -104,13 +107,13 @@ pub(crate) fn build_learning_panel(language: UiLanguage) -> gtk::Widget {
     explanation.set_xalign(0.0);
     explanation.set_wrap(true);
     explanation.set_selectable(true);
-    panel.append(&explanation);
-    panel.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+    content.append(&explanation);
+    content.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
 
     let experiment_title = gtk::Label::new(Some(tr(language, "Experimente")));
     experiment_title.set_xalign(0.0);
     experiment_title.add_css_class("heading");
-    panel.append(&experiment_title);
+    content.append(&experiment_title);
 
     let experiment = gtk::Label::new(Some(tr(
         language,
@@ -125,7 +128,7 @@ pub(crate) fn build_learning_panel(language: UiLanguage) -> gtk::Widget {
     experiment.set_margin_end(4);
     experiment.set_margin_top(4);
     experiment.set_margin_bottom(4);
-    panel.append(&experiment);
+    content.append(&experiment);
 
     let concept = gtk::Box::new(gtk::Orientation::Vertical, 8);
     concept.add_css_class("potoo-card");
@@ -146,7 +149,7 @@ pub(crate) fn build_learning_panel(language: UiLanguage) -> gtk::Widget {
     concept_text.set_selectable(true);
     concept.append(&concept_title);
     concept.append(&concept_text);
-    panel.append(&concept);
+    content.append(&concept);
 
     panel.upcast()
 }
@@ -222,7 +225,7 @@ fn empty_tool_page(title: &str, description: &str) -> gtk::Widget {
 
 pub(crate) fn make_syntax_tags(buffer: &gtk::TextBuffer) -> SyntaxTags {
     let table = buffer.tag_table();
-    let keyword = gtk::TextTag::builder().name("keyword").build();
+    let keyword = gtk::TextTag::builder().name("keyword").weight(700).build();
     let string = gtk::TextTag::builder().name("string").build();
     let number = gtk::TextTag::builder().name("number").build();
     let current_line = gtk::TextTag::builder().name("current-line").build();
@@ -245,8 +248,10 @@ pub(crate) fn set_syntax_palette(tags: &SyntaxTags, dark: bool) {
         .set_property("foreground", if dark { "#a6e9b8" } else { "#225b42" });
     tags.number
         .set_property("foreground", if dark { "#5fd1b5" } else { "#168b78" });
-    tags.current_line
-        .set_property("background", if dark { "#1e241f" } else { "#e5f6e9" });
+    tags.current_line.set_property(
+        "paragraph-background",
+        if dark { "#1e241f" } else { "#e5f6e9" },
+    );
 }
 
 pub(crate) fn highlight_buffer(buffer: &gtk::TextBuffer, language: Language, tags: &SyntaxTags) {

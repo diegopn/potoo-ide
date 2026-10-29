@@ -1697,7 +1697,7 @@ fn build_window_content(
     output_area.append(&output_status_row);
 
     let editor_output = gtk::Paned::new(gtk::Orientation::Vertical);
-    editor_output.set_wide_handle(true);
+    editor_output.set_wide_handle(false);
     editor_output.set_start_child(Some(&editor));
     editor_output.set_end_child(Some(&output_area));
     editor_output.set_resize_start_child(true);
@@ -1708,7 +1708,7 @@ fn build_window_content(
 
     let learning_panel = content_panel::build_learning_panel(ui_language);
     let editor_and_learning = gtk::Paned::new(gtk::Orientation::Horizontal);
-    editor_and_learning.set_wide_handle(true);
+    editor_and_learning.set_wide_handle(false);
     editor_and_learning.set_start_child(Some(&editor_output));
     editor_and_learning.set_end_child(Some(&learning_panel));
     editor_and_learning.set_resize_start_child(true);
@@ -1718,7 +1718,7 @@ fn build_window_content(
     editor_and_learning.set_position(820);
 
     let workspace = gtk::Paned::new(gtk::Orientation::Horizontal);
-    workspace.set_wide_handle(true);
+    workspace.set_wide_handle(false);
     workspace.set_start_child(Some(&sidebar));
     workspace.set_end_child(Some(&editor_and_learning));
     workspace.set_resize_start_child(false);
