@@ -24,6 +24,7 @@ pub(crate) struct SidebarUi {
     pub(crate) widget: gtk::Widget,
     pub(crate) project_row: gtk::Box,
     pub(crate) project_label: gtk::Label,
+    pub(crate) new_project_button: gtk::Button,
     pub(crate) file_list: gtk::Box,
     pub(crate) new_file_button: gtk::MenuButton,
     pub(crate) new_program_button: gtk::Button,
@@ -116,6 +117,17 @@ pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
     heading_row.append(&new_file_button);
     sidebar.append(&heading_row);
 
+    let new_project_button = icon_label_button(
+        "new-folder",
+        tr(language, "Novo projeto"),
+        tr(language, "Criar um projeto Portugol ou VisuAlg"),
+        "potoo-sidebar-create-project",
+    );
+    new_project_button.set_margin_start(10);
+    new_project_button.set_margin_end(10);
+    new_project_button.set_margin_bottom(4);
+    sidebar.append(&new_project_button);
+
     let project = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     project.add_css_class("potoo-project-row");
     project.set_margin_start(10);
@@ -155,6 +167,7 @@ pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
         widget: sidebar.upcast(),
         project_row: project,
         project_label,
+        new_project_button,
         file_list,
         new_file_button,
         new_program_button,
