@@ -362,7 +362,19 @@ expander-widget.potoo-folder-expander > box > title > expander {
   background-color: transparent;
   background-image: none;
   border: 1px solid transparent;
-  border-radius: 2px;
+  border-radius: 0;
+  color: var(--potoo-text-muted);
+  box-shadow: none;
+}
+
+menubutton.potoo-sidebar-action > button {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  background-color: transparent;
+  background-image: none;
+  border: 1px solid transparent;
+  border-radius: 0;
   color: var(--potoo-text-muted);
   box-shadow: none;
 }
@@ -390,6 +402,12 @@ expander-widget.potoo-folder-expander > box > title > expander {
 
 .potoo-sidebar-action:hover,
 .potoo-sidebar-action:checked {
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
+}
+
+menubutton.potoo-sidebar-action > button:hover,
+menubutton.potoo-sidebar-action > button:checked {
   background-color: var(--potoo-panel-hover-bg);
   color: var(--potoo-text);
 }
