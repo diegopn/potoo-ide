@@ -449,7 +449,17 @@ expander-widget.potoo-folder-expander > box > title > expander {
 
 .potoo-editor-tab-container {
   min-height: 42px;
+  border-top: 2px solid transparent;
   border-right: 1px solid var(--potoo-border);
+}
+
+.potoo-editor-tab-container:not(.potoo-editor-tab-container-selected):hover {
+  background-color: var(--potoo-panel-bg);
+}
+
+.potoo-editor-tab-container-selected {
+  background-color: var(--potoo-surface-bg);
+  border-top-color: var(--potoo-accent);
 }
 
 .potoo-close-tab-button {
@@ -460,7 +470,7 @@ expander-widget.potoo-folder-expander > box > title > expander {
   background-color: transparent;
   background-image: none;
   border: 0;
-  border-radius: 2px;
+  border-radius: 0;
   color: var(--potoo-text-muted);
   box-shadow: none;
 }
@@ -470,13 +480,9 @@ expander-widget.potoo-folder-expander > box > title > expander {
   color: var(--potoo-text);
 }
 
-.potoo-editor-tab:hover {
-  background-color: var(--potoo-panel-bg);
-}
-
 .potoo-editor-tab-selected {
-  background-color: var(--potoo-surface-bg);
-  border-top-color: var(--potoo-accent);
+  background-color: transparent;
+  border-top-color: transparent;
   color: var(--potoo-text);
   font-weight: 680;
 }
@@ -897,18 +903,23 @@ window.potoo-window.potoo-dark .potoo-editor-tab {
   color: var(--potoo-text-muted);
 }
 
-window.potoo-window.potoo-dark .potoo-editor-tab:hover {
+window.potoo-window.potoo-dark .potoo-editor-tab-container:not(.potoo-editor-tab-container-selected):hover {
   background-color: var(--potoo-panel-hover-bg);
 }
 
 window.potoo-window.potoo-dark .potoo-editor-tab-selected {
-  background-color: var(--potoo-panel-bg);
-  border-top-color: var(--potoo-accent-text);
+  background-color: transparent;
+  border-top-color: transparent;
   color: var(--potoo-text);
 }
 
 window.potoo-window.potoo-dark .potoo-editor-tab-container {
   border-color: var(--potoo-border);
+}
+
+window.potoo-window.potoo-dark .potoo-editor-tab-container-selected {
+  background-color: var(--potoo-panel-bg);
+  border-top-color: var(--potoo-accent-text);
 }
 
 window.potoo-window.potoo-dark .potoo-close-tab-button {

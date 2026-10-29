@@ -27,7 +27,9 @@ pub(crate) fn rebuild_editor_tabs(
         tab.add_css_class("potoo-editor-tab-container");
         let button = gtk::Button::new();
         button.add_css_class("potoo-editor-tab");
-        if Some(document.id) == active_document_id {
+        let is_active = Some(document.id) == active_document_id;
+        if is_active {
+            tab.add_css_class("potoo-editor-tab-container-selected");
             button.add_css_class("potoo-editor-tab-selected");
         }
         if document.is_dirty() {
