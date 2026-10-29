@@ -1882,8 +1882,6 @@ fn build_window_content(
     status_details.add_css_class("potoo-muted");
     let status_bar = gtk::Box::new(gtk::Orientation::Horizontal, 16);
     status_bar.add_css_class("potoo-statusbar");
-    status_bar.set_margin_start(12);
-    status_bar.set_margin_end(12);
     status_bar.append(&gtk::Separator::new(gtk::Orientation::Vertical));
     status_bar.append(&status_language);
     status_bar.append(&gtk::Separator::new(gtk::Orientation::Vertical));
