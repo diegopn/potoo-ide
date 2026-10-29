@@ -89,101 +89,6 @@ headerbar.potoo-linux-titlebar button.titlebutton {
   font-weight: 700;
 }
 
-.potoo-menu-button {
-  min-width: 30px;
-  min-height: 30px;
-  padding: 0;
-  background-color: transparent;
-  background-image: none;
-  border: 0;
-  border-radius: 3px;
-  color: var(--potoo-text-muted);
-  box-shadow: none;
-}
-
-.potoo-menu-button:hover,
-.potoo-menu-button:checked {
-  background-color: var(--potoo-panel-hover-bg);
-  color: var(--potoo-text);
-}
-
-popover.potoo-header-popover {
-  background-color: transparent;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-}
-
-popover.potoo-header-popover > contents {
-  background-color: var(--potoo-surface-bg);
-  border: 1px solid var(--potoo-border);
-  border-radius: 3px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
-}
-
-popover.potoo-header-popover > arrow {
-  background-color: var(--potoo-surface-bg);
-  border-color: var(--potoo-border);
-}
-
-.potoo-header-menu-content {
-  min-width: 250px;
-  padding: 10px;
-  background-color: transparent;
-  color: var(--potoo-text);
-}
-
-.potoo-theme-menu-heading {
-  color: var(--potoo-text-muted);
-  font-size: 11px;
-  font-weight: 720;
-}
-
-.potoo-theme-choice {
-  min-height: 30px;
-  padding: 0 6px;
-  background-color: var(--potoo-panel-bg);
-  background-image: none;
-  border: 1px solid var(--potoo-border);
-  border-radius: 3px;
-  color: var(--potoo-text-muted);
-  font-size: 11px;
-  box-shadow: none;
-}
-
-.potoo-theme-choice:hover {
-  background-color: var(--potoo-panel-hover-bg);
-  color: var(--potoo-text);
-}
-
-.potoo-theme-choice:checked {
-  background-color: var(--potoo-accent-soft-bg);
-  border-color: var(--potoo-accent);
-  color: var(--potoo-text);
-}
-
-.potoo-theme-choice:focus {
-  outline: 1px solid var(--potoo-accent);
-  outline-offset: 1px;
-}
-
-.potoo-menu-settings-action {
-  min-height: 32px;
-  padding: 0 8px;
-  background-color: transparent;
-  background-image: none;
-  border: 0;
-  border-radius: 3px;
-  color: var(--potoo-text);
-  font-size: 12px;
-  font-weight: 650;
-  box-shadow: none;
-}
-
-.potoo-menu-settings-action:hover {
-  background-color: var(--potoo-panel-hover-bg);
-}
-
 .potoo-run-button {
   min-height: 26px;
   padding: 0 11px;
@@ -207,6 +112,34 @@ popover.potoo-header-popover > arrow {
   min-width: 220px;
   background-color: var(--potoo-panel-bg);
   border-right: 1px solid var(--potoo-border);
+}
+
+.potoo-sidebar-footer {
+  padding: 8px;
+  border-top: 1px solid var(--potoo-border);
+}
+
+.potoo-sidebar-settings-button {
+  min-height: 34px;
+  padding: 0 8px;
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 3px;
+  color: var(--potoo-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.potoo-sidebar-settings-button:hover {
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
+}
+
+.potoo-sidebar-settings-button:focus {
+  outline: 1px solid var(--potoo-accent);
+  outline-offset: 1px;
 }
 
 popover.potoo-sidebar-popover {
@@ -699,17 +632,7 @@ window.potoo-window.potoo-dark .potoo-learning-panel .heading {
   color: var(--potoo-text);
 }
 
-window.potoo-window.potoo-dark .potoo-menu-button:hover,
-window.potoo-window.potoo-dark .potoo-menu-button:checked {
-  background-color: var(--potoo-panel-hover-bg);
-  color: var(--potoo-text);
-}
-
-window.potoo-window.potoo-dark .potoo-theme-choice:checked {
-  border-color: var(--potoo-accent-text);
-}
-
-window.potoo-window.potoo-dark .potoo-theme-choice:focus {
+window.potoo-window.potoo-dark .potoo-sidebar-settings-button:focus {
   outline-color: var(--potoo-accent-text);
 }
 

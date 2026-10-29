@@ -32,6 +32,7 @@ pub(crate) struct SidebarUi {
     pub(crate) open_popover: gtk::Popover,
     pub(crate) open_project_button: gtk::Button,
     pub(crate) open_file_button: gtk::Button,
+    pub(crate) settings_button: gtk::Button,
     pub(crate) expanded_folders: ExpandedFolders,
 }
 
@@ -141,6 +142,17 @@ pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
         .build();
     sidebar.append(&file_scroll);
 
+    let settings_footer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    settings_footer.add_css_class("potoo-sidebar-footer");
+    let settings_button = icon_label_button(
+        "emblem-system-symbolic",
+        tr(language, "Configurações"),
+        tr(language, "Configurações"),
+        "potoo-sidebar-settings-button",
+    );
+    settings_footer.append(&settings_button);
+    sidebar.append(&settings_footer);
+
     SidebarUi {
         widget: sidebar.upcast(),
         project_row: project,
@@ -153,6 +165,7 @@ pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
         open_popover,
         open_project_button,
         open_file_button,
+        settings_button,
         expanded_folders: Rc::new(RefCell::new(HashSet::new())),
     }
 }
