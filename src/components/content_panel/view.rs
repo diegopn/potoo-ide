@@ -29,7 +29,6 @@ pub(crate) fn rebuild_editor_tabs(
         button.add_css_class("potoo-editor-tab");
         let is_active = Some(document.id) == active_document_id;
         if is_active {
-            tab.add_css_class("potoo-editor-tab-container-selected");
             button.add_css_class("potoo-editor-tab-selected");
         }
         if document.is_dirty() {
@@ -69,6 +68,9 @@ pub(crate) fn rebuild_editor_tabs(
         close_button.set_child(Some(&icon("close")));
         close_button.set_tooltip_text(Some(tr(language, "Fechar arquivo")));
         close_button.add_css_class("potoo-close-tab-button");
+        if is_active {
+            close_button.add_css_class("potoo-close-tab-button-selected");
+        }
         let sender_for_close = sender.clone();
         close_button.connect_clicked(move |_| {
             sender_for_close.input(MainWindowMsg::CloseDocument(id));
