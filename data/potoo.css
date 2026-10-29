@@ -1,0 +1,337 @@
+window.potoo-window {
+  background-color: #eef9f0;
+  color: #174332;
+}
+
+window.potoo-window.potoo-dark {
+  background-color: #0a0b0a;
+  color: #ffffff;
+}
+
+.potoo-header {
+  min-height: 58px;
+  background-color: #eef9f0;
+  border-bottom: 1px solid #b4dfc2;
+}
+
+.potoo-brand-name {
+  color: #103b2d;
+  font-size: 15px;
+  font-weight: 850;
+  letter-spacing: -0.35px;
+}
+
+.potoo-project-name {
+  color: #174332;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.potoo-language-picker {
+  min-height: 34px;
+  background-color: #e5f6e9;
+  border: 1px solid #b4dfc2;
+  border-radius: 2px;
+  color: #174332;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.potoo-language-picker button,
+.potoo-language-picker > button {
+  min-height: 32px;
+  padding: 0 9px;
+  background-color: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: #174332;
+}
+
+.potoo-theme-button {
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0;
+  background-color: #e5f6e9;
+  border: 1px solid #b4dfc2;
+  border-radius: 2px;
+  color: #174332;
+  box-shadow: none;
+}
+
+.potoo-theme-button:hover,
+.potoo-language-picker:hover {
+  background-color: #d4efdc;
+  border-color: #15945b;
+}
+
+.potoo-run-button {
+  min-height: 34px;
+  padding: 0 13px;
+  background-color: #15945b;
+  border: 1px solid #15945b;
+  border-radius: 2px;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 780;
+  box-shadow: none;
+}
+
+.potoo-run-button:hover {
+  background-color: #103b2d;
+  border-color: #103b2d;
+  color: #ffffff;
+}
+
+.potoo-file-sidebar {
+  min-width: 220px;
+  background-color: #e5f6e9;
+  border-right: 1px solid #b4dfc2;
+}
+
+.potoo-file-sidebar .heading,
+.potoo-learning-title,
+.potoo-learning-panel .heading {
+  color: #174332;
+  font-weight: 760;
+}
+
+.potoo-file-sidebar .navigation-sidebar row:selected {
+  background-color: #d4efdc;
+  border-left: 3px solid #15945b;
+  color: #103b2d;
+}
+
+.potoo-editor-tabbar {
+  min-height: 42px;
+  background-color: #eef9f0;
+  border-bottom: 1px solid #b4dfc2;
+}
+
+.potoo-active-tab {
+  min-height: 41px;
+  background-color: #ffffff;
+  border-top: 2px solid #15945b;
+  color: #174332;
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.potoo-editor-row,
+.potoo-editor,
+.potoo-output-area {
+  background-color: #ffffff;
+  color: #174332;
+}
+
+.potoo-line-numbers {
+  background-color: #f5fbf6;
+  color: #397553;
+  font-size: 12px;
+}
+
+textview.potoo-code-editor,
+textview.potoo-output-view {
+  background-color: #ffffff;
+  color: #174332;
+  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+  font-size: 13px;
+}
+
+.potoo-output-notebook > header {
+  background-color: #eef9f0;
+  border-bottom: 1px solid #b4dfc2;
+}
+
+.potoo-output-notebook > header > tabs > tab {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 0;
+  color: #397553;
+  font-size: 12px;
+}
+
+.potoo-output-notebook > header > tabs > tab:checked {
+  border-bottom: 2px solid #15945b;
+  color: #174332;
+  font-weight: 700;
+}
+
+.potoo-output-status-row {
+  min-height: 32px;
+  background-color: #ffffff;
+  border-top: 1px solid #e5f6e9;
+}
+
+.potoo-muted {
+  color: #397553;
+  font-size: 11px;
+}
+
+.potoo-learning-panel {
+  min-width: 300px;
+  background-color: #eef9f0;
+  border-left: 1px solid #b4dfc2;
+}
+
+.potoo-learning-title {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.25px;
+}
+
+.potoo-card {
+  padding: 12px;
+  background-color: #ffffff;
+  border: 1px solid #b4dfc2;
+  border-radius: 2px;
+  color: #225b42;
+  font-size: 12px;
+}
+
+.potoo-experiment-card {
+  border-left: 3px solid #36bf78;
+}
+
+.potoo-concept-card {
+  background-color: #d4efdc;
+  border-left: 3px solid #45cdb1;
+}
+
+.potoo-statusbar {
+  min-height: 32px;
+  background-color: #e5f6e9;
+  border-top: 1px solid #b4dfc2;
+  color: #397553;
+}
+
+.potoo-status-primary {
+  color: #15945b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+paned > separator {
+  background-color: #b4dfc2;
+  min-width: 1px;
+  min-height: 1px;
+}
+
+window.potoo-window.potoo-dark .potoo-header,
+window.potoo-window.potoo-dark .potoo-editor-tabbar,
+window.potoo-window.potoo-dark .potoo-output-notebook > header {
+  background-color: #0a0b0a;
+  border-color: #35443a;
+}
+
+window.potoo-window.potoo-dark .potoo-brand-name,
+window.potoo-window.potoo-dark .potoo-project-name,
+window.potoo-window.potoo-dark .potoo-file-sidebar .heading,
+window.potoo-window.potoo-dark .potoo-learning-title,
+window.potoo-window.potoo-dark .potoo-learning-panel .heading {
+  color: #ffffff;
+}
+
+window.potoo-window.potoo-dark .potoo-language-picker,
+window.potoo-window.potoo-dark .potoo-theme-button {
+  background-color: #151815;
+  border-color: #35443a;
+  color: #ffffff;
+}
+
+window.potoo-window.potoo-dark .potoo-language-picker button,
+window.potoo-window.potoo-dark .potoo-language-picker > button {
+  color: #ffffff;
+}
+
+window.potoo-window.potoo-dark .potoo-theme-button:hover,
+window.potoo-window.potoo-dark .potoo-language-picker:hover {
+  background-color: #1e241f;
+  border-color: #65d48d;
+}
+
+window.potoo-window.potoo-dark .potoo-run-button {
+  background-color: #167545;
+  border-color: #167545;
+  color: #ffffff;
+}
+
+window.potoo-window.potoo-dark .potoo-run-button:hover {
+  background-color: #115d38;
+  border-color: #115d38;
+}
+
+window.potoo-window.potoo-dark .potoo-file-sidebar,
+window.potoo-window.potoo-dark .potoo-learning-panel {
+  background-color: #151815;
+  border-color: #35443a;
+}
+
+window.potoo-window.potoo-dark .potoo-file-sidebar .navigation-sidebar row:selected {
+  background-color: #1e241f;
+  border-left-color: #65d48d;
+  color: #ffffff;
+}
+
+window.potoo-window.potoo-dark .potoo-active-tab {
+  background-color: #151815;
+  border-top-color: #65d48d;
+  color: #ffffff;
+}
+
+window.potoo-window.potoo-dark .potoo-editor-row,
+window.potoo-window.potoo-dark .potoo-editor,
+window.potoo-window.potoo-dark .potoo-output-area,
+window.potoo-window.potoo-dark .potoo-output-status-row,
+window.potoo-window.potoo-dark textview.potoo-code-editor,
+window.potoo-window.potoo-dark textview.potoo-output-view {
+  background-color: #0a0b0a;
+  color: #ffffff;
+}
+
+window.potoo-window.potoo-dark .potoo-line-numbers {
+  background-color: #101411;
+  color: #a6e9b8;
+}
+
+window.potoo-window.potoo-dark .potoo-output-notebook > header > tabs > tab {
+  color: #a6e9b8;
+}
+
+window.potoo-window.potoo-dark .potoo-output-notebook > header > tabs > tab:checked {
+  border-bottom-color: #65d48d;
+  color: #ffffff;
+}
+
+window.potoo-window.potoo-dark .potoo-card {
+  background-color: #151815;
+  border-color: #35443a;
+  color: #d7e4db;
+}
+
+window.potoo-window.potoo-dark .potoo-experiment-card {
+  border-left-color: #65d48d;
+}
+
+window.potoo-window.potoo-dark .potoo-concept-card {
+  background-color: #1e241f;
+  border-left-color: #5fd1b5;
+}
+
+window.potoo-window.potoo-dark .potoo-statusbar {
+  background-color: #151815;
+  border-color: #35443a;
+  color: #a6e9b8;
+}
+
+window.potoo-window.potoo-dark .potoo-status-primary {
+  color: #65d48d;
+}
+
+window.potoo-window.potoo-dark .potoo-muted {
+  color: #a6e9b8;
+}
+
+window.potoo-window.potoo-dark paned > separator {
+  background-color: #35443a;
+}

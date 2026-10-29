@@ -1,4 +1,4 @@
-use adw::prelude::*;
+use gtk::prelude::*;
 use std::{cell::Cell, path::Path, rc::Rc};
 
 const PORTUGOL_SAMPLE: &str = "programa {\n  funcao inicio() {\n    inteiro idade\n\n    escreva(\"Qual é sua idade? \")\n    leia(idade)\n    se (idade >= 18) {\n      escreva(\"Pode votar.\")\n    } senao {\n      escreva(\"Ainda não pode votar.\")\n    }\n  }\n}";
@@ -69,35 +69,51 @@ fn main() {
         .application_id("io.github.diegopn.potooide")
         .build();
 
+    application.connect_startup(|_| {
+        let provider = gtk::CssProvider::new();
+        provider.load_from_string(include_str!("../data/potoo.css"));
+        if let Some(display) = gtk::gdk::Display::default() {
+            gtk::style_context_add_provider_for_display(
+                &display,
+                &provider,
+                gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+        }
+    });
+
     application.connect_activate(build_window);
     let _ = application.run();
 }
 
 fn build_window(application: &adw::Application) {
-    let window = adw::ApplicationWindow::builder()
+    let window = gtk::ApplicationWindow::builder()
         .application(application)
         .title("Potoo IDE")
         .default_width(1440)
         .default_height(900)
         .build();
+    window.add_css_class("potoo-window");
 
     let style_manager = adw::StyleManager::default();
     style_manager.set_color_scheme(adw::ColorScheme::ForceLight);
 
     let language = Rc::new(Cell::new(Language::Portugol));
-    let header = adw::HeaderBar::new();
+    let header = gtk::CenterBox::new();
+    header.add_css_class("potoo-header");
+    header.set_margin_start(14);
+    header.set_margin_end(14);
     let brand = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     brand.append(&app_icon());
     let brand_label = gtk::Label::new(Some("Potoo IDE"));
-    brand_label.add_css_class("heading");
+    brand_label.add_css_class("potoo-brand-name");
     brand.append(&brand_label);
-    header.pack_start(&brand);
 
     let project_title = gtk::Label::new(Some("Meu primeiro programa"));
-    project_title.add_css_class("title");
-    header.set_title_widget(Some(&project_title));
+    project_title.add_css_class("potoo-project-name");
+    project_title.set_ellipsize(gtk::pango::EllipsizeMode::End);
 
     let language_picker = gtk::DropDown::from_strings(&["Portugol", "VisuAlg"]);
+    language_picker.add_css_class("potoo-language-picker");
     language_picker.set_tooltip_text(Some("Linguagem do programa"));
 
     let theme_button = gtk::ToggleButton::new();
@@ -105,10 +121,10 @@ fn build_window(application: &adw::Application) {
         "weather-clear-night-symbolic",
     )));
     theme_button.set_tooltip_text(Some("Alternar entre tema claro e escuro"));
-    theme_button.add_css_class("flat");
+    theme_button.add_css_class("potoo-theme-button");
 
     let run_button = gtk::Button::new();
-    run_button.add_css_class("suggested-action");
+    run_button.add_css_class("potoo-run-button");
     let run_content = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     run_content.append(&gtk::Image::from_icon_name("media-playback-start-symbolic"));
     run_content.append(&gtk::Label::new(Some("Executar")));
@@ -121,7 +137,9 @@ fn build_window(application: &adw::Application) {
     header_actions.append(&language_picker);
     header_actions.append(&theme_button);
     header_actions.append(&run_button);
-    header.pack_end(&header_actions);
+    header.set_start_widget(Some(&brand));
+    header.set_center_widget(Some(&project_title));
+    header.set_end_widget(Some(&header_actions));
 
     let (sidebar, sidebar_file_name) = build_file_sidebar();
     let file_name = gtk::Label::new(Some(Language::Portugol.file_name()));
@@ -138,6 +156,7 @@ fn build_window(application: &adw::Application) {
     line_numbers.set_yalign(0.0);
     line_numbers.add_css_class("dim-label");
     line_numbers.add_css_class("monospace");
+    line_numbers.add_css_class("potoo-line-numbers");
     line_numbers.set_margin_top(14);
     line_numbers.set_margin_bottom(14);
     line_numbers.set_margin_start(12);
@@ -153,7 +172,7 @@ fn build_window(application: &adw::Application) {
         .top_margin(14)
         .bottom_margin(14)
         .build();
-    code_view.add_css_class("code-editor");
+    code_view.add_css_class("potoo-code-editor");
 
     let code_scroll = gtk::ScrolledWindow::builder()
         .hexpand(true)
@@ -162,12 +181,13 @@ fn build_window(application: &adw::Application) {
         .build();
 
     let editor_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    editor_row.add_css_class("view");
+    editor_row.add_css_class("potoo-editor-row");
     editor_row.append(&line_numbers);
     editor_row.append(&gtk::Separator::new(gtk::Orientation::Vertical));
     editor_row.append(&code_scroll);
 
     let editor_tab = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    editor_tab.add_css_class("potoo-active-tab");
     editor_tab.set_margin_start(12);
     editor_tab.set_margin_end(12);
     editor_tab.set_margin_top(8);
@@ -175,11 +195,12 @@ fn build_window(application: &adw::Application) {
     editor_tab.append(&gtk::Image::from_icon_name("text-x-generic-symbolic"));
     editor_tab.append(&file_name);
     let tab_bar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    tab_bar.add_css_class("toolbar");
+    tab_bar.add_css_class("potoo-editor-tabbar");
     tab_bar.append(&editor_tab);
     tab_bar.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
 
     let editor = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    editor.add_css_class("potoo-editor");
     editor.append(&tab_bar);
     editor.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
     editor.append(&editor_row);
@@ -187,8 +208,9 @@ fn build_window(application: &adw::Application) {
     let (output_notebook, output_buffer) = build_output_panel();
     let output_status = gtk::Label::new(Some("Pronto para executar"));
     output_status.set_xalign(0.0);
-    output_status.add_css_class("dim-label");
+    output_status.add_css_class("potoo-muted");
     let output_status_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    output_status_row.add_css_class("potoo-output-status-row");
     output_status_row.set_margin_start(12);
     output_status_row.set_margin_end(12);
     output_status_row.set_margin_bottom(8);
@@ -196,6 +218,7 @@ fn build_window(application: &adw::Application) {
     output_status_row.append(&output_status);
 
     let output_area = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    output_area.add_css_class("potoo-output-area");
     output_area.append(&output_notebook);
     output_area.append(&output_status_row);
 
@@ -233,9 +256,10 @@ fn build_window(application: &adw::Application) {
 
     let status_language = gtk::Label::new(Some("Portugol"));
     let status_details = gtk::Label::new(Some("UTF-8  ·  Espaços: 4"));
-    status_language.add_css_class("dim-label");
-    status_details.add_css_class("dim-label");
+    status_language.add_css_class("potoo-status-primary");
+    status_details.add_css_class("potoo-muted");
     let status_bar = gtk::Box::new(gtk::Orientation::Horizontal, 16);
+    status_bar.add_css_class("potoo-statusbar");
     status_bar.set_margin_start(12);
     status_bar.set_margin_end(12);
     status_bar.set_margin_top(6);
@@ -244,17 +268,16 @@ fn build_window(application: &adw::Application) {
     status_bar.append(&status_language);
     status_bar.append(&gtk::Separator::new(gtk::Orientation::Vertical));
     status_bar.append(&status_details);
-    status_bar.add_css_class("toolbar");
-
     let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
     content.append(&workspace);
     content.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
     content.append(&status_bar);
 
-    let toolbar_view = adw::ToolbarView::new();
-    toolbar_view.add_top_bar(&header);
-    toolbar_view.set_content(Some(&content));
-    window.set_content(Some(&toolbar_view));
+    let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    root.add_css_class("potoo-root");
+    root.append(&header);
+    root.append(&content);
+    window.set_child(Some(&root));
 
     let code_language = language.clone();
     let file_name_for_language = file_name.clone();
@@ -277,11 +300,17 @@ fn build_window(application: &adw::Application) {
     });
 
     let style_manager_for_theme = style_manager.clone();
+    let window_for_theme = window.clone();
     let tags_for_theme = syntax_tags.clone();
     let buffer_for_theme = code_buffer.clone();
     let language_for_theme = language.clone();
     theme_button.connect_toggled(move |button| {
         let dark = button.is_active();
+        if dark {
+            window_for_theme.add_css_class("potoo-dark");
+        } else {
+            window_for_theme.remove_css_class("potoo-dark");
+        }
         style_manager_for_theme.set_color_scheme(if dark {
             adw::ColorScheme::ForceDark
         } else {
@@ -335,7 +364,7 @@ fn app_icon() -> gtk::Image {
 
 fn build_file_sidebar() -> (gtk::Widget, gtk::Label) {
     let sidebar = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    sidebar.add_css_class("sidebar");
+    sidebar.add_css_class("potoo-file-sidebar");
     sidebar.set_size_request(220, -1);
 
     let heading = gtk::Label::new(Some("Arquivos"));
@@ -383,7 +412,7 @@ fn build_file_sidebar() -> (gtk::Widget, gtk::Label) {
 
 fn build_learning_panel() -> gtk::Widget {
     let panel = gtk::Box::new(gtk::Orientation::Vertical, 16);
-    panel.add_css_class("sidebar");
+    panel.add_css_class("potoo-learning-panel");
     panel.set_size_request(320, -1);
     panel.set_margin_start(18);
     panel.set_margin_end(18);
@@ -392,7 +421,7 @@ fn build_learning_panel() -> gtk::Widget {
 
     let title = gtk::Label::new(Some("Aprenda enquanto programa"));
     title.set_xalign(0.0);
-    title.add_css_class("title-3");
+    title.add_css_class("potoo-learning-title");
     title.set_wrap(true);
     panel.append(&title);
 
@@ -421,7 +450,8 @@ fn build_learning_panel() -> gtk::Widget {
     experiment.set_xalign(0.0);
     experiment.set_wrap(true);
     experiment.set_selectable(true);
-    experiment.add_css_class("card");
+    experiment.add_css_class("potoo-card");
+    experiment.add_css_class("potoo-experiment-card");
     experiment.set_margin_start(4);
     experiment.set_margin_end(4);
     experiment.set_margin_top(4);
@@ -429,7 +459,8 @@ fn build_learning_panel() -> gtk::Widget {
     panel.append(&experiment);
 
     let concept = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    concept.add_css_class("card");
+    concept.add_css_class("potoo-card");
+    concept.add_css_class("potoo-concept-card");
     concept.set_margin_start(4);
     concept.set_margin_end(4);
     concept.set_margin_top(8);
@@ -452,6 +483,7 @@ fn build_learning_panel() -> gtk::Widget {
 
 fn build_output_panel() -> (gtk::Notebook, gtk::TextBuffer) {
     let notebook = gtk::Notebook::new();
+    notebook.add_css_class("potoo-output-notebook");
     notebook.set_tab_pos(gtk::PositionType::Top);
     notebook.set_vexpand(true);
 
@@ -465,7 +497,7 @@ fn build_output_panel() -> (gtk::Notebook, gtk::TextBuffer) {
         .top_margin(12)
         .bottom_margin(12)
         .build();
-    output.add_css_class("view");
+    output.add_css_class("potoo-output-view");
     let output_buffer = output.buffer();
     output_buffer.set_text("A saída aparecerá aqui após a execução.");
     let output_scroll = gtk::ScrolledWindow::builder()
@@ -526,13 +558,13 @@ fn make_syntax_tags(buffer: &gtk::TextBuffer) -> SyntaxTags {
 
 fn set_syntax_palette(tags: &SyntaxTags, dark: bool) {
     tags.keyword
-        .set_property("foreground", if dark { "#79c0ff" } else { "#185abc" });
+        .set_property("foreground", if dark { "#65d48d" } else { "#15945b" });
     tags.string
-        .set_property("foreground", if dark { "#ff9b8a" } else { "#b3432b" });
+        .set_property("foreground", if dark { "#a6e9b8" } else { "#225b42" });
     tags.number
-        .set_property("foreground", if dark { "#a8dca0" } else { "#267a33" });
+        .set_property("foreground", if dark { "#5fd1b5" } else { "#168b78" });
     tags.current_line
-        .set_property("background", if dark { "#26394f" } else { "#e8f1ff" });
+        .set_property("background", if dark { "#1e241f" } else { "#e5f6e9" });
 }
 
 fn highlight_buffer(buffer: &gtk::TextBuffer, language: Language, tags: &SyntaxTags) {
