@@ -60,6 +60,48 @@ window.potoo-window.potoo-dark .potoo-root {
   color: var(--potoo-text);
 }
 
+window.potoo-settings-window,
+window.potoo-dialog-window,
+window.potoo-settings-window decoration,
+window.potoo-dialog-window decoration {
+  border-radius: 0;
+}
+
+window.potoo-settings-window headerbar,
+window.potoo-settings-window .titlebar,
+window.potoo-dialog-window headerbar,
+window.potoo-dialog-window .titlebar {
+  background-color: var(--potoo-window-bg);
+  background-image: none;
+  border: 0;
+  border-bottom: 1px solid var(--potoo-border);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+window.potoo-settings-window headerbar button.titlebutton,
+window.potoo-settings-window .titlebar button.titlebutton,
+window.potoo-dialog-window headerbar button.titlebutton,
+window.potoo-dialog-window .titlebar button.titlebutton {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 0;
+  color: var(--potoo-text-muted);
+  box-shadow: none;
+}
+
+window.potoo-settings-window headerbar button.titlebutton:hover,
+window.potoo-settings-window .titlebar button.titlebutton:hover,
+window.potoo-dialog-window headerbar button.titlebutton:hover,
+window.potoo-dialog-window .titlebar button.titlebutton:hover {
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
+}
+
 .potoo-header {
   min-height: 48px;
   background-color: var(--potoo-window-bg);
@@ -532,7 +574,7 @@ label.potoo-line-numbers.potoo-font-17 {
   padding: 0 14px;
   background-color: var(--potoo-surface-bg);
   border: 1px solid var(--potoo-border);
-  border-radius: 3px;
+  border-radius: 0;
 }
 
 .potoo-settings-section-title {
@@ -574,7 +616,7 @@ label.potoo-line-numbers.potoo-font-17 {
   padding: 0 8px;
   background-color: var(--potoo-surface-bg);
   border: 1px solid var(--potoo-border);
-  border-radius: 2px;
+  border-radius: 0;
   color: var(--potoo-text);
 }
 
@@ -583,7 +625,7 @@ dropdown.potoo-settings-picker > button {
   padding: 0 10px;
   background-color: var(--potoo-panel-bg);
   border: 1px solid var(--potoo-border);
-  border-radius: 2px;
+  border-radius: 0;
   color: var(--potoo-text);
 }
 
@@ -591,7 +633,7 @@ dropdown.potoo-settings-picker popover.background > contents {
   padding: 4px;
   background-color: var(--potoo-surface-bg);
   border: 1px solid var(--potoo-border);
-  border-radius: 3px;
+  border-radius: 0;
   box-shadow: 0 3px 10px rgba(18, 23, 27, 0.16);
 }
 
@@ -602,7 +644,7 @@ dropdown.potoo-settings-picker popover listview {
 dropdown.potoo-settings-picker popover listview row {
   min-height: 30px;
   padding: 0 8px;
-  border-radius: 2px;
+  border-radius: 0;
   color: var(--potoo-text);
 }
 
@@ -621,7 +663,7 @@ switch.potoo-settings-switch {
   padding: 2px;
   background-color: var(--potoo-panel-hover-bg);
   border: 1px solid var(--potoo-border);
-  border-radius: 999px;
+  border-radius: 0;
 }
 
 switch.potoo-settings-switch:checked {
@@ -635,7 +677,7 @@ switch.potoo-settings-switch slider {
   margin: 1px;
   background-color: var(--potoo-surface-bg);
   border: 1px solid var(--potoo-border);
-  border-radius: 999px;
+  border-radius: 0;
 }
 
 paned > separator {
