@@ -1,13 +1,13 @@
 [package]
 name = "potoo-ide"
 version = "0.1.0"
-description = "Uma IDE desktop para aprender lógica com Portugol, VisuAlg e Potigol"
+description = "Uma IDE desktop para aprender lógica com Portugol e VisuAlg"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/diegopn/potoo-ide"
 homepage = "https://diegopn.github.io/potoo-site/"
 readme = "README.md"
 edition = "2024"
-rust-version = "1.92"
+rust-version = "1.93"
 default-run = "potoo-ide"
 
 [[bin]]
@@ -17,6 +17,7 @@ path = "src/main.rs"
 [dependencies]
 adw = { package = "libadwaita", version = "=0.9.2", features = ["v1_8"] }
 gtk = { package = "gtk4", version = "=0.11.3", features = ["v4_20"] }
+relm4 = { version = "=0.11.0", default-features = false, features = ["libadwaita"] }
 
 [profile.release]
 lto = "thin"

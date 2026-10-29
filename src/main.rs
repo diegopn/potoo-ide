@@ -1,33 +1,25 @@
-use adw::prelude::*;
+mod app;
+mod components;
+
 use gtk::prelude::*;
+use relm4::prelude::*;
 
 fn main() {
     let application = adw::Application::builder()
         .application_id("io.github.diegopn.potooide")
         .build();
 
-    application.connect_activate(build_window);
-    let _ = application.run();
-}
+    application.connect_startup(|_| {
+        let provider = gtk::CssProvider::new();
+        provider.load_from_string(include_str!("../data/potoo.css"));
+        if let Some(display) = gtk::gdk::Display::default() {
+            gtk::style_context_add_provider_for_display(
+                &display,
+                &provider,
+                gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+        }
+    });
 
-fn build_window(application: &adw::Application) {
-    let window = adw::ApplicationWindow::builder()
-        .application(application)
-        .title("Potoo IDE")
-        .default_width(1100)
-        .default_height(760)
-        .build();
-
-    window.set_titlebar(Some(&adw::HeaderBar::new()));
-
-    let welcome = gtk::Label::builder()
-        .label("Potoo IDE
-
-Seu espaço para programar em pseudolinguagens.")
-        .halign(gtk::Align::Center)
-        .valign(gtk::Align::Center)
-        .build();
-
-    window.set_content(Some(&welcome));
-    window.present();
+    RelmApp::from_app(application).run::<app::MainWindow>(());
 }
