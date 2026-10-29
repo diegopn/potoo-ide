@@ -386,17 +386,25 @@ label.potoo-line-numbers.potoo-font-17 {
   font-weight: 800;
 }
 
-.potoo-settings-description,
+.potoo-settings-description {
+  color: #397553;
+  font-size: 13px;
+}
+
 .potoo-settings-row-description {
   color: #397553;
   font-size: 12px;
 }
 
 .potoo-settings-section {
-  padding-top: 8px;
+  padding: 0 14px;
+  background-color: #ffffff;
+  border: 1px solid #b4dfc2;
+  border-radius: 3px;
 }
 
 .potoo-settings-section-title {
+  padding-top: 12px;
   padding-bottom: 4px;
   color: #15945b;
   font-size: 12px;
@@ -404,9 +412,13 @@ label.potoo-line-numbers.potoo-font-17 {
 }
 
 .potoo-settings-row {
-  min-height: 56px;
-  padding: 12px 0;
-  border-bottom: 1px solid #b4dfc2;
+  min-height: 48px;
+  padding: 8px 0;
+  border-bottom: 1px solid #e5f6e9;
+}
+
+.potoo-settings-row:last-child {
+  border-bottom: 0;
 }
 
 .potoo-settings-row-title {
@@ -416,7 +428,8 @@ label.potoo-line-numbers.potoo-font-17 {
 }
 
 .potoo-settings-picker {
-  min-width: 140px;
+  min-width: 132px;
+  min-height: 34px;
 }
 
 .potoo-dialog-surface {
@@ -434,10 +447,35 @@ label.potoo-line-numbers.potoo-font-17 {
 }
 
 dropdown.potoo-settings-picker > button {
+  min-height: 34px;
+  padding: 0 10px;
   background-color: #e5f6e9;
   border: 1px solid #b4dfc2;
   border-radius: 2px;
   color: #174332;
+}
+
+switch.potoo-settings-switch {
+  min-width: 44px;
+  min-height: 24px;
+  padding: 2px;
+  background-color: #d7e8dc;
+  border: 1px solid #b4dfc2;
+  border-radius: 999px;
+}
+
+switch.potoo-settings-switch:checked {
+  background-color: #15945b;
+  border-color: #15945b;
+}
+
+switch.potoo-settings-switch slider {
+  min-width: 20px;
+  min-height: 20px;
+  margin: 1px;
+  background-color: #ffffff;
+  border: 1px solid #b4dfc2;
+  border-radius: 999px;
 }
 
 paned > separator {
@@ -637,6 +675,11 @@ window.potoo-window.potoo-dark .potoo-settings-page {
   color: #ffffff;
 }
 
+window.potoo-window.potoo-dark .potoo-settings-section {
+  background-color: #151815;
+  border-color: #35443a;
+}
+
 window.potoo-window.potoo-dark .potoo-dialog-surface {
   background-color: #0a0b0a;
   color: #ffffff;
@@ -663,13 +706,28 @@ window.potoo-window.potoo-dark .potoo-settings-section-title {
 }
 
 window.potoo-window.potoo-dark .potoo-settings-row {
-  border-color: #35443a;
+  border-color: #29362e;
 }
 
 window.potoo-window.potoo-dark dropdown.potoo-settings-picker > button {
   background-color: #151815;
   border-color: #35443a;
   color: #ffffff;
+}
+
+window.potoo-window.potoo-dark switch.potoo-settings-switch {
+  background-color: #35443a;
+  border-color: #536659;
+}
+
+window.potoo-window.potoo-dark switch.potoo-settings-switch:checked {
+  background-color: #167545;
+  border-color: #167545;
+}
+
+window.potoo-window.potoo-dark switch.potoo-settings-switch slider {
+  background-color: #e5f6e9;
+  border-color: #a6e9b8;
 }
 
 window.potoo-window.potoo-dark paned > separator {

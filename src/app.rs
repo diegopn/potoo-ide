@@ -1984,8 +1984,8 @@ fn build_settings_window(
     let language = preferences.ui_language;
     let window = gtk::Window::new();
     window.set_title(Some(tr(language, "Configurações")));
-    window.set_default_size(520, 660);
-    window.set_resizable(false);
+    window.set_default_size(620, 700);
+    window.set_resizable(true);
     window.set_modal(true);
     window.set_transient_for(Some(parent));
     window.add_css_class("potoo-window");
@@ -1994,20 +1994,17 @@ fn build_settings_window(
         window.add_css_class("potoo-dark");
     }
 
-    let page = gtk::Box::new(gtk::Orientation::Vertical, 20);
+    let page = gtk::Box::new(gtk::Orientation::Vertical, 12);
     page.add_css_class("potoo-settings-page");
-    page.set_margin_start(24);
-    page.set_margin_end(24);
-    page.set_margin_top(24);
-    page.set_margin_bottom(24);
+    page.set_margin_start(18);
+    page.set_margin_end(18);
+    page.set_margin_top(16);
+    page.set_margin_bottom(16);
 
-    let title = gtk::Label::new(Some(tr(language, "Configurações")));
-    title.set_xalign(0.0);
-    title.add_css_class("potoo-settings-title");
     let description = gtk::Label::new(Some(tr(language, "Personalize a aparência e o editor.")));
     description.set_xalign(0.0);
     description.add_css_class("potoo-settings-description");
-    page.append(&title);
+    description.set_margin_bottom(2);
     page.append(&description);
 
     let appearance = settings_section(tr(language, "Aparência"));
@@ -2036,6 +2033,7 @@ fn build_settings_window(
     ));
 
     let line_numbers_switch = gtk::Switch::new();
+    line_numbers_switch.add_css_class("potoo-settings-switch");
     line_numbers_switch.set_active(preferences.line_numbers_visible);
     editor.append(&settings_row(
         tr(language, "Numeração de linhas"),
@@ -2044,6 +2042,7 @@ fn build_settings_window(
     ));
 
     let word_wrap_switch = gtk::Switch::new();
+    word_wrap_switch.add_css_class("potoo-settings-switch");
     word_wrap_switch.set_active(preferences.word_wrap);
     editor.append(&settings_row(
         tr(language, "Quebra automática de linha"),
@@ -2090,6 +2089,9 @@ fn build_settings_window(
     page.append(&interface);
     let scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
+        .vscrollbar_policy(gtk::PolicyType::Automatic)
+        .hexpand(true)
+        .vexpand(true)
         .child(&page)
         .build();
     window.set_child(Some(&scroll));
@@ -2164,7 +2166,7 @@ fn build_settings_window(
 }
 
 fn settings_section(title: &str) -> gtk::Box {
-    let section = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    let section = gtk::Box::new(gtk::Orientation::Vertical, 0);
     section.add_css_class("potoo-settings-section");
     let heading = gtk::Label::new(Some(title));
     heading.set_xalign(0.0);
@@ -2176,6 +2178,7 @@ fn settings_section(title: &str) -> gtk::Box {
 fn settings_row<W: IsA<gtk::Widget>>(title: &str, description: &str, control: &W) -> gtk::Box {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 16);
     row.add_css_class("potoo-settings-row");
+    control.set_valign(gtk::Align::Center);
 
     let labels = gtk::Box::new(gtk::Orientation::Vertical, 4);
     labels.set_hexpand(true);
