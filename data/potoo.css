@@ -511,7 +511,8 @@ expander-widget.potoo-folder-expander > box > title > expander {
   border-left: 1px solid var(--potoo-border-subtle);
 }
 
-.potoo-tab-action-button {
+splitbutton.potoo-save-split-button > button,
+splitbutton.potoo-save-split-button > menubutton > button.toggle {
   min-height: 28px;
   padding: 0 8px;
   background-color: transparent;
@@ -524,9 +525,50 @@ expander-widget.potoo-folder-expander > box > title > expander {
   box-shadow: none;
 }
 
-.potoo-tab-action-button:hover {
+splitbutton.potoo-save-split-button > button:hover,
+splitbutton.potoo-save-split-button > menubutton > button.toggle:hover {
   background-color: var(--potoo-panel-hover-bg);
   color: var(--potoo-text);
+}
+
+splitbutton.potoo-save-split-button > separator {
+  background-color: var(--potoo-border-subtle);
+}
+
+popover.potoo-save-popover {
+  background-color: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+popover.potoo-save-popover > contents {
+  background-color: var(--potoo-surface-bg);
+  border: 1px solid var(--potoo-border);
+  border-radius: 0;
+  box-shadow: 0 5px 14px rgba(18, 23, 27, 0.16);
+}
+
+popover.potoo-save-popover > arrow {
+  background-color: var(--potoo-surface-bg);
+  border-color: var(--potoo-border);
+}
+
+.potoo-save-menu-item {
+  min-height: 32px;
+  padding: 0 10px;
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 0;
+  color: var(--potoo-text);
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.potoo-save-menu-item:hover {
+  background-color: var(--potoo-panel-hover-bg);
 }
 
 .potoo-editor-row,
