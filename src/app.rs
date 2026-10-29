@@ -70,7 +70,6 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Salvar arquivo" => "Save file",
             "Salvar" => "Save",
-            "Salvar como" => "Save as",
             "Configurações" => "Settings",
             "Executar" => "Run",
             "Arquivos" => "Files",
@@ -272,7 +271,6 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Salvar arquivo" => "Guardar archivo",
             "Salvar" => "Guardar",
-            "Salvar como" => "Guardar como",
             "Configurações" => "Configuración",
             "Executar" => "Ejecutar",
             "Arquivos" => "Archivos",
@@ -581,7 +579,6 @@ pub(crate) enum MainWindowMsg {
     CloseDocument(u64),
     CloseDocumentDecision(u64, bool),
     SaveCurrent,
-    SaveAsCurrent,
     SaveAsSelected(u64, PathBuf),
     SaveAsCanceled(u64),
     FileOperationFailed(String),
@@ -1189,12 +1186,12 @@ impl MainWindow {
         }
     }
 
-    fn request_save(&mut self, save_as: bool) {
+    fn request_save(&mut self) {
         match self
             .active_document()
             .map(|document| (document.id, document.path.clone()))
         {
-            Some((id, Some(path))) if !save_as => self.save_document(id, path),
+            Some((id, Some(path))) => self.save_document(id, path),
             Some((id, _)) => self.pending_save_as_id = Some(id),
             None => {
                 self.output_status = self
@@ -1410,7 +1407,6 @@ impl SimpleComponent for MainWindow {
                 | MainWindowMsg::CloseDocument(_)
                 | MainWindowMsg::CloseDocumentDecision(_, _)
                 | MainWindowMsg::SaveCurrent
-                | MainWindowMsg::SaveAsCurrent
                 | MainWindowMsg::SaveAsSelected(_, _)
         );
         match message {
@@ -1468,8 +1464,7 @@ impl SimpleComponent for MainWindow {
                     }
                 }
             }
-            MainWindowMsg::SaveCurrent => self.request_save(false),
-            MainWindowMsg::SaveAsCurrent => self.request_save(true),
+            MainWindowMsg::SaveCurrent => self.request_save(),
             MainWindowMsg::SaveAsSelected(id, path) => {
                 self.pending_save_as_id = None;
                 self.save_document(id, path);
@@ -1871,31 +1866,13 @@ fn build_window_content(
             "Salvar arquivo (Ctrl+S)"
         },
     );
-    let save_button = adw::SplitButton::new();
+    let save_button = gtk::Button::new();
     let save_content = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     save_content.append(&icon("save"));
     save_content.append(&gtk::Label::new(Some(tr(ui_language, "Salvar"))));
     save_button.set_child(Some(&save_content));
     save_button.set_tooltip_text(Some(save_tooltip));
-    save_button.set_dropdown_tooltip(tr(ui_language, "Salvar como"));
-    save_button.add_css_class("potoo-save-split-button");
-
-    let save_as_popover = gtk::Popover::new();
-    save_as_popover.add_css_class("potoo-save-popover");
-    let save_as_menu = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    save_as_menu.set_margin_top(4);
-    save_as_menu.set_margin_bottom(4);
-    save_as_menu.set_margin_start(4);
-    save_as_menu.set_margin_end(4);
-    let save_as_menu_button = gtk::Button::new();
-    let save_as_content = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    save_as_content.append(&icon("save-as"));
-    save_as_content.append(&gtk::Label::new(Some(tr(ui_language, "Salvar como"))));
-    save_as_menu_button.set_child(Some(&save_as_content));
-    save_as_menu_button.add_css_class("potoo-save-menu-item");
-    save_as_menu.append(&save_as_menu_button);
-    save_as_popover.set_child(Some(&save_as_menu));
-    save_button.set_popover(Some(&save_as_popover));
+    save_button.add_css_class("potoo-save-button");
 
     let editor_actions = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     editor_actions.add_css_class("potoo-editor-tab-actions");
@@ -2055,13 +2032,6 @@ fn build_window_content(
         sender_for_save.input(MainWindowMsg::SaveCurrent);
     });
 
-    let sender_for_save_as = sender.clone();
-    let save_as_popover_for_action = save_as_popover.clone();
-    save_as_menu_button.connect_clicked(move |_| {
-        sender_for_save_as.input(MainWindowMsg::SaveAsCurrent);
-        save_as_popover_for_action.popdown();
-    });
-
     let sender_for_new_file = sender.clone();
     let window_for_new_file = window.clone();
     let default_new_language_for_new_file = default_new_language.clone();
@@ -2112,12 +2082,11 @@ fn build_window_content(
     key_controller.connect_key_pressed(move |_, key, _, modifiers| {
         let primary_modifier = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK)
             || (cfg!(target_os = "macos") && modifiers.contains(gtk::gdk::ModifierType::META_MASK));
-        if key == gtk::gdk::Key::s && primary_modifier {
-            if modifiers.contains(gtk::gdk::ModifierType::SHIFT_MASK) {
-                sender_for_shortcuts.input(MainWindowMsg::SaveAsCurrent);
-            } else {
-                sender_for_shortcuts.input(MainWindowMsg::SaveCurrent);
-            }
+        if key == gtk::gdk::Key::s
+            && primary_modifier
+            && !modifiers.contains(gtk::gdk::ModifierType::SHIFT_MASK)
+        {
+            sender_for_shortcuts.input(MainWindowMsg::SaveCurrent);
             gtk::glib::Propagation::Stop
         } else if key == gtk::gdk::Key::o && primary_modifier {
             show_open_file_dialog(
