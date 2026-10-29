@@ -1707,10 +1707,6 @@ fn build_window_content(
     let header = header::build_header(&window, ui_language, preferences.theme, sender.clone());
     let project_title = header.project_title.clone();
     let settings_button = header.settings_button.clone();
-    let menu_open_project_button = header.open_project_button.clone();
-    let menu_open_file_button = header.open_file_button.clone();
-    let menu_save_button = header.save_button.clone();
-    let menu_save_as_button = header.save_as_button.clone();
     let menu_popover = header.popover.clone();
     let theme_options = header.theme_options.clone();
     let run_button = header.run_button.clone();
@@ -1783,9 +1779,30 @@ fn build_window_content(
 
     let editor_tabs = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     editor_tabs.set_hexpand(true);
+    let save_tooltip = tr(
+        ui_language,
+        if cfg!(target_os = "macos") {
+            "Salvar arquivo (⌘S)"
+        } else {
+            "Salvar arquivo (Ctrl+S)"
+        },
+    );
+    let save_button = gtk::Button::new();
+    save_button.set_child(Some(&gtk::Image::from_icon_name("document-save-symbolic")));
+    save_button.set_tooltip_text(Some(save_tooltip));
+    save_button.add_css_class("potoo-tab-action-button");
+    let save_as_button = gtk::Button::new();
+    save_as_button.set_child(Some(&gtk::Image::from_icon_name("document-save-as-symbolic")));
+    save_as_button.set_tooltip_text(Some(tr(ui_language, "Salvar como")));
+    save_as_button.add_css_class("potoo-tab-action-button");
+    let editor_actions = gtk::Box::new(gtk::Orientation::Horizontal, 2);
+    editor_actions.add_css_class("potoo-editor-tab-actions");
+    editor_actions.append(&save_button);
+    editor_actions.append(&save_as_button);
     let tab_bar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     tab_bar.add_css_class("potoo-editor-tabbar");
     tab_bar.append(&editor_tabs);
+    tab_bar.append(&editor_actions);
 
     let editor = gtk::Box::new(gtk::Orientation::Vertical, 0);
     editor.add_css_class("potoo-editor");
@@ -1928,42 +1945,14 @@ fn build_window_content(
         );
     });
 
-    let sender_for_menu_open_project = sender.clone();
-    let window_for_menu_open_project = window.clone();
-    let menu_popover_for_open_project = menu_popover.clone();
-    menu_open_project_button.connect_clicked(move |_| {
-        menu_popover_for_open_project.popdown();
-        show_open_project_dialog(
-            &window_for_menu_open_project,
-            ui_language,
-            sender_for_menu_open_project.clone(),
-        );
+    let sender_for_save = sender.clone();
+    save_button.connect_clicked(move |_| {
+        sender_for_save.input(MainWindowMsg::SaveCurrent);
     });
 
-    let sender_for_menu_open_file = sender.clone();
-    let window_for_menu_open_file = window.clone();
-    let menu_popover_for_open_file = menu_popover.clone();
-    menu_open_file_button.connect_clicked(move |_| {
-        menu_popover_for_open_file.popdown();
-        show_open_file_dialog(
-            &window_for_menu_open_file,
-            ui_language,
-            sender_for_menu_open_file.clone(),
-        );
-    });
-
-    let sender_for_menu_save = sender.clone();
-    let menu_popover_for_save = menu_popover.clone();
-    menu_save_button.connect_clicked(move |_| {
-        menu_popover_for_save.popdown();
-        sender_for_menu_save.input(MainWindowMsg::SaveCurrent);
-    });
-
-    let sender_for_menu_save_as = sender.clone();
-    let menu_popover_for_save_as = menu_popover.clone();
-    menu_save_as_button.connect_clicked(move |_| {
-        menu_popover_for_save_as.popdown();
-        sender_for_menu_save_as.input(MainWindowMsg::SaveAsCurrent);
+    let sender_for_save_as = sender.clone();
+    save_as_button.connect_clicked(move |_| {
+        sender_for_save_as.input(MainWindowMsg::SaveAsCurrent);
     });
 
     let sender_for_new_file = sender.clone();

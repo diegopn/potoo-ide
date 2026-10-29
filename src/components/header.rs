@@ -18,10 +18,6 @@ pub(crate) struct HeaderUi {
     pub(crate) widget: Option<gtk::Widget>,
     pub(crate) project_title: gtk::Label,
     pub(crate) settings_button: gtk::Button,
-    pub(crate) open_project_button: gtk::Button,
-    pub(crate) open_file_button: gtk::Button,
-    pub(crate) save_button: gtk::Button,
-    pub(crate) save_as_button: gtk::Button,
     pub(crate) popover: gtk::Popover,
     pub(crate) theme_options: Vec<(ThemePreference, gtk::ToggleButton)>,
     pub(crate) run_button: gtk::Button,
@@ -98,55 +94,6 @@ pub(crate) fn build_header(
     menu_content.append(&theme_choices);
     menu_content.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
 
-    let open_project_button = menu_action_button(
-        "folder-open-symbolic",
-        tr(language, "Abrir pasta"),
-        None,
-        tr(language, "Abrir pasta de projeto"),
-    );
-    let open_file_button = menu_action_button(
-        "document-open-symbolic",
-        tr(language, "Abrir arquivo"),
-        None,
-        tr(language, "Abrir arquivo de código"),
-    );
-    menu_content.append(&open_project_button);
-    menu_content.append(&open_file_button);
-    menu_content.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
-
-    let save_shortcut = if cfg!(target_os = "macos") {
-        "⌘S"
-    } else {
-        "Ctrl+S"
-    };
-    let save_as_shortcut = if cfg!(target_os = "macos") {
-        "⌘⇧S"
-    } else {
-        "Ctrl+Shift+S"
-    };
-    let save_button = menu_action_button(
-        "document-save-symbolic",
-        tr(language, "Salvar"),
-        Some(save_shortcut),
-        tr(
-            language,
-            if cfg!(target_os = "macos") {
-                "Salvar arquivo (⌘S)"
-            } else {
-                "Salvar arquivo (Ctrl+S)"
-            },
-        ),
-    );
-    let save_as_button = menu_action_button(
-        "document-save-as-symbolic",
-        tr(language, "Salvar como"),
-        Some(save_as_shortcut),
-        tr(language, "Salvar como"),
-    );
-    menu_content.append(&save_button);
-    menu_content.append(&save_as_button);
-    menu_content.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
-
     let settings_button = gtk::Button::new();
     settings_button.add_css_class("potoo-menu-settings-action");
     let settings_content = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -206,38 +153,8 @@ pub(crate) fn build_header(
         widget,
         project_title,
         settings_button,
-        open_project_button,
-        open_file_button,
-        save_button,
-        save_as_button,
         popover,
         theme_options,
         run_button,
     }
-}
-
-fn menu_action_button(
-    icon: &str,
-    label: &str,
-    shortcut: Option<&str>,
-    tooltip: &str,
-) -> gtk::Button {
-    let button = gtk::Button::new();
-    button.add_css_class("potoo-menu-action");
-    button.set_tooltip_text(Some(tooltip));
-    let content = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    content.append(&gtk::Image::from_icon_name(icon));
-    let label = gtk::Label::new(Some(label));
-    label.set_xalign(0.0);
-    label.set_hexpand(true);
-    content.append(&label);
-    if let Some(shortcut) = shortcut {
-        let shortcut_label = gtk::Label::new(Some(shortcut));
-        shortcut_label.add_css_class("potoo-menu-shortcut");
-        content.append(&shortcut_label);
-    }
-    button.set_child(Some(&content));
-    button.set_halign(gtk::Align::Fill);
-    button.set_hexpand(true);
-    button
 }

@@ -174,8 +174,7 @@ popover.potoo-header-popover {
   color: var(--potoo-text);
 }
 
-.potoo-menu-settings-action,
-.potoo-menu-action {
+.potoo-menu-settings-action {
   min-height: 32px;
   padding: 0 8px;
   background-color: transparent;
@@ -186,14 +185,8 @@ popover.potoo-header-popover {
   box-shadow: none;
 }
 
-.potoo-menu-settings-action:hover,
-.potoo-menu-action:hover {
+.potoo-menu-settings-action:hover {
   background-color: var(--potoo-panel-hover-bg);
-}
-
-.potoo-menu-shortcut {
-  color: var(--potoo-text-muted);
-  font-size: 11px;
 }
 
 .potoo-sidebar-language-picker:hover {
@@ -404,6 +397,28 @@ popover.potoo-sidebar-popover {
   color: var(--potoo-text);
   font-size: 12px;
   font-weight: 680;
+}
+
+.potoo-editor-tab-actions {
+  padding: 0 6px;
+  border-left: 1px solid var(--potoo-border-subtle);
+}
+
+.potoo-tab-action-button {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 3px;
+  color: var(--potoo-text-muted);
+  box-shadow: none;
+}
+
+.potoo-tab-action-button:hover {
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
 }
 
 .potoo-editor-row,
