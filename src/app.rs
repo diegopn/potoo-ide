@@ -72,6 +72,24 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Executar" => "Run",
             "Arquivos" => "Files",
             "Criar arquivo" => "Create file",
+            "Criar item no projeto" => "Create project item",
+            "Novo programa" => "New program",
+            "Criar um programa Portugol ou VisuAlg" => "Create a Portugol or VisuAlg program",
+            "Nova pasta" => "New folder",
+            "Criar uma pasta no projeto" => "Create a folder in the project",
+            "Criar pasta" => "Create folder",
+            "Organize seus programas em uma pasta do projeto." => {
+                "Organize your programs in a project folder."
+            }
+            "Nome da pasta" => "Folder name",
+            "Nome da pasta, por exemplo: exercicios" => "Folder name, for example: exercises",
+            "Pasta criada" => "Folder created",
+            "Já existe uma pasta com esse nome." => "A folder with that name already exists.",
+            "Digite um nome válido para a pasta." => "Enter a valid folder name.",
+            "Não foi possível criar a pasta" => "Could not create folder",
+            "Abra uma pasta de projeto antes de criar itens." => {
+                "Open a project folder before creating items."
+            }
             "Aprenda enquanto programa" => "Learn as you code",
             "Linha 7 · decisão" => "Line 7 · decision",
             "Uma condição verifica se uma expressão é verdadeira antes de executar um bloco." => {
@@ -127,6 +145,9 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Esta pasta ainda não tem arquivos .por ou .alg." => {
                 "This folder does not contain any .por or .alg files yet."
+            }
+            "Nenhum programa .por ou .alg encontrado. Use + para criar um." => {
+                "No .por or .alg programs found. Use + to create one."
             }
             "Fechar arquivo" => "Close file",
             "Escolha um nome e a linguagem do novo arquivo." => {
@@ -231,6 +252,26 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Executar" => "Ejecutar",
             "Arquivos" => "Archivos",
             "Criar arquivo" => "Crear archivo",
+            "Criar item no projeto" => "Crear elemento del proyecto",
+            "Novo programa" => "Nuevo programa",
+            "Criar um programa Portugol ou VisuAlg" => "Crear un programa Portugol o VisuAlg",
+            "Nova pasta" => "Nueva carpeta",
+            "Criar uma pasta no projeto" => "Crear una carpeta en el proyecto",
+            "Criar pasta" => "Crear carpeta",
+            "Organize seus programas em uma pasta do projeto." => {
+                "Organiza tus programas en una carpeta del proyecto."
+            }
+            "Nome da pasta" => "Nombre de la carpeta",
+            "Nome da pasta, por exemplo: exercicios" => {
+                "Nombre de la carpeta, por ejemplo: ejercicios"
+            }
+            "Pasta criada" => "Carpeta creada",
+            "Já existe uma pasta com esse nome." => "Ya existe una carpeta con ese nombre.",
+            "Digite um nome válido para a pasta." => "Escribe un nombre válido para la carpeta.",
+            "Não foi possível criar a pasta" => "No se pudo crear la carpeta",
+            "Abra uma pasta de projeto antes de criar itens." => {
+                "Abre una carpeta de proyecto antes de crear elementos."
+            }
             "Aprenda enquanto programa" => "Aprende mientras programas",
             "Linha 7 · decisão" => "Línea 7 · decisión",
             "Uma condição verifica se uma expressão é verdadeira antes de executar um bloco." => {
@@ -288,6 +329,9 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Esta pasta ainda não tem arquivos .por ou .alg." => {
                 "Esta carpeta todavía no tiene archivos .por o .alg."
+            }
+            "Nenhum programa .por ou .alg encontrado. Use + para criar um." => {
+                "No se encontraron programas .por o .alg. Usa + para crear uno."
             }
             "Fechar arquivo" => "Cerrar archivo",
             "Escolha um nome e a linguagem do novo arquivo." => {
@@ -487,6 +531,7 @@ pub(crate) enum MainWindowMsg {
     ProjectSelected(PathBuf),
     ProjectSwitchDecision(bool),
     CreateFile(String, Language),
+    CreateFolder(String),
     OpenFile(PathBuf),
     ActivateDocument(u64),
     CloseDocument(u64),
@@ -899,7 +944,19 @@ impl MainWindow {
         self.project_files = files;
         self.documents.clear();
         self.active_document_id = None;
-        if let Some(path) = self.project_files.first().map(|file| file.path.clone()) {
+        let root_file = self.project_root.as_ref().and_then(|root| {
+            self.project_files
+                .iter()
+                .find(|file| !file.is_directory && file.path.parent() == Some(root.as_path()))
+                .map(|file| file.path.clone())
+        });
+        let first_source_file = root_file.or_else(|| {
+            self.project_files
+                .iter()
+                .find(|file| !file.is_directory)
+                .map(|file| file.path.clone())
+        });
+        if let Some(path) = first_source_file {
             self.open_document(path);
         } else {
             self.output_status = self
@@ -958,7 +1015,7 @@ impl MainWindow {
     fn create_project_file(&mut self, name: String, language: Language) {
         let Some(root) = self.project_root.clone() else {
             self.output_status = self
-                .text("Abra uma pasta de projeto antes de criar arquivos.")
+                .text("Abra uma pasta de projeto antes de criar itens.")
                 .to_string();
             return;
         };
@@ -996,6 +1053,47 @@ impl MainWindow {
                 } else {
                     format!("{}: {error}", self.text("Não foi possível criar o arquivo"))
                 };
+            }
+        }
+    }
+
+    fn create_project_folder(&mut self, name: String) {
+        let Some(root) = self.project_root.clone() else {
+            self.output_status = self
+                .text("Abra uma pasta de projeto antes de criar itens.")
+                .to_string();
+            return;
+        };
+        let name = name.trim();
+        if name.is_empty()
+            || name.starts_with('.')
+            || name.ends_with('.')
+            || name.contains('/')
+            || name.contains('\\')
+            || is_reserved_windows_file_name(name)
+            || name
+                .chars()
+                .any(|character| character.is_control() || "<>:\"|?*".contains(character))
+        {
+            self.output_status = self.text("Digite um nome válido para a pasta.").to_string();
+            return;
+        }
+
+        match fs::create_dir(root.join(name)) {
+            Ok(()) => {
+                if let Ok(files) = scan_project_files(&root) {
+                    self.project_files = files;
+                }
+                self.output_status = self.text("Pasta criada").to_string();
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                self.output_status = self.text("Já existe uma pasta com esse nome.").to_string();
+            }
+            Err(error) => {
+                self.output_status = format!(
+                    "{}: {error}",
+                    self.text("Não foi possível criar a pasta")
+                );
             }
         }
     }
@@ -1053,7 +1151,8 @@ pub struct MainUi {
     project_title: gtk::Label,
     project_label: gtk::Label,
     file_list: gtk::Box,
-    new_file_button: gtk::Button,
+    new_file_button: gtk::MenuButton,
+    expanded_folders: sidebar::ExpandedFolders,
     editor_tabs: gtk::Box,
     status_language: gtk::Label,
     status_details: gtk::Label,
@@ -1213,6 +1312,7 @@ impl SimpleComponent for MainWindow {
             MainWindowMsg::ProjectSelected(_)
                 | MainWindowMsg::ProjectSwitchDecision(_)
                 | MainWindowMsg::CreateFile(_, _)
+                | MainWindowMsg::CreateFolder(_)
                 | MainWindowMsg::OpenFile(_)
                 | MainWindowMsg::ActivateDocument(_)
                 | MainWindowMsg::CloseDocument(_)
@@ -1250,6 +1350,7 @@ impl SimpleComponent for MainWindow {
                 }
             }
             MainWindowMsg::CreateFile(name, language) => self.create_project_file(name, language),
+            MainWindowMsg::CreateFolder(name) => self.create_project_folder(name),
             MainWindowMsg::OpenFile(path) => self.open_document(path),
             MainWindowMsg::ActivateDocument(id) => {
                 if self.documents.iter().any(|doc| doc.id == id) {
@@ -1491,7 +1592,9 @@ impl SimpleComponent for MainWindow {
                 &self.project_files,
                 active_path,
                 project_open,
+                self.project_root.as_deref(),
                 self.ui_language,
+                &ui.expanded_folders,
                 sender.clone(),
             );
             ui.displayed_project_files = project_file_signature;
@@ -1604,6 +1707,8 @@ fn build_window_content(
     let header = header::build_header(&window, ui_language, preferences.theme, sender.clone());
     let project_title = header.project_title.clone();
     let settings_button = header.settings_button.clone();
+    let menu_open_project_button = header.open_project_button.clone();
+    let menu_open_file_button = header.open_file_button.clone();
     let menu_popover = header.popover.clone();
     let theme_options = header.theme_options.clone();
     let run_button = header.run_button.clone();
@@ -1611,10 +1716,14 @@ fn build_window_content(
     let settings = build_settings_window(&window, sender.clone(), preferences);
 
     let file_sidebar = sidebar::build_file_sidebar(ui_language, preferences.default_language);
+    let expanded_folders = file_sidebar.expanded_folders.clone();
     let sidebar_widget = file_sidebar.widget;
     let project_label = file_sidebar.project_label;
     let file_list = file_sidebar.file_list;
     let new_file_button = file_sidebar.new_file_button;
+    let new_program_button = file_sidebar.new_program_button;
+    let new_folder_button = file_sidebar.new_folder_button;
+    let new_item_popover = file_sidebar.new_item_popover;
     let open_project_button = file_sidebar.open_project_button;
     let open_file_button = file_sidebar.open_file_button;
     let language_picker = file_sidebar.language_picker;
@@ -1841,15 +1950,53 @@ fn build_window_content(
         );
     });
 
+    let sender_for_menu_open_project = sender.clone();
+    let window_for_menu_open_project = window.clone();
+    let menu_popover_for_open_project = menu_popover.clone();
+    menu_open_project_button.connect_clicked(move |_| {
+        menu_popover_for_open_project.popdown();
+        show_open_project_dialog(
+            &window_for_menu_open_project,
+            ui_language,
+            sender_for_menu_open_project.clone(),
+        );
+    });
+
+    let sender_for_menu_open_file = sender.clone();
+    let window_for_menu_open_file = window.clone();
+    let menu_popover_for_open_file = menu_popover.clone();
+    menu_open_file_button.connect_clicked(move |_| {
+        menu_popover_for_open_file.popdown();
+        show_open_file_dialog(
+            &window_for_menu_open_file,
+            ui_language,
+            sender_for_menu_open_file.clone(),
+        );
+    });
+
     let sender_for_new_file = sender.clone();
     let window_for_new_file = window.clone();
     let language_picker_for_new_file = language_picker.clone();
-    new_file_button.connect_clicked(move |_| {
+    let popover_for_new_file = new_item_popover.clone();
+    new_program_button.connect_clicked(move |_| {
+        popover_for_new_file.popdown();
         show_new_file_dialog(
             &window_for_new_file,
             &language_picker_for_new_file,
             ui_language,
             sender_for_new_file.clone(),
+        );
+    });
+
+    let sender_for_new_folder = sender.clone();
+    let window_for_new_folder = window.clone();
+    let popover_for_new_folder = new_item_popover.clone();
+    new_folder_button.connect_clicked(move |_| {
+        popover_for_new_folder.popdown();
+        show_new_folder_dialog(
+            &window_for_new_folder,
+            ui_language,
+            sender_for_new_folder.clone(),
         );
     });
 
@@ -1938,6 +2085,7 @@ fn build_window_content(
         project_label,
         file_list,
         new_file_button,
+        expanded_folders,
         editor_tabs,
         status_language,
         status_details,
@@ -2325,6 +2473,71 @@ fn show_new_file_dialog(
     dialog.present();
 }
 
+fn show_new_folder_dialog(
+    parent: &gtk::ApplicationWindow,
+    ui_language: UiLanguage,
+    sender: ComponentSender<MainWindow>,
+) {
+    let dialog = gtk::Window::new();
+    dialog.set_title(Some(tr(ui_language, "Nova pasta")));
+    dialog.set_default_size(400, 220);
+    dialog.set_resizable(false);
+    dialog.set_transient_for(Some(parent));
+    dialog.set_modal(true);
+    dialog.add_css_class("potoo-window");
+    dialog.add_css_class("potoo-dialog-window");
+    if adw::StyleManager::default().is_dark() {
+        dialog.add_css_class("potoo-dark");
+    }
+
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    content.add_css_class("potoo-dialog-surface");
+    content.set_margin_start(24);
+    content.set_margin_end(24);
+    content.set_margin_top(22);
+    content.set_margin_bottom(18);
+    let title = gtk::Label::new(Some(tr(ui_language, "Nova pasta")));
+    title.set_xalign(0.0);
+    title.add_css_class("potoo-settings-title");
+    content.append(&title);
+    let description = gtk::Label::new(Some(tr(
+        ui_language,
+        "Organize seus programas em uma pasta do projeto.",
+    )));
+    description.set_xalign(0.0);
+    description.add_css_class("potoo-settings-description");
+    content.append(&description);
+    content.append(&gtk::Label::new(Some(tr(ui_language, "Nome da pasta"))));
+    let name = gtk::Entry::new();
+    name.set_placeholder_text(Some(tr(
+        ui_language,
+        "Nome da pasta, por exemplo: exercicios",
+    )));
+    content.append(&name);
+
+    let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    actions.set_halign(gtk::Align::End);
+    let cancel_button = gtk::Button::with_label(tr(ui_language, "Cancelar"));
+    let create_button = gtk::Button::with_label(tr(ui_language, "Criar pasta"));
+    create_button.add_css_class("potoo-run-button");
+    actions.append(&cancel_button);
+    actions.append(&create_button);
+    content.append(&actions);
+    dialog.set_child(Some(&content));
+
+    let dialog_for_cancel = dialog.clone();
+    cancel_button.connect_clicked(move |_| dialog_for_cancel.close());
+    let dialog_for_create = dialog.clone();
+    let name_for_create = name.clone();
+    create_button.connect_clicked(move |_| {
+        sender.input(MainWindowMsg::CreateFolder(name_for_create.text().to_string()));
+        dialog_for_create.close();
+    });
+    let create_button_for_entry = create_button.clone();
+    name.connect_activate(move |_| create_button_for_entry.emit_clicked());
+    dialog.present();
+}
+
 fn show_save_dialog(
     parent: &gtk::ApplicationWindow,
     document: &SourceDocument,
@@ -2531,27 +2744,28 @@ fn supported_save_path(
 }
 
 fn scan_project_files(root: &Path) -> std::io::Result<Vec<ProjectFile>> {
-    let mut paths = Vec::new();
-    scan_source_directory(root, &mut paths)?;
-    let mut files = paths
-        .into_iter()
-        .map(|path| ProjectFile {
-            relative_path: path
-                .strip_prefix(root)
-                .unwrap_or(&path)
-                .to_string_lossy()
-                .into_owned(),
-            path,
-        })
-        .collect::<Vec<_>>();
-    files.sort_by_key(|file| file.relative_path.to_lowercase());
-    Ok(files)
+    let mut entries = Vec::new();
+    scan_source_directory(root, root, &mut entries)?;
+    Ok(entries)
 }
 
-fn scan_source_directory(directory: &Path, files: &mut Vec<PathBuf>) -> std::io::Result<()> {
-    let mut entries = fs::read_dir(directory)?.collect::<Result<Vec<_>, _>>()?;
-    entries.sort_by_key(|entry| entry.file_name());
-    for entry in entries {
+fn scan_source_directory(
+    root: &Path,
+    directory: &Path,
+    project_entries: &mut Vec<ProjectFile>,
+) -> std::io::Result<()> {
+    let mut children = fs::read_dir(directory)?.collect::<Result<Vec<_>, _>>()?;
+    children.sort_by(|left, right| {
+        let left_is_directory = left.file_type().map(|kind| kind.is_dir()).unwrap_or(false);
+        let right_is_directory = right.file_type().map(|kind| kind.is_dir()).unwrap_or(false);
+        right_is_directory.cmp(&left_is_directory).then_with(|| {
+            left.file_name()
+                .to_string_lossy()
+                .to_lowercase()
+                .cmp(&right.file_name().to_string_lossy().to_lowercase())
+        })
+    });
+    for entry in children {
         let name = entry.file_name();
         let visible_name = name.to_string_lossy();
         if visible_name.starts_with('.')
@@ -2562,9 +2776,26 @@ fn scan_source_directory(directory: &Path, files: &mut Vec<PathBuf>) -> std::io:
         let path = entry.path();
         let file_type = entry.file_type()?;
         if file_type.is_dir() {
-            scan_source_directory(&path, files)?;
+            project_entries.push(ProjectFile {
+                relative_path: path
+                    .strip_prefix(root)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .into_owned(),
+                path: path.clone(),
+                is_directory: true,
+            });
+            scan_source_directory(root, &path, project_entries)?;
         } else if file_type.is_file() && Language::from_path(&path).is_some() {
-            files.push(path);
+            project_entries.push(ProjectFile {
+                relative_path: path
+                    .strip_prefix(root)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .into_owned(),
+                path,
+                is_directory: false,
+            });
         }
     }
     Ok(())

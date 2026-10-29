@@ -174,7 +174,8 @@ popover.potoo-header-popover {
   color: var(--potoo-text);
 }
 
-.potoo-menu-settings-action {
+.potoo-menu-settings-action,
+.potoo-menu-action {
   min-height: 32px;
   padding: 0 8px;
   background-color: transparent;
@@ -185,7 +186,8 @@ popover.potoo-header-popover {
   box-shadow: none;
 }
 
-.potoo-menu-settings-action:hover {
+.potoo-menu-settings-action:hover,
+.potoo-menu-action:hover {
   background-color: var(--potoo-panel-hover-bg);
 }
 
@@ -217,6 +219,46 @@ popover.potoo-header-popover {
   min-width: 220px;
   background-color: var(--potoo-panel-bg);
   border-right: 1px solid var(--potoo-border);
+}
+
+popover.potoo-sidebar-popover {
+  background-color: var(--potoo-surface-bg);
+  border: 1px solid var(--potoo-border);
+  border-radius: 5px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+
+.potoo-sidebar-menu-item {
+  min-height: 32px;
+  padding: 0 8px;
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 2px;
+  color: var(--potoo-text);
+  box-shadow: none;
+}
+
+.potoo-sidebar-menu-item:hover {
+  background-color: var(--potoo-panel-hover-bg);
+}
+
+.potoo-folder-expander {
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 2px;
+  color: var(--potoo-text);
+  box-shadow: none;
+}
+
+.potoo-folder-expander:hover {
+  background-color: var(--potoo-panel-hover-bg);
+}
+
+.potoo-folder-title {
+  min-height: 30px;
+  color: var(--potoo-text);
 }
 
 .potoo-sidebar-action {

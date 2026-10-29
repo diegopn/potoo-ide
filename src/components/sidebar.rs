@@ -4,22 +4,34 @@ use crate::{
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::path::PathBuf;
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+    rc::Rc,
+};
+
+pub(crate) type ExpandedFolders = Rc<RefCell<HashSet<PathBuf>>>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ProjectFile {
     pub(crate) path: PathBuf,
     pub(crate) relative_path: String,
+    pub(crate) is_directory: bool,
 }
 
 pub(crate) struct SidebarUi {
     pub(crate) widget: gtk::Widget,
     pub(crate) project_label: gtk::Label,
     pub(crate) file_list: gtk::Box,
-    pub(crate) new_file_button: gtk::Button,
+    pub(crate) new_file_button: gtk::MenuButton,
+    pub(crate) new_program_button: gtk::Button,
+    pub(crate) new_folder_button: gtk::Button,
+    pub(crate) new_item_popover: gtk::Popover,
     pub(crate) open_project_button: gtk::Button,
     pub(crate) open_file_button: gtk::Button,
     pub(crate) language_picker: gtk::DropDown,
+    pub(crate) expanded_folders: ExpandedFolders,
 }
 
 pub(crate) fn build_file_sidebar(language: UiLanguage, default_language: Language) -> SidebarUi {
@@ -40,11 +52,39 @@ pub(crate) fn build_file_sidebar(language: UiLanguage, default_language: Languag
     language_picker.add_css_class("potoo-sidebar-language-picker");
     language_picker.set_selected(default_language.selected_index());
     language_picker.set_tooltip_text(Some(tr(language, "Linguagem para novos arquivos")));
-    let new_file_button = gtk::Button::new();
+    let new_file_button = gtk::MenuButton::new();
     new_file_button.set_child(Some(&gtk::Image::from_icon_name("list-add-symbolic")));
-    new_file_button.set_tooltip_text(Some(tr(language, "Criar arquivo")));
+    new_file_button.set_tooltip_text(Some(tr(language, "Criar item no projeto")));
     new_file_button.add_css_class("potoo-sidebar-action");
     new_file_button.set_sensitive(false);
+
+    let new_item_popover = gtk::Popover::new();
+    new_item_popover.add_css_class("potoo-sidebar-popover");
+    let new_item_menu = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    new_item_menu.set_margin_top(4);
+    new_item_menu.set_margin_bottom(4);
+    new_item_menu.set_margin_start(4);
+    new_item_menu.set_margin_end(4);
+    let new_program_button = icon_label_button(
+        "text-x-generic-symbolic",
+        tr(language, "Novo programa"),
+        tr(language, "Criar um programa Portugol ou VisuAlg"),
+        "potoo-sidebar-menu-item",
+    );
+    let new_folder_button = icon_label_button(
+        "folder-new-symbolic",
+        tr(language, "Nova pasta"),
+        tr(language, "Criar uma pasta no projeto"),
+        "potoo-sidebar-menu-item",
+    );
+    new_program_button.set_halign(gtk::Align::Fill);
+    new_program_button.set_hexpand(true);
+    new_folder_button.set_halign(gtk::Align::Fill);
+    new_folder_button.set_hexpand(true);
+    new_item_menu.append(&new_program_button);
+    new_item_menu.append(&new_folder_button);
+    new_item_popover.set_child(Some(&new_item_menu));
+    new_file_button.set_popover(Some(&new_item_popover));
     heading_row.append(&heading);
     heading_row.append(&language_picker);
     heading_row.append(&new_file_button);
@@ -104,9 +144,13 @@ pub(crate) fn build_file_sidebar(language: UiLanguage, default_language: Languag
         project_label,
         file_list,
         new_file_button,
+        new_program_button,
+        new_folder_button,
+        new_item_popover,
         open_project_button,
         open_file_button,
         language_picker,
+        expanded_folders: Rc::new(RefCell::new(HashSet::new())),
     }
 }
 
@@ -115,7 +159,9 @@ pub(crate) fn rebuild_file_list(
     files: &[ProjectFile],
     active_path: Option<&PathBuf>,
     project_open: bool,
+    project_root: Option<&std::path::Path>,
     language: UiLanguage,
+    expanded_folders: &Rc<RefCell<HashSet<PathBuf>>>,
     sender: ComponentSender<MainWindow>,
 ) {
     clear_box(file_list);
@@ -136,13 +182,87 @@ pub(crate) fn rebuild_file_list(
         return;
     }
 
+    let mut folder_contents = HashMap::new();
+    if let Some(project_root) = project_root {
+        folder_contents.insert(project_root.to_path_buf(), file_list.clone());
+    }
+    let expanded_paths = expanded_folders.borrow().clone();
+    if project_open && files.iter().all(|file| file.is_directory) {
+        let empty_label = gtk::Label::new(Some(tr(
+            language,
+            "Nenhum programa .por ou .alg encontrado. Use + para criar um.",
+        )));
+        empty_label.set_wrap(true);
+        empty_label.set_xalign(0.0);
+        empty_label.add_css_class("potoo-muted");
+        empty_label.set_margin_start(14);
+        empty_label.set_margin_end(14);
+        empty_label.set_margin_top(12);
+        empty_label.set_margin_bottom(8);
+        file_list.append(&empty_label);
+    }
+
     for file in files {
+        if file.is_directory {
+            let parent = file
+                .path
+                .parent()
+                .and_then(|path| folder_contents.get(path))
+                .cloned()
+                .unwrap_or_else(|| file_list.clone());
+            let expander = gtk::Expander::new(None);
+            expander.add_css_class("potoo-folder-expander");
+            expander.set_hexpand(true);
+            let title = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            title.set_margin_start(8);
+            title.set_margin_end(8);
+            title.set_margin_top(4);
+            title.set_margin_bottom(4);
+            title.add_css_class("potoo-folder-title");
+            title.append(&gtk::Image::from_icon_name("folder-symbolic"));
+            let folder_name = file
+                .path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| file.relative_path.clone());
+            let label = gtk::Label::new(Some(&folder_name));
+            label.set_xalign(0.0);
+            label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+            label.set_hexpand(true);
+            title.append(&label);
+            expander.set_label_widget(Some(&title));
+
+            let children = gtk::Box::new(gtk::Orientation::Vertical, 1);
+            children.set_margin_start(14);
+            expander.set_child(Some(&children));
+            expander.set_expanded(expanded_paths.contains(&file.path));
+            let expanded_path = file.path.clone();
+            let expanded_state = Rc::clone(expanded_folders);
+            expander.connect_expanded_notify(move |expander| {
+                let mut paths = expanded_state.borrow_mut();
+                if expander.is_expanded() {
+                    paths.insert(expanded_path.clone());
+                } else {
+                    paths.remove(&expanded_path);
+                }
+            });
+            parent.append(&expander);
+            folder_contents.insert(file.path.clone(), children);
+            continue;
+        }
+
+        let parent = file
+            .path
+            .parent()
+            .and_then(|path| folder_contents.get(path))
+            .cloned()
+            .unwrap_or_else(|| file_list.clone());
         let button = gtk::Button::new();
         button.add_css_class("potoo-file-row");
         if active_path == Some(&file.path) {
             button.add_css_class("potoo-file-row-selected");
         }
-        button.set_tooltip_text(Some(&file.path.display().to_string()));
+        button.set_tooltip_text(Some(&file.relative_path));
         button.set_hexpand(true);
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         row.set_hexpand(true);
@@ -151,7 +271,12 @@ pub(crate) fn rebuild_file_list(
         row.set_margin_top(7);
         row.set_margin_bottom(7);
         row.append(&gtk::Image::from_icon_name("text-x-generic-symbolic"));
-        let label = gtk::Label::new(Some(&file.relative_path));
+        let file_name = file
+            .path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| file.relative_path.clone());
+        let label = gtk::Label::new(Some(&file_name));
         label.set_xalign(0.0);
         label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
         label.set_max_width_chars(28);
@@ -163,6 +288,6 @@ pub(crate) fn rebuild_file_list(
         button.connect_clicked(move |_| {
             sender_for_file.input(MainWindowMsg::OpenFile(path.clone()));
         });
-        file_list.append(&button);
+        parent.append(&button);
     }
 }
