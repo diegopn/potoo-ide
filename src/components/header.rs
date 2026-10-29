@@ -126,6 +126,9 @@ pub(crate) fn build_header(
     header_actions.append(&run_button);
 
     #[cfg(target_os = "linux")]
+    header_actions.set_margin_end(8);
+
+    #[cfg(target_os = "linux")]
     let widget = {
         let titlebar = gtk::HeaderBar::new();
         titlebar.add_css_class("potoo-linux-titlebar");

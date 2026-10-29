@@ -195,7 +195,7 @@ popover.potoo-header-popover {
 }
 
 .potoo-run-button {
-  min-height: 30px;
+  min-height: 26px;
   padding: 0 11px;
   background-color: var(--potoo-accent);
   background-image: none;
