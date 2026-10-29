@@ -22,12 +22,14 @@ pub(crate) struct ProjectFile {
 
 pub(crate) struct SidebarUi {
     pub(crate) widget: gtk::Widget,
+    pub(crate) project_row: gtk::Box,
     pub(crate) project_label: gtk::Label,
     pub(crate) file_list: gtk::Box,
     pub(crate) new_file_button: gtk::MenuButton,
     pub(crate) new_program_button: gtk::Button,
     pub(crate) new_folder_button: gtk::Button,
     pub(crate) new_item_popover: gtk::Popover,
+    pub(crate) open_popover: gtk::Popover,
     pub(crate) open_project_button: gtk::Button,
     pub(crate) open_file_button: gtk::Button,
     pub(crate) language_picker: gtk::DropDown,
@@ -39,19 +41,28 @@ pub(crate) fn build_file_sidebar(language: UiLanguage, default_language: Languag
     sidebar.add_css_class("potoo-file-sidebar");
     sidebar.set_size_request(220, -1);
 
-    let heading_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-    heading_row.set_margin_start(16);
-    heading_row.set_margin_end(10);
+    let heading_row = gtk::Box::new(gtk::Orientation::Horizontal, 3);
+    heading_row.set_margin_start(12);
+    heading_row.set_margin_end(8);
     heading_row.set_margin_top(12);
     heading_row.set_margin_bottom(8);
     let heading = gtk::Label::new(Some(tr(language, "Arquivos")));
     heading.set_xalign(0.0);
     heading.add_css_class("heading");
     heading.set_hexpand(true);
+    heading.set_ellipsize(gtk::pango::EllipsizeMode::End);
     let language_picker = gtk::DropDown::from_strings(&["Portugol", "VisuAlg"]);
     language_picker.add_css_class("potoo-sidebar-language-picker");
     language_picker.set_selected(default_language.selected_index());
     language_picker.set_tooltip_text(Some(tr(language, "Linguagem para novos arquivos")));
+
+    let open_menu = gtk::MenuButton::new();
+    open_menu.set_child(Some(&gtk::Image::from_icon_name(
+        "folder-open-symbolic",
+    )));
+    open_menu.set_tooltip_text(Some(tr(language, "Abrir projeto ou programa")));
+    open_menu.add_css_class("potoo-sidebar-action");
+
     let new_file_button = gtk::MenuButton::new();
     new_file_button.set_child(Some(&gtk::Image::from_icon_name("list-add-symbolic")));
     new_file_button.set_tooltip_text(Some(tr(language, "Criar item no projeto")));
@@ -77,42 +88,48 @@ pub(crate) fn build_file_sidebar(language: UiLanguage, default_language: Languag
         tr(language, "Criar uma pasta no projeto"),
         "potoo-sidebar-menu-item",
     );
-    new_program_button.set_halign(gtk::Align::Fill);
-    new_program_button.set_hexpand(true);
-    new_folder_button.set_halign(gtk::Align::Fill);
-    new_folder_button.set_hexpand(true);
     new_item_menu.append(&new_program_button);
     new_item_menu.append(&new_folder_button);
     new_item_popover.set_child(Some(&new_item_menu));
     new_file_button.set_popover(Some(&new_item_popover));
-    heading_row.append(&heading);
-    heading_row.append(&language_picker);
-    heading_row.append(&new_file_button);
-    sidebar.append(&heading_row);
 
-    let file_actions = gtk::Box::new(gtk::Orientation::Vertical, 4);
-    file_actions.add_css_class("potoo-file-actions");
+    let open_popover = gtk::Popover::new();
+    open_popover.add_css_class("potoo-sidebar-popover");
+    let open_menu_content = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    open_menu_content.set_margin_top(4);
+    open_menu_content.set_margin_bottom(4);
+    open_menu_content.set_margin_start(4);
+    open_menu_content.set_margin_end(4);
     let open_project_button = icon_label_button(
         "folder-open-symbolic",
         tr(language, "Abrir pasta"),
         tr(language, "Abrir pasta de projeto"),
-        "potoo-file-action-button",
+        "potoo-sidebar-menu-item",
     );
     let open_file_button = icon_label_button(
         "document-open-symbolic",
         tr(language, "Abrir arquivo"),
         tr(language, "Abrir arquivo de código"),
-        "potoo-file-action-button",
+        "potoo-sidebar-menu-item",
     );
-    file_actions.append(&open_project_button);
-    file_actions.append(&open_file_button);
-    sidebar.append(&file_actions);
+    open_menu_content.append(&open_project_button);
+    open_menu_content.append(&open_file_button);
+    open_popover.set_child(Some(&open_menu_content));
+    open_menu.set_popover(Some(&open_popover));
+
+    heading_row.append(&heading);
+    heading_row.append(&language_picker);
+    heading_row.append(&open_menu);
+    heading_row.append(&new_file_button);
+    sidebar.append(&heading_row);
 
     let project = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    project.set_margin_start(12);
-    project.set_margin_end(12);
-    project.set_margin_top(4);
-    project.set_margin_bottom(8);
+    project.add_css_class("potoo-project-row");
+    project.set_margin_start(10);
+    project.set_margin_end(10);
+    project.set_margin_top(6);
+    project.set_margin_bottom(4);
+    project.set_visible(false);
     project.append(&gtk::Image::from_icon_name("folder-symbolic"));
     let project_label = gtk::Label::new(Some(tr(language, "Meu primeiro programa")));
     project_label.set_xalign(0.0);
@@ -122,16 +139,7 @@ pub(crate) fn build_file_sidebar(language: UiLanguage, default_language: Languag
     sidebar.append(&project);
 
     let file_list = gtk::Box::new(gtk::Orientation::Vertical, 2);
-    let empty_label = gtk::Label::new(Some(tr(
-        language,
-        "Abra uma pasta de projeto para navegar pelos arquivos.",
-    )));
-    empty_label.set_wrap(true);
-    empty_label.add_css_class("potoo-muted");
-    empty_label.set_margin_start(14);
-    empty_label.set_margin_end(14);
-    empty_label.set_margin_top(12);
-    file_list.append(&empty_label);
+    file_list.append(&empty_project_state(language));
     let file_scroll = gtk::ScrolledWindow::builder()
         .vexpand(true)
         .hscrollbar_policy(gtk::PolicyType::Never)
@@ -141,12 +149,14 @@ pub(crate) fn build_file_sidebar(language: UiLanguage, default_language: Languag
 
     SidebarUi {
         widget: sidebar.upcast(),
+        project_row: project,
         project_label,
         file_list,
         new_file_button,
         new_program_button,
         new_folder_button,
         new_item_popover,
+        open_popover,
         open_project_button,
         open_file_button,
         language_picker,
@@ -166,19 +176,21 @@ pub(crate) fn rebuild_file_list(
 ) {
     clear_box(file_list);
     if files.is_empty() {
-        let message = if project_open {
-            "Esta pasta ainda não tem arquivos .por ou .alg."
+        if project_open {
+            let empty_label = gtk::Label::new(Some(tr(
+                language,
+                "Esta pasta ainda não tem arquivos .por ou .alg.",
+            )));
+            empty_label.set_wrap(true);
+            empty_label.set_xalign(0.0);
+            empty_label.add_css_class("potoo-muted");
+            empty_label.set_margin_start(14);
+            empty_label.set_margin_end(14);
+            empty_label.set_margin_top(12);
+            file_list.append(&empty_label);
         } else {
-            "Abra uma pasta de projeto para navegar pelos arquivos."
-        };
-        let empty_label = gtk::Label::new(Some(tr(language, message)));
-        empty_label.set_wrap(true);
-        empty_label.set_xalign(0.0);
-        empty_label.add_css_class("potoo-muted");
-        empty_label.set_margin_start(14);
-        empty_label.set_margin_end(14);
-        empty_label.set_margin_top(12);
-        file_list.append(&empty_label);
+            file_list.append(&empty_project_state(language));
+        }
         return;
     }
 
@@ -290,4 +302,27 @@ pub(crate) fn rebuild_file_list(
         });
         parent.append(&button);
     }
+}
+
+fn empty_project_state(language: UiLanguage) -> gtk::Widget {
+    let state = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    state.add_css_class("potoo-sidebar-empty-state");
+    state.set_margin_start(14);
+    state.set_margin_end(14);
+    state.set_margin_top(16);
+
+    let title = gtk::Label::new(Some(tr(language, "Nenhum projeto aberto")));
+    title.set_xalign(0.0);
+    title.add_css_class("potoo-sidebar-empty-title");
+    state.append(&title);
+
+    let description = gtk::Label::new(Some(tr(
+        language,
+        "Abra uma pasta ou um programa para começar.",
+    )));
+    description.set_xalign(0.0);
+    description.set_wrap(true);
+    description.add_css_class("potoo-muted");
+    state.append(&description);
+    state.upcast()
 }

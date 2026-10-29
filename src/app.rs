@@ -64,6 +64,11 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Abrir pasta" => "Open folder",
             "Abrir pasta de projeto" => "Open project folder",
             "Abrir arquivo" => "Open file",
+            "Abrir projeto ou programa" => "Open project or program",
+            "Nenhum projeto aberto" => "No project open",
+            "Abra uma pasta ou um programa para começar." => {
+                "Open a folder or program to get started."
+            }
             "Salvar arquivo" => "Save file",
             "Salvar" => "Save",
             "Salvar como" => "Save as",
@@ -140,9 +145,6 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Espaços por nível de recuo." => "Spaces inserted for each indentation level.",
             "2 espaços" => "2 spaces",
             "4 espaços" => "4 spaces",
-            "Abra uma pasta de projeto para navegar pelos arquivos." => {
-                "Open a project folder to browse its files."
-            }
             "Esta pasta ainda não tem arquivos .por ou .alg." => {
                 "This folder does not contain any .por or .alg files yet."
             }
@@ -244,6 +246,11 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Abrir pasta" => "Abrir carpeta",
             "Abrir pasta de projeto" => "Abrir carpeta del proyecto",
             "Abrir arquivo" => "Abrir archivo",
+            "Abrir projeto ou programa" => "Abrir proyecto o programa",
+            "Nenhum projeto aberto" => "No hay ningún proyecto abierto",
+            "Abra uma pasta ou um programa para começar." => {
+                "Abre una carpeta o un programa para empezar."
+            }
             "Salvar arquivo" => "Guardar archivo",
             "Salvar" => "Guardar",
             "Salvar como" => "Guardar como",
@@ -324,9 +331,6 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Espaços por nível de recuo." => "Espacios insertados por cada nivel de sangría.",
             "2 espaços" => "2 espacios",
             "4 espaços" => "4 espacios",
-            "Abra uma pasta de projeto para navegar pelos arquivos." => {
-                "Abre una carpeta de proyecto para explorar sus archivos."
-            }
             "Esta pasta ainda não tem arquivos .por ou .alg." => {
                 "Esta carpeta todavía no tiene archivos .por o .alg."
             }
@@ -1149,6 +1153,7 @@ pub struct MainUi {
     settings: SettingsUi,
     theme_options: Vec<(ThemePreference, gtk::ToggleButton)>,
     project_title: gtk::Label,
+    project_row: gtk::Box,
     project_label: gtk::Label,
     file_list: gtk::Box,
     new_file_button: gtk::MenuButton,
@@ -1599,6 +1604,7 @@ impl SimpleComponent for MainWindow {
             );
             ui.displayed_project_files = project_file_signature;
             ui.displayed_project_open = project_open;
+            ui.project_row.set_visible(project_open);
             ui.new_file_button.set_sensitive(project_open);
         }
 
@@ -1716,6 +1722,7 @@ fn build_window_content(
     let file_sidebar = sidebar::build_file_sidebar(ui_language, preferences.default_language);
     let expanded_folders = file_sidebar.expanded_folders.clone();
     let sidebar_widget = file_sidebar.widget;
+    let project_row = file_sidebar.project_row;
     let project_label = file_sidebar.project_label;
     let file_list = file_sidebar.file_list;
     let new_file_button = file_sidebar.new_file_button;
@@ -1724,6 +1731,7 @@ fn build_window_content(
     let new_item_popover = file_sidebar.new_item_popover;
     let open_project_button = file_sidebar.open_project_button;
     let open_file_button = file_sidebar.open_file_button;
+    let open_popover = file_sidebar.open_popover;
     let language_picker = file_sidebar.language_picker;
 
     let code_buffer = gtk::TextBuffer::new(None::<&gtk::TextTagTable>);
@@ -1927,7 +1935,9 @@ fn build_window_content(
 
     let sender_for_open_project = sender.clone();
     let window_for_open_project = window.clone();
+    let open_popover_for_project = open_popover.clone();
     open_project_button.connect_clicked(move |_| {
+        open_popover_for_project.popdown();
         show_open_project_dialog(
             &window_for_open_project,
             ui_language,
@@ -1937,7 +1947,9 @@ fn build_window_content(
 
     let sender_for_open_file = sender.clone();
     let window_for_open_file = window.clone();
+    let open_popover_for_file = open_popover.clone();
     open_file_button.connect_clicked(move |_| {
+        open_popover_for_file.popdown();
         show_open_file_dialog(
             &window_for_open_file,
             ui_language,
@@ -2053,6 +2065,7 @@ fn build_window_content(
         settings,
         theme_options,
         project_title,
+        project_row,
         project_label,
         file_list,
         new_file_button,
