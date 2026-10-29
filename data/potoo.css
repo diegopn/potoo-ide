@@ -143,10 +143,22 @@ headerbar.potoo-linux-titlebar button.titlebutton {
 }
 
 popover.potoo-sidebar-popover {
+  background-color: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+popover.potoo-sidebar-popover > contents {
   background-color: var(--potoo-surface-bg);
   border: 1px solid var(--potoo-border);
   border-radius: 3px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+
+popover.potoo-sidebar-popover > arrow {
+  background-color: var(--potoo-surface-bg);
+  border-color: var(--potoo-border);
 }
 
 .potoo-sidebar-menu-item {
