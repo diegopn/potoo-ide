@@ -7,8 +7,8 @@ window.potoo-window {
   --potoo-gutter-bg: #f7f8f9;
   --potoo-border: #d2d7dc;
   --potoo-border-subtle: #e3e6e9;
-  --potoo-text: #252b31;
-  --potoo-text-secondary: #3e4851;
+  --potoo-text: #111111;
+  --potoo-text-secondary: #4b5563;
   --potoo-text-muted: #626c75;
   --potoo-accent: #147a49;
   --potoo-accent-hover: #0f663b;
@@ -49,8 +49,8 @@ window.potoo-window.potoo-dark {
   --potoo-gutter-bg: #2b3035;
   --potoo-border: #4a5259;
   --potoo-border-subtle: #3c4248;
-  --potoo-text: #e8ecef;
-  --potoo-text-secondary: #c7cdd3;
+  --potoo-text: #ffffff;
+  --potoo-text-secondary: #d1d5db;
   --potoo-text-muted: #aab2b9;
   --potoo-accent: #1e7548;
   --potoo-accent-hover: #176c43;
