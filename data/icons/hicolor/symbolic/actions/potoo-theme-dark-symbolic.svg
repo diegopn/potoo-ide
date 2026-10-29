@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <rect x="3.5" y="4.25" width="17" height="13.5" fill="none" stroke="currentColor" class="transparent-fill foreground-stroke" stroke-width="1.7"/>
+  <path d="M4 8.25h16M7 13h10M8.5 21h7m-3.5-3.25V21" fill="none" stroke="currentColor" class="transparent-fill foreground-stroke" stroke-linecap="square" stroke-linejoin="miter" stroke-width="1.7"/>
+  <circle cx="7.5" cy="13" r="1.65" fill="none" stroke="currentColor" class="transparent-fill foreground-stroke" stroke-width="1.7"/>
+</svg>
