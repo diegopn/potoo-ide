@@ -239,6 +239,12 @@ headerbar.potoo-linux-titlebar button.titlebutton {
   background-color: var(--potoo-panel-hover-bg);
 }
 
+.potoo-project-field-label {
+  color: var(--potoo-text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+}
+
 .potoo-project-location {
   min-height: 32px;
   padding: 0 8px;
@@ -260,6 +266,24 @@ headerbar.potoo-linux-titlebar button.titlebutton {
 
 .potoo-project-location-button:hover {
   background-color: var(--potoo-panel-hover-bg);
+}
+
+.potoo-project-cancel-button {
+  min-height: 28px;
+  padding: 0 12px;
+  background-color: var(--potoo-panel-bg);
+  background-image: none;
+  border: 0;
+  border-radius: 2px;
+  color: var(--potoo-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.potoo-project-cancel-button:hover {
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
 }
 
 .potoo-project-error {
@@ -697,6 +721,12 @@ label.potoo-line-numbers.potoo-font-17 {
   border: 1px solid var(--potoo-border);
   border-radius: 0;
   color: var(--potoo-text);
+}
+
+.potoo-dialog-surface entry.potoo-project-name-entry:focus {
+  border-color: var(--potoo-border);
+  outline-style: none;
+  box-shadow: inset 0 -2px var(--potoo-accent);
 }
 
 dropdown.potoo-settings-picker > button {
