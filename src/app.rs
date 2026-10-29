@@ -118,10 +118,6 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "O idioma escolhido será aplicado ao reabrir o Potoo." => {
                 "The selected language will apply the next time you open Potoo."
             }
-            "Idioma para novos programas" => "Language for new programs",
-            "Escolha a linguagem padrão dos novos arquivos." => {
-                "Choose the default language for new files."
-            }
             "Recuo" => "Indentation",
             "Espaços por nível de recuo." => "Spaces inserted for each indentation level.",
             "2 espaços" => "2 spaces",
@@ -282,10 +278,6 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Idioma da interface" => "Idioma de la interfaz",
             "O idioma escolhido será aplicado ao reabrir o Potoo." => {
                 "El idioma elegido se aplicará la próxima vez que abras Potoo."
-            }
-            "Idioma para novos programas" => "Lenguaje para programas nuevos",
-            "Escolha a linguagem padrão dos novos arquivos." => {
-                "Elige el lenguaje predeterminado para archivos nuevos."
             }
             "Recuo" => "Sangría",
             "Espaços por nível de recuo." => "Espacios insertados por cada nivel de sangría.",
@@ -1049,7 +1041,6 @@ struct SettingsUi {
     line_numbers_switch: gtk::Switch,
     word_wrap_switch: gtk::Switch,
     indent_width_picker: gtk::DropDown,
-    default_language_picker: gtk::DropDown,
     ui_language_picker: gtk::DropDown,
 }
 
@@ -1399,9 +1390,6 @@ impl SimpleComponent for MainWindow {
         }
         if ui.displayed_new_file_language != self.new_file_language {
             ui.language_picker
-                .set_selected(self.new_file_language.selected_index());
-            ui.settings
-                .default_language_picker
                 .set_selected(self.new_file_language.selected_index());
             ui.displayed_new_file_language = self.new_file_language;
         }
@@ -2072,18 +2060,6 @@ fn build_settings_window(
         &indent_width_picker,
     ));
 
-    let default_language_picker = gtk::DropDown::from_strings(&["Portugol", "VisuAlg"]);
-    default_language_picker.add_css_class("potoo-settings-picker");
-    default_language_picker.set_selected(if preferences.default_language == Language::Visualg {
-        1
-    } else {
-        0
-    });
-    editor.append(&settings_row(
-        tr(language, "Idioma para novos programas"),
-        tr(language, "Escolha a linguagem padrão dos novos arquivos."),
-        &default_language_picker,
-    ));
     page.append(&editor);
 
     let interface = settings_section(tr(language, "Interface"));
@@ -2142,17 +2118,6 @@ fn build_settings_window(
         ));
     });
 
-    let sender_for_default_language = sender.clone();
-    default_language_picker.connect_selected_notify(move |picker| {
-        sender_for_default_language.input(MainWindowMsg::LanguageSelected(
-            if picker.selected() == 1 {
-                Language::Visualg
-            } else {
-                Language::Portugol
-            },
-        ));
-    });
-
     let sender_for_ui_language = sender.clone();
     ui_language_picker.connect_selected_notify(move |picker| {
         sender_for_ui_language.input(MainWindowMsg::InterfaceLanguageSelected(
@@ -2172,7 +2137,6 @@ fn build_settings_window(
         line_numbers_switch,
         word_wrap_switch,
         indent_width_picker,
-        default_language_picker,
         ui_language_picker,
     }
 }
