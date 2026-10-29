@@ -243,14 +243,14 @@ pub(crate) fn make_syntax_tags(buffer: &gtk::TextBuffer) -> SyntaxTags {
 
 pub(crate) fn set_syntax_palette(tags: &SyntaxTags, dark: bool) {
     tags.keyword
-        .set_property("foreground", if dark { "#65d48d" } else { "#15945b" });
+        .set_property("foreground", if dark { "#72cc99" } else { "#147a49" });
     tags.string
-        .set_property("foreground", if dark { "#a6e9b8" } else { "#225b42" });
+        .set_property("foreground", if dark { "#d6aa72" } else { "#8a5a23" });
     tags.number
-        .set_property("foreground", if dark { "#5fd1b5" } else { "#168b78" });
+        .set_property("foreground", if dark { "#b5a0eb" } else { "#6c57a3" });
     tags.current_line.set_property(
         "paragraph-background",
-        if dark { "#1e241f" } else { "#e5f6e9" },
+        if dark { "#2f4237" } else { "#e8f2ec" },
     );
 }
 
