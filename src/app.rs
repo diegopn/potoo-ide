@@ -1853,11 +1853,17 @@ fn build_window_content(
         },
     );
     let save_button = gtk::Button::new();
-    save_button.set_child(Some(&icon("save")));
+    let save_content = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    save_content.append(&icon("save"));
+    save_content.append(&gtk::Label::new(Some(tr(ui_language, "Salvar"))));
+    save_button.set_child(Some(&save_content));
     save_button.set_tooltip_text(Some(save_tooltip));
     save_button.add_css_class("potoo-tab-action-button");
     let save_as_button = gtk::Button::new();
-    save_as_button.set_child(Some(&icon("save-as")));
+    let save_as_content = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    save_as_content.append(&icon("save-as"));
+    save_as_content.append(&gtk::Label::new(Some(tr(ui_language, "Salvar como"))));
+    save_as_button.set_child(Some(&save_as_content));
     save_as_button.set_tooltip_text(Some(tr(ui_language, "Salvar como")));
     save_as_button.add_css_class("potoo-tab-action-button");
     let editor_actions = gtk::Box::new(gtk::Orientation::Horizontal, 2);
