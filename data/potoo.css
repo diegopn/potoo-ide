@@ -635,6 +635,39 @@ dropdown.potoo-settings-picker > button {
   color: var(--potoo-text);
 }
 
+dropdown.potoo-sidebar-language-picker popover.background > contents,
+dropdown.potoo-settings-picker popover.background > contents {
+  padding: 4px;
+  background-color: var(--potoo-surface-bg);
+  border: 1px solid var(--potoo-border);
+  border-radius: 3px;
+  box-shadow: 0 3px 10px rgba(18, 23, 27, 0.16);
+}
+
+dropdown.potoo-sidebar-language-picker popover listview,
+dropdown.potoo-settings-picker popover listview {
+  background-color: transparent;
+}
+
+dropdown.potoo-sidebar-language-picker popover listview row,
+dropdown.potoo-settings-picker popover listview row {
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: 2px;
+  color: var(--potoo-text);
+}
+
+dropdown.potoo-sidebar-language-picker popover listview row:hover,
+dropdown.potoo-settings-picker popover listview row:hover {
+  background-color: var(--potoo-panel-hover-bg);
+}
+
+dropdown.potoo-sidebar-language-picker popover listview row:selected,
+dropdown.potoo-settings-picker popover listview row:selected {
+  background-color: var(--potoo-accent-soft-bg);
+  color: var(--potoo-text);
+}
+
 switch.potoo-settings-switch {
   min-width: 44px;
   min-height: 24px;
