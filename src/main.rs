@@ -1,11 +1,12 @@
 use gtk::prelude::*;
-use std::{cell::Cell, path::Path, rc::Rc};
+use relm4::prelude::*;
+use std::path::Path;
 
 const PORTUGOL_SAMPLE: &str = "programa {\n  funcao inicio() {\n    inteiro idade\n\n    escreva(\"Qual é sua idade? \")\n    leia(idade)\n    se (idade >= 18) {\n      escreva(\"Pode votar.\")\n    } senao {\n      escreva(\"Ainda não pode votar.\")\n    }\n  }\n}";
 
 const VISUALG_SAMPLE: &str = "algoritmo \"votacao\"\nvar\n  idade: inteiro\ninicio\n  escreva(\"Qual é sua idade? \")\n  leia(idade)\n  se idade >= 18 entao\n    escreval(\"Pode votar.\")\n  senao\n    escreval(\"Ainda não pode votar.\")\n  fimse\nfimalgoritmo";
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Language {
     Portugol,
     Visualg,
@@ -64,6 +65,40 @@ struct SyntaxTags {
     current_line: gtk::TextTag,
 }
 
+#[derive(Debug)]
+enum MainWindowMsg {
+    LanguageSelected(Language),
+    ThemeChanged(bool),
+    Run,
+    SourceChanged,
+}
+
+struct MainWindow {
+    language: Language,
+    dark: bool,
+    output_text: String,
+    output_status: String,
+}
+
+struct MainUi {
+    window: gtk::ApplicationWindow,
+    content: gtk::Box,
+    language_picker: gtk::DropDown,
+    theme_button: gtk::ToggleButton,
+    file_name: gtk::Label,
+    sidebar_file_name: gtk::Label,
+    status_language: gtk::Label,
+    code_buffer: gtk::TextBuffer,
+    syntax_tags: SyntaxTags,
+    line_numbers: gtk::Label,
+    output_buffer: gtk::TextBuffer,
+    output_status: gtk::Label,
+    displayed_language: Language,
+    displayed_dark: bool,
+    displayed_output_text: String,
+    displayed_output_status: String,
+}
+
 fn main() {
     let application = adw::Application::builder()
         .application_id("io.github.diegopn.potooide")
@@ -81,23 +116,117 @@ fn main() {
         }
     });
 
-    application.connect_activate(build_window);
-    let _ = application.run();
+    RelmApp::from_app(application).run::<MainWindow>(());
 }
 
-fn build_window(application: &adw::Application) {
-    let window = gtk::ApplicationWindow::builder()
-        .application(application)
-        .title("Potoo IDE")
-        .default_width(1440)
-        .default_height(900)
-        .build();
-    window.add_css_class("potoo-window");
+impl SimpleComponent for MainWindow {
+    type Init = ();
+    type Input = MainWindowMsg;
+    type Output = ();
+    type Root = gtk::ApplicationWindow;
+    type Widgets = MainUi;
 
-    let style_manager = adw::StyleManager::default();
-    style_manager.set_color_scheme(adw::ColorScheme::ForceLight);
+    fn init_root() -> Self::Root {
+        gtk::ApplicationWindow::default()
+    }
 
-    let language = Rc::new(Cell::new(Language::Portugol));
+    fn init(
+        _init: Self::Init,
+        root: Self::Root,
+        sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
+        root.set_title(Some("Potoo IDE"));
+        root.set_default_size(1440, 900);
+        root.add_css_class("potoo-window");
+        adw::StyleManager::default().set_color_scheme(adw::ColorScheme::ForceLight);
+
+        let model = Self {
+            language: Language::Portugol,
+            dark: false,
+            output_text: "A saída aparecerá aqui após a execução.".to_string(),
+            output_status: "Pronto para executar".to_string(),
+        };
+        let widgets = build_window_content(root.clone(), sender);
+        root.set_child(Some(&widgets.content));
+
+        ComponentParts { model, widgets }
+    }
+
+    fn update(&mut self, message: Self::Input, _sender: ComponentSender<Self>) {
+        match message {
+            MainWindowMsg::LanguageSelected(language) => {
+                self.language = language;
+                self.output_text = "A saída aparecerá aqui após a execução.".to_string();
+                self.output_status = "Pronto para executar".to_string();
+            }
+            MainWindowMsg::ThemeChanged(dark) => self.dark = dark,
+            MainWindowMsg::Run => {
+                self.output_text = "A execução real depende da integração com o interpretador oficial selecionado.".to_string();
+                self.output_status = "Interpretador ainda não conectado nesta prévia".to_string();
+            }
+            MainWindowMsg::SourceChanged => {}
+        }
+    }
+
+    fn update_view(&self, widgets: &mut Self::Widgets, _sender: ComponentSender<Self>) {
+        let ui = widgets;
+
+        if ui.displayed_language != self.language {
+            ui.language_picker.set_selected(match self.language {
+                Language::Portugol => 0,
+                Language::Visualg => 1,
+            });
+            ui.file_name.set_text(self.language.file_name());
+            ui.sidebar_file_name.set_text(self.language.file_name());
+            ui.status_language.set_text(self.language.label());
+            ui.code_buffer.set_text(self.language.sample());
+            ui.displayed_language = self.language;
+        }
+
+        if ui.displayed_dark != self.dark {
+            if self.dark {
+                ui.window.add_css_class("potoo-dark");
+            } else {
+                ui.window.remove_css_class("potoo-dark");
+            }
+            adw::StyleManager::default().set_color_scheme(if self.dark {
+                adw::ColorScheme::ForceDark
+            } else {
+                adw::ColorScheme::ForceLight
+            });
+            set_syntax_palette(&ui.syntax_tags, self.dark);
+            ui.theme_button
+                .set_child(Some(&gtk::Image::from_icon_name(if self.dark {
+                    "weather-clear-symbolic"
+                } else {
+                    "weather-clear-night-symbolic"
+                })));
+            ui.theme_button.set_tooltip_text(Some(if self.dark {
+                "Usar tema claro"
+            } else {
+                "Usar tema escuro"
+            }));
+            ui.displayed_dark = self.dark;
+        }
+
+        if ui.displayed_output_text != self.output_text {
+            ui.output_buffer.set_text(&self.output_text);
+            ui.displayed_output_text.clone_from(&self.output_text);
+        }
+        if ui.displayed_output_status != self.output_status {
+            ui.output_status.set_text(&self.output_status);
+            ui.displayed_output_status.clone_from(&self.output_status);
+        }
+
+        update_line_numbers(&ui.code_buffer, &ui.line_numbers);
+        highlight_buffer(&ui.code_buffer, self.language, &ui.syntax_tags);
+    }
+}
+
+fn build_window_content(
+    window: gtk::ApplicationWindow,
+    sender: ComponentSender<MainWindow>,
+) -> MainUi {
     let header = gtk::CenterBox::new();
     header.add_css_class("potoo-header");
     header.set_margin_start(14);
@@ -273,82 +402,56 @@ fn build_window(application: &adw::Application) {
     content.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
     content.append(&status_bar);
 
-    let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    root.add_css_class("potoo-root");
-    root.append(&header);
-    root.append(&content);
-    window.set_child(Some(&root));
+    let content_root = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    content_root.add_css_class("potoo-root");
+    content_root.append(&header);
+    content_root.append(&content);
 
-    let code_language = language.clone();
-    let file_name_for_language = file_name.clone();
-    let sidebar_file_name_for_language = sidebar_file_name.clone();
-    let status_language_for_language = status_language.clone();
-    let code_buffer_for_language = code_buffer.clone();
-    let output_status_for_language = output_status.clone();
+    let sender_for_language = sender.clone();
     language_picker.connect_selected_notify(move |picker| {
         let selected = if picker.selected() == 1 {
             Language::Visualg
         } else {
             Language::Portugol
         };
-        code_language.set(selected);
-        file_name_for_language.set_text(selected.file_name());
-        sidebar_file_name_for_language.set_text(selected.file_name());
-        status_language_for_language.set_text(selected.label());
-        code_buffer_for_language.set_text(selected.sample());
-        output_status_for_language.set_text("Pronto para executar");
+        sender_for_language.input(MainWindowMsg::LanguageSelected(selected));
     });
 
-    let style_manager_for_theme = style_manager.clone();
-    let window_for_theme = window.clone();
-    let tags_for_theme = syntax_tags.clone();
-    let buffer_for_theme = code_buffer.clone();
-    let language_for_theme = language.clone();
+    let sender_for_theme = sender.clone();
     theme_button.connect_toggled(move |button| {
-        let dark = button.is_active();
-        if dark {
-            window_for_theme.add_css_class("potoo-dark");
-        } else {
-            window_for_theme.remove_css_class("potoo-dark");
-        }
-        style_manager_for_theme.set_color_scheme(if dark {
-            adw::ColorScheme::ForceDark
-        } else {
-            adw::ColorScheme::ForceLight
-        });
-        set_syntax_palette(&tags_for_theme, dark);
-        highlight_buffer(&buffer_for_theme, language_for_theme.get(), &tags_for_theme);
-        button.set_child(Some(&gtk::Image::from_icon_name(if dark {
-            "weather-clear-symbolic"
-        } else {
-            "weather-clear-night-symbolic"
-        })));
-        button.set_tooltip_text(Some(if dark {
-            "Usar tema claro"
-        } else {
-            "Usar tema escuro"
-        }));
+        sender_for_theme.input(MainWindowMsg::ThemeChanged(button.is_active()));
     });
 
-    let output_status_for_run = output_status.clone();
+    let sender_for_run = sender.clone();
     let output_notebook_for_run = output_notebook.clone();
     run_button.connect_clicked(move |_| {
-        output_buffer.set_text(
-            "A execução real depende da integração com o interpretador oficial selecionado.",
-        );
-        output_status_for_run.set_text("Interpretador ainda não conectado nesta prévia");
         output_notebook_for_run.set_current_page(Some(0));
+        sender_for_run.input(MainWindowMsg::Run);
     });
 
-    let tags_for_edit = syntax_tags.clone();
-    let language_for_edit = language.clone();
-    let line_numbers_for_edit = line_numbers.clone();
-    code_buffer.connect_changed(move |buffer| {
-        update_line_numbers(buffer, &line_numbers_for_edit);
-        highlight_buffer(buffer, language_for_edit.get(), &tags_for_edit);
+    let sender_for_source = sender;
+    code_buffer.connect_changed(move |_| {
+        sender_for_source.input(MainWindowMsg::SourceChanged);
     });
 
-    window.present();
+    MainUi {
+        window,
+        content: content_root,
+        language_picker,
+        theme_button,
+        file_name,
+        sidebar_file_name,
+        status_language,
+        code_buffer,
+        syntax_tags,
+        line_numbers,
+        output_buffer,
+        output_status,
+        displayed_language: Language::Portugol,
+        displayed_dark: false,
+        displayed_output_text: "A saída aparecerá aqui após a execução.".to_string(),
+        displayed_output_status: "Pronto para executar".to_string(),
+    }
 }
 
 fn app_icon() -> gtk::Image {
