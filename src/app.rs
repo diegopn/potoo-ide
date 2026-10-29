@@ -1133,7 +1133,7 @@ impl MainWindow {
 
 struct SettingsUi {
     window: gtk::Window,
-    theme_picker: gtk::DropDown,
+    theme_buttons: [gtk::Button; 3],
     font_size_picker: gtk::DropDown,
     line_numbers_switch: gtk::Switch,
     word_wrap_switch: gtk::Switch,
@@ -1518,9 +1518,7 @@ impl SimpleComponent for MainWindow {
         }
 
         if ui.displayed_theme != self.theme {
-            ui.settings
-                .theme_picker
-                .set_selected(self.theme.selected_index());
+            select_theme_button(&ui.settings.theme_buttons, self.theme.selected_index());
             ui.displayed_theme = self.theme;
         }
         if ui.displayed_font_size != self.font_size {
@@ -2105,17 +2103,24 @@ fn build_settings_window(
     page.append(&description);
 
     let appearance = settings_section(tr(language, "Aparência"));
-    let theme_picker = gtk::DropDown::from_strings(&[
-        tr(language, "Seguir o sistema"),
-        tr(language, "Claro"),
-        tr(language, "Escuro"),
-    ]);
-    theme_picker.add_css_class("potoo-settings-picker");
-    theme_picker.set_selected(preferences.theme.selected_index());
+    let theme_buttons = [
+        gtk::Button::with_label(tr(language, "Sistema")),
+        gtk::Button::with_label(tr(language, "Claro")),
+        gtk::Button::with_label(tr(language, "Escuro")),
+    ];
+    for button in &theme_buttons {
+        button.add_css_class("potoo-theme-choice");
+    }
+    select_theme_button(&theme_buttons, preferences.theme.selected_index());
+    let theme_options = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    theme_options.add_css_class("potoo-theme-options");
+    for button in &theme_buttons {
+        theme_options.append(button);
+    }
     appearance.append(&settings_row(
         tr(language, "Tema"),
         tr(language, "Use a aparência do sistema ou escolha um tema."),
-        &theme_picker,
+        &theme_options,
     ));
     page.append(&appearance);
 
@@ -2182,11 +2187,17 @@ fn build_settings_window(
     window.set_child(Some(&scroll));
 
     let sender_for_theme = sender.clone();
-    theme_picker.connect_selected_notify(move |picker| {
-        sender_for_theme.input(MainWindowMsg::ThemeSelected(
-            ThemePreference::from_selected_index(picker.selected()),
-        ));
-    });
+    for (index, button) in theme_buttons.iter().enumerate() {
+        let theme_buttons_for_click = theme_buttons.clone();
+        let sender_for_click = sender_for_theme.clone();
+        button.connect_clicked(move |_| {
+            let index = index as u32;
+            select_theme_button(&theme_buttons_for_click, index);
+            sender_for_click.input(MainWindowMsg::ThemeSelected(
+                ThemePreference::from_selected_index(index),
+            ));
+        });
+    }
 
     let sender_for_font_size = sender.clone();
     font_size_picker.connect_selected_notify(move |picker| {
@@ -2229,7 +2240,7 @@ fn build_settings_window(
 
     SettingsUi {
         window,
-        theme_picker,
+        theme_buttons,
         font_size_picker,
         line_numbers_switch,
         word_wrap_switch,
@@ -2246,6 +2257,16 @@ fn settings_section(title: &str) -> gtk::Box {
     heading.add_css_class("potoo-settings-section-title");
     section.append(&heading);
     section
+}
+
+fn select_theme_button(buttons: &[gtk::Button; 3], selected_index: u32) {
+    for (index, button) in buttons.iter().enumerate() {
+        if index as u32 == selected_index {
+            button.add_css_class("potoo-theme-choice-selected");
+        } else {
+            button.remove_css_class("potoo-theme-choice-selected");
+        }
+    }
 }
 
 fn settings_row<W: IsA<gtk::Widget>>(title: &str, description: &str, control: &W) -> gtk::Box {

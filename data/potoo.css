@@ -657,6 +657,38 @@ dropdown.potoo-settings-picker popover listview row:selected {
   color: var(--potoo-text);
 }
 
+button.potoo-theme-choice {
+  min-width: 76px;
+  min-height: 34px;
+  padding: 0 10px;
+  background-color: var(--potoo-panel-bg);
+  background-image: none;
+  border: 1px solid var(--potoo-border);
+  border-radius: 0;
+  color: var(--potoo-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+button.potoo-theme-choice:hover {
+  background-color: var(--potoo-panel-hover-bg);
+  border-color: var(--potoo-border);
+  color: var(--potoo-text);
+}
+
+button.potoo-theme-choice-selected,
+button.potoo-theme-choice-selected:hover {
+  background-color: var(--potoo-accent-soft-bg);
+  border-color: var(--potoo-accent);
+  color: var(--potoo-accent-text);
+}
+
+button.potoo-theme-choice:focus {
+  outline: 1px solid var(--potoo-accent);
+  outline-offset: 1px;
+}
+
 switch.potoo-settings-switch {
   min-width: 44px;
   min-height: 24px;
