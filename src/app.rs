@@ -60,6 +60,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
         UiLanguage::Portuguese => return portuguese,
         UiLanguage::English => match portuguese {
             "Meu primeiro programa" => "My first program",
+            "Abrir menu" => "Open menu",
             "Abrir pasta" => "Open folder",
             "Abrir pasta de projeto" => "Open project folder",
             "Abrir arquivo" => "Open file",
@@ -98,6 +99,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Personalize a aparência e o editor." => "Customize the appearance and editor.",
             "Aparência" => "Appearance",
+            "Sistema" => "System",
             "Seguir o sistema" => "Follow system",
             "Claro" => "Light",
             "Escuro" => "Dark",
@@ -221,6 +223,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
         },
         UiLanguage::Spanish => match portuguese {
             "Meu primeiro programa" => "Mi primer programa",
+            "Abrir menu" => "Abrir menú",
             "Abrir pasta" => "Abrir carpeta",
             "Abrir pasta de projeto" => "Abrir carpeta del proyecto",
             "Abrir arquivo" => "Abrir archivo",
@@ -259,6 +262,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Personalize a aparência e o editor." => "Personaliza la apariencia y el editor.",
             "Aparência" => "Apariencia",
+            "Sistema" => "Sistema",
             "Seguir o sistema" => "Seguir el sistema",
             "Claro" => "Claro",
             "Escuro" => "Oscuro",
@@ -1054,6 +1058,7 @@ pub struct MainUi {
     content: gtk::Box,
     language_picker: gtk::DropDown,
     settings: SettingsUi,
+    theme_options: Vec<(ThemePreference, gtk::ToggleButton)>,
     project_title: gtk::Label,
     project_label: gtk::Label,
     file_list: gtk::Box,
@@ -1437,6 +1442,9 @@ impl SimpleComponent for MainWindow {
             ui.settings
                 .theme_picker
                 .set_selected(self.theme.selected_index());
+            for (theme, button) in &ui.theme_options {
+                button.set_active(*theme == self.theme);
+            }
             ui.displayed_theme = self.theme;
         }
         if ui.displayed_font_size != self.font_size {
@@ -1605,9 +1613,11 @@ fn build_window_content(
         }
     });
 
-    let header = header::build_header(&window, ui_language);
+    let header = header::build_header(&window, ui_language, preferences.theme, sender.clone());
     let project_title = header.project_title.clone();
     let settings_button = header.settings_button.clone();
+    let menu_popover = header.popover.clone();
+    let theme_options = header.theme_options.clone();
     let run_button = header.run_button.clone();
 
     let settings = build_settings_window(&window, sender.clone(), preferences);
@@ -1867,6 +1877,7 @@ fn build_window_content(
 
     let sender_for_settings = sender.clone();
     settings_button.connect_clicked(move |_| {
+        menu_popover.popdown();
         sender_for_settings.input(MainWindowMsg::OpenSettings);
     });
 
@@ -1934,6 +1945,7 @@ fn build_window_content(
         content: content_root,
         language_picker,
         settings,
+        theme_options,
         project_title,
         project_label,
         file_list,
