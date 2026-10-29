@@ -1108,6 +1108,7 @@ impl SimpleComponent for MainWindow {
     ) -> ComponentParts<Self> {
         root.set_title(Some("Potoo IDE"));
         root.set_default_size(1440, 900);
+        root.maximize();
         root.add_css_class("potoo-window");
         let preferences = load_preferences();
         let saved_session = load_session();
@@ -1705,6 +1706,9 @@ fn build_window_content(
     editor_output.set_shrink_start_child(false);
     editor_output.set_shrink_end_child(false);
     editor_output.set_position(570);
+    editor_output.connect_map(|paned| {
+        paned.set_position(paned.height().saturating_sub(236).max(0));
+    });
 
     let learning_panel = content_panel::build_learning_panel(ui_language);
     let editor_and_learning = gtk::Paned::new(gtk::Orientation::Horizontal);
@@ -1716,6 +1720,9 @@ fn build_window_content(
     editor_and_learning.set_shrink_start_child(false);
     editor_and_learning.set_shrink_end_child(false);
     editor_and_learning.set_position(820);
+    editor_and_learning.connect_map(|paned| {
+        paned.set_position(paned.width().saturating_sub(370).max(440));
+    });
 
     let workspace = gtk::Paned::new(gtk::Orientation::Horizontal);
     workspace.set_wide_handle(false);
@@ -1740,8 +1747,6 @@ fn build_window_content(
     status_bar.add_css_class("potoo-statusbar");
     status_bar.set_margin_start(12);
     status_bar.set_margin_end(12);
-    status_bar.set_margin_top(6);
-    status_bar.set_margin_bottom(6);
     status_bar.append(&gtk::Separator::new(gtk::Orientation::Vertical));
     status_bar.append(&status_language);
     status_bar.append(&gtk::Separator::new(gtk::Orientation::Vertical));
