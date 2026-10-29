@@ -57,6 +57,39 @@ impl Language {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ThemePreference {
+    System,
+    Light,
+    Dark,
+}
+
+impl ThemePreference {
+    fn selected_index(self) -> u32 {
+        match self {
+            Self::System => 0,
+            Self::Light => 1,
+            Self::Dark => 2,
+        }
+    }
+
+    fn from_selected_index(index: u32) -> Self {
+        match index {
+            1 => Self::Light,
+            2 => Self::Dark,
+            _ => Self::System,
+        }
+    }
+
+    fn color_scheme(self) -> adw::ColorScheme {
+        match self {
+            Self::System => adw::ColorScheme::Default,
+            Self::Light => adw::ColorScheme::ForceLight,
+            Self::Dark => adw::ColorScheme::ForceDark,
+        }
+    }
+}
+
 #[derive(Clone)]
 struct SyntaxTags {
     keyword: gtk::TextTag,
@@ -68,33 +101,59 @@ struct SyntaxTags {
 #[derive(Debug)]
 enum MainWindowMsg {
     LanguageSelected(Language),
-    ThemeChanged(bool),
+    ThemeSelected(ThemePreference),
+    SystemThemeChanged(bool),
+    FontSizeSelected(u32),
+    LineNumbersChanged(bool),
+    WordWrapChanged(bool),
+    OpenSettings,
+    CloseSettings,
     Run,
     SourceChanged,
 }
 
 struct MainWindow {
     language: Language,
+    theme: ThemePreference,
     dark: bool,
+    font_size: u32,
+    line_numbers_visible: bool,
+    word_wrap: bool,
+    settings_visible: bool,
     output_text: String,
     output_status: String,
+}
+
+struct SettingsUi {
+    window: gtk::Window,
+    theme_picker: gtk::DropDown,
+    font_size_picker: gtk::DropDown,
+    line_numbers_switch: gtk::Switch,
+    word_wrap_switch: gtk::Switch,
 }
 
 struct MainUi {
     window: gtk::ApplicationWindow,
     content: gtk::Box,
     language_picker: gtk::DropDown,
-    theme_button: gtk::ToggleButton,
+    settings: SettingsUi,
     file_name: gtk::Label,
     sidebar_file_name: gtk::Label,
     status_language: gtk::Label,
     code_buffer: gtk::TextBuffer,
+    code_view: gtk::TextView,
     syntax_tags: SyntaxTags,
     line_numbers: gtk::Label,
+    line_numbers_separator: gtk::Separator,
     output_buffer: gtk::TextBuffer,
     output_status: gtk::Label,
     displayed_language: Language,
+    displayed_theme: ThemePreference,
     displayed_dark: bool,
+    displayed_font_size: u32,
+    displayed_line_numbers_visible: bool,
+    displayed_word_wrap: bool,
+    displayed_settings_visible: bool,
     displayed_output_text: String,
     displayed_output_status: String,
 }
@@ -138,11 +197,21 @@ impl SimpleComponent for MainWindow {
         root.set_title(Some("Potoo IDE"));
         root.set_default_size(1440, 900);
         root.add_css_class("potoo-window");
-        adw::StyleManager::default().set_color_scheme(adw::ColorScheme::ForceLight);
+        let style_manager = adw::StyleManager::default();
+        style_manager.set_color_scheme(ThemePreference::System.color_scheme());
+        let sender_for_system_theme = sender.clone();
+        style_manager.connect_dark_notify(move |manager| {
+            sender_for_system_theme.input(MainWindowMsg::SystemThemeChanged(manager.is_dark()));
+        });
 
         let model = Self {
             language: Language::Portugol,
-            dark: false,
+            theme: ThemePreference::System,
+            dark: style_manager.is_dark(),
+            font_size: 13,
+            line_numbers_visible: true,
+            word_wrap: false,
+            settings_visible: false,
             output_text: "A saída aparecerá aqui após a execução.".to_string(),
             output_status: "Pronto para executar".to_string(),
         };
@@ -159,7 +228,26 @@ impl SimpleComponent for MainWindow {
                 self.output_text = "A saída aparecerá aqui após a execução.".to_string();
                 self.output_status = "Pronto para executar".to_string();
             }
-            MainWindowMsg::ThemeChanged(dark) => self.dark = dark,
+            MainWindowMsg::ThemeSelected(theme) => {
+                self.theme = theme;
+                let style_manager = adw::StyleManager::default();
+                style_manager.set_color_scheme(theme.color_scheme());
+                self.dark = match theme {
+                    ThemePreference::System => style_manager.is_dark(),
+                    ThemePreference::Light => false,
+                    ThemePreference::Dark => true,
+                };
+            }
+            MainWindowMsg::SystemThemeChanged(dark) => {
+                if self.theme == ThemePreference::System {
+                    self.dark = dark;
+                }
+            }
+            MainWindowMsg::FontSizeSelected(font_size) => self.font_size = font_size,
+            MainWindowMsg::LineNumbersChanged(visible) => self.line_numbers_visible = visible,
+            MainWindowMsg::WordWrapChanged(enabled) => self.word_wrap = enabled,
+            MainWindowMsg::OpenSettings => self.settings_visible = true,
+            MainWindowMsg::CloseSettings => self.settings_visible = false,
             MainWindowMsg::Run => {
                 self.output_text = "A execução real depende da integração com o interpretador oficial selecionado.".to_string();
                 self.output_status = "Interpretador ainda não conectado nesta prévia".to_string();
@@ -186,27 +274,54 @@ impl SimpleComponent for MainWindow {
         if ui.displayed_dark != self.dark {
             if self.dark {
                 ui.window.add_css_class("potoo-dark");
+                ui.settings.window.add_css_class("potoo-dark");
             } else {
                 ui.window.remove_css_class("potoo-dark");
+                ui.settings.window.remove_css_class("potoo-dark");
             }
-            adw::StyleManager::default().set_color_scheme(if self.dark {
-                adw::ColorScheme::ForceDark
-            } else {
-                adw::ColorScheme::ForceLight
-            });
             set_syntax_palette(&ui.syntax_tags, self.dark);
-            ui.theme_button
-                .set_child(Some(&gtk::Image::from_icon_name(if self.dark {
-                    "weather-clear-symbolic"
-                } else {
-                    "weather-clear-night-symbolic"
-                })));
-            ui.theme_button.set_tooltip_text(Some(if self.dark {
-                "Usar tema claro"
-            } else {
-                "Usar tema escuro"
-            }));
             ui.displayed_dark = self.dark;
+        }
+
+        if ui.displayed_theme != self.theme {
+            ui.settings
+                .theme_picker
+                .set_selected(self.theme.selected_index());
+            ui.displayed_theme = self.theme;
+        }
+        if ui.displayed_font_size != self.font_size {
+            set_font_size(&ui.code_view, ui.displayed_font_size, self.font_size);
+            set_font_size(&ui.line_numbers, ui.displayed_font_size, self.font_size);
+            ui.settings
+                .font_size_picker
+                .set_selected(font_size_index(self.font_size));
+            ui.displayed_font_size = self.font_size;
+        }
+        if ui.displayed_line_numbers_visible != self.line_numbers_visible {
+            ui.line_numbers.set_visible(self.line_numbers_visible);
+            ui.line_numbers_separator
+                .set_visible(self.line_numbers_visible);
+            ui.settings
+                .line_numbers_switch
+                .set_active(self.line_numbers_visible);
+            ui.displayed_line_numbers_visible = self.line_numbers_visible;
+        }
+        if ui.displayed_word_wrap != self.word_wrap {
+            ui.code_view.set_wrap_mode(if self.word_wrap {
+                gtk::WrapMode::WordChar
+            } else {
+                gtk::WrapMode::None
+            });
+            ui.settings.word_wrap_switch.set_active(self.word_wrap);
+            ui.displayed_word_wrap = self.word_wrap;
+        }
+        if ui.displayed_settings_visible != self.settings_visible {
+            if self.settings_visible {
+                ui.settings.window.present();
+            } else {
+                ui.settings.window.set_visible(false);
+            }
+            ui.displayed_settings_visible = self.settings_visible;
         }
 
         if ui.displayed_output_text != self.output_text {
@@ -227,10 +342,6 @@ fn build_window_content(
     window: gtk::ApplicationWindow,
     sender: ComponentSender<MainWindow>,
 ) -> MainUi {
-    let header = gtk::CenterBox::new();
-    header.add_css_class("potoo-header");
-    header.set_margin_start(14);
-    header.set_margin_end(14);
     let brand = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     brand.append(&app_icon());
     let brand_label = gtk::Label::new(Some("Potoo IDE"));
@@ -245,12 +356,12 @@ fn build_window_content(
     language_picker.add_css_class("potoo-language-picker");
     language_picker.set_tooltip_text(Some("Linguagem do programa"));
 
-    let theme_button = gtk::ToggleButton::new();
-    theme_button.set_child(Some(&gtk::Image::from_icon_name(
-        "weather-clear-night-symbolic",
+    let settings_button = gtk::Button::new();
+    settings_button.set_child(Some(&gtk::Image::from_icon_name(
+        "preferences-system-symbolic",
     )));
-    theme_button.set_tooltip_text(Some("Alternar entre tema claro e escuro"));
-    theme_button.add_css_class("potoo-theme-button");
+    settings_button.set_tooltip_text(Some("Configurações"));
+    settings_button.add_css_class("potoo-settings-button");
 
     let run_button = gtk::Button::new();
     run_button.add_css_class("potoo-run-button");
@@ -264,11 +375,33 @@ fn build_window_content(
 
     let header_actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     header_actions.append(&language_picker);
-    header_actions.append(&theme_button);
+    header_actions.append(&settings_button);
     header_actions.append(&run_button);
-    header.set_start_widget(Some(&brand));
-    header.set_center_widget(Some(&project_title));
-    header.set_end_widget(Some(&header_actions));
+
+    #[cfg(target_os = "linux")]
+    {
+        let titlebar = gtk::HeaderBar::new();
+        titlebar.add_css_class("potoo-linux-titlebar");
+        titlebar.set_show_title_buttons(true);
+        titlebar.pack_start(&brand);
+        titlebar.set_title_widget(Some(&project_title));
+        titlebar.pack_end(&header_actions);
+        window.set_titlebar(Some(&titlebar));
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    let header = {
+        let header = gtk::CenterBox::new();
+        header.add_css_class("potoo-header");
+        header.set_margin_start(14);
+        header.set_margin_end(14);
+        header.set_start_widget(Some(&brand));
+        header.set_center_widget(Some(&project_title));
+        header.set_end_widget(Some(&header_actions));
+        header
+    };
+
+    let settings = build_settings_window(&window, sender.clone());
 
     let (sidebar, sidebar_file_name) = build_file_sidebar();
     let file_name = gtk::Label::new(Some(Language::Portugol.file_name()));
@@ -277,7 +410,8 @@ fn build_window_content(
     let code_buffer = gtk::TextBuffer::new(None::<&gtk::TextTagTable>);
     code_buffer.set_text(Language::Portugol.sample());
     let syntax_tags = make_syntax_tags(&code_buffer);
-    set_syntax_palette(&syntax_tags, false);
+    let initial_dark = adw::StyleManager::default().is_dark();
+    set_syntax_palette(&syntax_tags, initial_dark);
     highlight_buffer(&code_buffer, Language::Portugol, &syntax_tags);
 
     let line_numbers = gtk::Label::new(None);
@@ -286,6 +420,7 @@ fn build_window_content(
     line_numbers.add_css_class("dim-label");
     line_numbers.add_css_class("monospace");
     line_numbers.add_css_class("potoo-line-numbers");
+    line_numbers.add_css_class("potoo-font-13");
     line_numbers.set_margin_top(14);
     line_numbers.set_margin_bottom(14);
     line_numbers.set_margin_start(12);
@@ -302,6 +437,7 @@ fn build_window_content(
         .bottom_margin(14)
         .build();
     code_view.add_css_class("potoo-code-editor");
+    code_view.add_css_class("potoo-font-13");
 
     let code_scroll = gtk::ScrolledWindow::builder()
         .hexpand(true)
@@ -312,7 +448,8 @@ fn build_window_content(
     let editor_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     editor_row.add_css_class("potoo-editor-row");
     editor_row.append(&line_numbers);
-    editor_row.append(&gtk::Separator::new(gtk::Orientation::Vertical));
+    let line_numbers_separator = gtk::Separator::new(gtk::Orientation::Vertical);
+    editor_row.append(&line_numbers_separator);
     editor_row.append(&code_scroll);
 
     let editor_tab = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -404,8 +541,12 @@ fn build_window_content(
 
     let content_root = gtk::Box::new(gtk::Orientation::Vertical, 0);
     content_root.add_css_class("potoo-root");
+    #[cfg(not(target_os = "linux"))]
     content_root.append(&header);
     content_root.append(&content);
+    if initial_dark {
+        window.add_css_class("potoo-dark");
+    }
 
     let sender_for_language = sender.clone();
     language_picker.connect_selected_notify(move |picker| {
@@ -417,9 +558,9 @@ fn build_window_content(
         sender_for_language.input(MainWindowMsg::LanguageSelected(selected));
     });
 
-    let sender_for_theme = sender.clone();
-    theme_button.connect_toggled(move |button| {
-        sender_for_theme.input(MainWindowMsg::ThemeChanged(button.is_active()));
+    let sender_for_settings = sender.clone();
+    settings_button.connect_clicked(move |_| {
+        sender_for_settings.input(MainWindowMsg::OpenSettings);
     });
 
     let sender_for_run = sender.clone();
@@ -438,20 +579,180 @@ fn build_window_content(
         window,
         content: content_root,
         language_picker,
-        theme_button,
+        settings,
         file_name,
         sidebar_file_name,
         status_language,
         code_buffer,
+        code_view,
         syntax_tags,
         line_numbers,
+        line_numbers_separator,
         output_buffer,
         output_status,
         displayed_language: Language::Portugol,
-        displayed_dark: false,
+        displayed_theme: ThemePreference::System,
+        displayed_dark: initial_dark,
+        displayed_font_size: 13,
+        displayed_line_numbers_visible: true,
+        displayed_word_wrap: false,
+        displayed_settings_visible: false,
         displayed_output_text: "A saída aparecerá aqui após a execução.".to_string(),
         displayed_output_status: "Pronto para executar".to_string(),
     }
+}
+
+fn build_settings_window(
+    parent: &gtk::ApplicationWindow,
+    sender: ComponentSender<MainWindow>,
+) -> SettingsUi {
+    let window = gtk::Window::new();
+    window.set_title(Some("Configurações"));
+    window.set_default_size(500, 470);
+    window.set_resizable(false);
+    window.set_modal(true);
+    window.set_transient_for(Some(parent));
+    window.add_css_class("potoo-window");
+    window.add_css_class("potoo-settings-window");
+    if adw::StyleManager::default().is_dark() {
+        window.add_css_class("potoo-dark");
+    }
+
+    let page = gtk::Box::new(gtk::Orientation::Vertical, 20);
+    page.add_css_class("potoo-settings-page");
+    page.set_margin_start(24);
+    page.set_margin_end(24);
+    page.set_margin_top(24);
+    page.set_margin_bottom(24);
+
+    let title = gtk::Label::new(Some("Configurações"));
+    title.set_xalign(0.0);
+    title.add_css_class("potoo-settings-title");
+    let description = gtk::Label::new(Some("Personalize a aparência e o editor."));
+    description.set_xalign(0.0);
+    description.add_css_class("potoo-settings-description");
+    page.append(&title);
+    page.append(&description);
+
+    let appearance = settings_section("Aparência");
+    let theme_picker = gtk::DropDown::from_strings(&["Seguir o sistema", "Claro", "Escuro"]);
+    theme_picker.add_css_class("potoo-settings-picker");
+    theme_picker.set_selected(ThemePreference::System.selected_index());
+    appearance.append(&settings_row(
+        "Tema",
+        "Use a aparência do sistema ou escolha um tema.",
+        &theme_picker,
+    ));
+    page.append(&appearance);
+
+    let editor = settings_section("Editor");
+    let font_size_picker = gtk::DropDown::from_strings(&["13 px", "15 px", "17 px"]);
+    font_size_picker.add_css_class("potoo-settings-picker");
+    editor.append(&settings_row(
+        "Tamanho da fonte",
+        "Ajuste a leitura do código.",
+        &font_size_picker,
+    ));
+
+    let line_numbers_switch = gtk::Switch::new();
+    line_numbers_switch.set_active(true);
+    editor.append(&settings_row(
+        "Numeração de linhas",
+        "Mostra a linha atual no editor.",
+        &line_numbers_switch,
+    ));
+
+    let word_wrap_switch = gtk::Switch::new();
+    editor.append(&settings_row(
+        "Quebra automática de linha",
+        "Ajusta linhas longas à largura do editor.",
+        &word_wrap_switch,
+    ));
+    page.append(&editor);
+    window.set_child(Some(&page));
+
+    let sender_for_theme = sender.clone();
+    theme_picker.connect_selected_notify(move |picker| {
+        sender_for_theme.input(MainWindowMsg::ThemeSelected(
+            ThemePreference::from_selected_index(picker.selected()),
+        ));
+    });
+
+    let sender_for_font_size = sender.clone();
+    font_size_picker.connect_selected_notify(move |picker| {
+        let font_size = match picker.selected() {
+            1 => 15,
+            2 => 17,
+            _ => 13,
+        };
+        sender_for_font_size.input(MainWindowMsg::FontSizeSelected(font_size));
+    });
+
+    let sender_for_line_numbers = sender.clone();
+    line_numbers_switch.connect_active_notify(move |switch| {
+        sender_for_line_numbers.input(MainWindowMsg::LineNumbersChanged(switch.is_active()));
+    });
+
+    let sender_for_word_wrap = sender.clone();
+    word_wrap_switch.connect_active_notify(move |switch| {
+        sender_for_word_wrap.input(MainWindowMsg::WordWrapChanged(switch.is_active()));
+    });
+
+    window.connect_close_request(move |_| {
+        sender.input(MainWindowMsg::CloseSettings);
+        gtk::glib::Propagation::Stop
+    });
+
+    SettingsUi {
+        window,
+        theme_picker,
+        font_size_picker,
+        line_numbers_switch,
+        word_wrap_switch,
+    }
+}
+
+fn settings_section(title: &str) -> gtk::Box {
+    let section = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    section.add_css_class("potoo-settings-section");
+    let heading = gtk::Label::new(Some(title));
+    heading.set_xalign(0.0);
+    heading.add_css_class("potoo-settings-section-title");
+    section.append(&heading);
+    section
+}
+
+fn settings_row<W: IsA<gtk::Widget>>(title: &str, description: &str, control: &W) -> gtk::Box {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 16);
+    row.add_css_class("potoo-settings-row");
+
+    let labels = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    labels.set_hexpand(true);
+    let title_label = gtk::Label::new(Some(title));
+    title_label.set_xalign(0.0);
+    title_label.add_css_class("potoo-settings-row-title");
+    let description_label = gtk::Label::new(Some(description));
+    description_label.set_xalign(0.0);
+    description_label.set_wrap(true);
+    description_label.add_css_class("potoo-settings-row-description");
+    labels.append(&title_label);
+    labels.append(&description_label);
+    row.append(&labels);
+    row.append(control);
+    row
+}
+
+fn font_size_index(font_size: u32) -> u32 {
+    match font_size {
+        15 => 1,
+        17 => 2,
+        _ => 0,
+    }
+}
+
+fn set_font_size(widget: &impl IsA<gtk::Widget>, old_size: u32, new_size: u32) {
+    widget.remove_css_class(&format!("potoo-font-{old_size}"));
+    widget.add_css_class(&format!("potoo-font-{new_size}"));
 }
 
 fn app_icon() -> gtk::Image {

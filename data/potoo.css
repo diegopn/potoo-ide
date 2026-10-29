@@ -14,6 +14,23 @@ window.potoo-window.potoo-dark {
   border-bottom: 1px solid #b4dfc2;
 }
 
+headerbar.potoo-linux-titlebar {
+  min-height: 58px;
+  padding: 0 8px 0 14px;
+  background-color: #eef9f0;
+  border: 0;
+  border-bottom: 1px solid #b4dfc2;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+headerbar.potoo-linux-titlebar button.titlebutton {
+  min-width: 28px;
+  min-height: 28px;
+  margin: 3px;
+  border-radius: 2px;
+}
+
 .potoo-brand-name {
   color: #103b2d;
   font-size: 15px;
@@ -48,7 +65,7 @@ window.potoo-window.potoo-dark {
   color: #174332;
 }
 
-.potoo-theme-button {
+.potoo-settings-button {
   min-width: 34px;
   min-height: 34px;
   padding: 0;
@@ -59,7 +76,7 @@ window.potoo-window.potoo-dark {
   box-shadow: none;
 }
 
-.potoo-theme-button:hover,
+.potoo-settings-button:hover,
 .potoo-language-picker:hover {
   background-color: #d4efdc;
   border-color: #15945b;
@@ -138,6 +155,16 @@ textview.potoo-output-view {
   font-size: 13px;
 }
 
+textview.potoo-code-editor.potoo-font-15,
+label.potoo-line-numbers.potoo-font-15 {
+  font-size: 15px;
+}
+
+textview.potoo-code-editor.potoo-font-17,
+label.potoo-line-numbers.potoo-font-17 {
+  font-size: 17px;
+}
+
 .potoo-output-notebook > header {
   background-color: #eef9f0;
   border-bottom: 1px solid #b4dfc2;
@@ -211,6 +238,57 @@ textview.potoo-output-view {
   font-weight: 700;
 }
 
+.potoo-settings-page {
+  background-color: #eef9f0;
+  color: #174332;
+}
+
+.potoo-settings-title {
+  color: #174332;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.potoo-settings-description,
+.potoo-settings-row-description {
+  color: #397553;
+  font-size: 12px;
+}
+
+.potoo-settings-section {
+  padding-top: 8px;
+}
+
+.potoo-settings-section-title {
+  padding-bottom: 4px;
+  color: #15945b;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.potoo-settings-row {
+  min-height: 56px;
+  padding: 12px 0;
+  border-bottom: 1px solid #b4dfc2;
+}
+
+.potoo-settings-row-title {
+  color: #174332;
+  font-size: 13px;
+  font-weight: 680;
+}
+
+.potoo-settings-picker {
+  min-width: 140px;
+}
+
+dropdown.potoo-settings-picker > button {
+  background-color: #e5f6e9;
+  border: 1px solid #b4dfc2;
+  border-radius: 2px;
+  color: #174332;
+}
+
 paned > separator {
   background-color: #b4dfc2;
   min-width: 1px;
@@ -218,6 +296,7 @@ paned > separator {
 }
 
 window.potoo-window.potoo-dark .potoo-header,
+window.potoo-window.potoo-dark headerbar.potoo-linux-titlebar,
 window.potoo-window.potoo-dark .potoo-editor-tabbar,
 window.potoo-window.potoo-dark .potoo-output-notebook > header {
   background-color: #0a0b0a;
@@ -233,7 +312,7 @@ window.potoo-window.potoo-dark .potoo-learning-panel .heading {
 }
 
 window.potoo-window.potoo-dark .potoo-language-picker,
-window.potoo-window.potoo-dark .potoo-theme-button {
+window.potoo-window.potoo-dark .potoo-settings-button {
   background-color: #151815;
   border-color: #35443a;
   color: #ffffff;
@@ -244,7 +323,7 @@ window.potoo-window.potoo-dark .potoo-language-picker > button {
   color: #ffffff;
 }
 
-window.potoo-window.potoo-dark .potoo-theme-button:hover,
+window.potoo-window.potoo-dark .potoo-settings-button:hover,
 window.potoo-window.potoo-dark .potoo-language-picker:hover {
   background-color: #1e241f;
   border-color: #65d48d;
@@ -330,6 +409,35 @@ window.potoo-window.potoo-dark .potoo-status-primary {
 
 window.potoo-window.potoo-dark .potoo-muted {
   color: #a6e9b8;
+}
+
+window.potoo-window.potoo-dark .potoo-settings-page {
+  background-color: #0a0b0a;
+  color: #ffffff;
+}
+
+window.potoo-window.potoo-dark .potoo-settings-title,
+window.potoo-window.potoo-dark .potoo-settings-row-title {
+  color: #ffffff;
+}
+
+window.potoo-window.potoo-dark .potoo-settings-description,
+window.potoo-window.potoo-dark .potoo-settings-row-description {
+  color: #a6e9b8;
+}
+
+window.potoo-window.potoo-dark .potoo-settings-section-title {
+  color: #65d48d;
+}
+
+window.potoo-window.potoo-dark .potoo-settings-row {
+  border-color: #35443a;
+}
+
+window.potoo-window.potoo-dark dropdown.potoo-settings-picker > button {
+  background-color: #151815;
+  border-color: #35443a;
+  color: #ffffff;
 }
 
 window.potoo-window.potoo-dark paned > separator {
