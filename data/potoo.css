@@ -132,16 +132,28 @@ headerbar.potoo-linux-titlebar button.titlebutton {
 }
 
 popover.potoo-header-popover {
+  background-color: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+popover.potoo-header-popover > contents {
   background-color: var(--potoo-surface-bg);
   border: 1px solid var(--potoo-border);
-  border-radius: 5px;
+  border-radius: 3px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
 }
 
-.potoo-header-menu-content {
-  min-width: 270px;
-  padding: 12px;
+popover.potoo-header-popover > arrow {
   background-color: var(--potoo-surface-bg);
+  border-color: var(--potoo-border);
+}
+
+.potoo-header-menu-content {
+  min-width: 250px;
+  padding: 10px;
+  background-color: transparent;
   color: var(--potoo-text);
 }
 
@@ -174,6 +186,11 @@ popover.potoo-header-popover {
   color: var(--potoo-text);
 }
 
+.potoo-theme-choice:focus {
+  outline: 1px solid var(--potoo-accent);
+  outline-offset: 1px;
+}
+
 .potoo-menu-settings-action {
   min-height: 32px;
   padding: 0 8px;
@@ -182,6 +199,8 @@ popover.potoo-header-popover {
   border: 0;
   border-radius: 3px;
   color: var(--potoo-text);
+  font-size: 12px;
+  font-weight: 650;
   box-shadow: none;
 }
 
@@ -737,6 +756,10 @@ window.potoo-window.potoo-dark .potoo-menu-button:checked {
 
 window.potoo-window.potoo-dark .potoo-theme-choice:checked {
   border-color: var(--potoo-accent-text);
+}
+
+window.potoo-window.potoo-dark .potoo-theme-choice:focus {
+  outline-color: var(--potoo-accent-text);
 }
 
 window.potoo-window.potoo-dark .potoo-run-button {
