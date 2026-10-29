@@ -1734,14 +1734,17 @@ fn build_window_content(
     editor_output.set_shrink_start_child(false);
     editor_output.set_shrink_end_child(false);
     editor_output.set_position(570);
-    editor_output.connect_map(|paned| {
+    let window_for_output = window.clone();
+    editor_output.connect_map(move |paned| {
         let paned = paned.clone();
-        gtk::glib::idle_add_local(move || {
+        let window = window_for_output.clone();
+        gtk::glib::timeout_add_local(Duration::from_millis(32), move || {
             let height = paned.height();
-            if height <= 0 {
+            let window_height = window.height();
+            if height <= 0 || window_height <= 0 || height < window_height.saturating_sub(150) {
                 return gtk::glib::ControlFlow::Continue;
             }
-            paned.set_position(height.saturating_sub(236).max(0));
+            paned.set_position(height.saturating_sub(200).max(0));
             gtk::glib::ControlFlow::Break
         });
     });
