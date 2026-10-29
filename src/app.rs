@@ -1363,8 +1363,27 @@ impl SimpleComponent for MainWindow {
                 tr(preferences.ui_language, "Pronto para executar").to_string()
             },
         };
-        let widgets = build_window_content(root.clone(), sender, preferences);
+        let mut widgets = build_window_content(root.clone(), sender.clone(), preferences);
         root.set_child(Some(&widgets.content));
+        content_panel::rebuild_editor_tabs(
+            &widgets.editor_tabs,
+            &model.documents,
+            model.active_document_id,
+            model.ui_language,
+            sender,
+        );
+        widgets.displayed_tabs = model
+            .documents
+            .iter()
+            .map(|document| {
+                (
+                    document.id,
+                    document.name.clone(),
+                    document.is_dirty(),
+                    Some(document.id) == model.active_document_id,
+                )
+            })
+            .collect();
 
         if !unreadable_session {
             if let Err(error) = persist_session(&model, false, false) {
