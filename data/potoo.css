@@ -462,15 +462,17 @@ label.potoo-line-numbers.potoo-font-17 {
 }
 
 .potoo-output-notebook > header > tabs > tab {
-  min-height: 34px;
-  padding: 0 12px;
-  margin: 4px 1px 0;
+  min-height: 38px;
+  padding: 0 14px;
+  margin: 0 1px;
   background-color: transparent;
-  border: 1px solid transparent;
+  border: 0;
   border-bottom: 2px solid transparent;
-  border-radius: 3px 3px 0 0;
+  border-radius: 0;
   color: var(--potoo-text-muted);
   font-size: 12px;
+  outline-style: none;
+  outline-width: 0;
   box-shadow: none;
 }
 
@@ -479,10 +481,17 @@ label.potoo-line-numbers.potoo-font-17 {
   color: var(--potoo-text-secondary);
 }
 
+.potoo-output-notebook > header > tabs > tab:focus {
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
+  outline-style: none;
+  outline-width: 0;
+  box-shadow: none;
+}
+
 .potoo-output-notebook > header > tabs > tab:checked {
   background-color: var(--potoo-surface-bg);
-  border-color: var(--potoo-border);
-  border-bottom: 2px solid var(--potoo-accent);
+  border-bottom-color: var(--potoo-accent);
   color: var(--potoo-text);
   font-weight: 650;
 }
@@ -796,14 +805,14 @@ window.potoo-window.potoo-dark .potoo-output-notebook > header > tabs > tab {
   color: var(--potoo-text-muted);
 }
 
-window.potoo-window.potoo-dark .potoo-output-notebook > header > tabs > tab:hover {
+window.potoo-window.potoo-dark .potoo-output-notebook > header > tabs > tab:hover,
+window.potoo-window.potoo-dark .potoo-output-notebook > header > tabs > tab:focus {
   background-color: var(--potoo-panel-hover-bg);
   color: var(--potoo-text);
 }
 
 window.potoo-window.potoo-dark .potoo-output-notebook > header > tabs > tab:checked {
   background-color: var(--potoo-editor-bg);
-  border-color: var(--potoo-border);
   border-bottom-color: var(--potoo-accent-text);
   color: var(--potoo-text);
 }
