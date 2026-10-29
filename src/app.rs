@@ -72,7 +72,6 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Salvar arquivo" => "Save file",
             "Salvar" => "Save",
             "Salvar como" => "Save as",
-            "Linguagem para novos arquivos" => "Language for new files",
             "Configurações" => "Settings",
             "Executar" => "Run",
             "Arquivos" => "Files",
@@ -254,7 +253,6 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Salvar arquivo" => "Guardar archivo",
             "Salvar" => "Guardar",
             "Salvar como" => "Guardar como",
-            "Linguagem para novos arquivos" => "Lenguaje para archivos nuevos",
             "Configurações" => "Configuración",
             "Executar" => "Ejecutar",
             "Arquivos" => "Archivos",
@@ -530,7 +528,6 @@ struct SessionSnapshot {
 
 #[derive(Debug)]
 pub(crate) enum MainWindowMsg {
-    LanguageSelected(Language),
     InterfaceLanguageSelected(UiLanguage),
     ProjectSelected(PathBuf),
     ProjectSwitchDecision(bool),
@@ -1149,7 +1146,7 @@ struct SettingsUi {
 pub struct MainUi {
     window: gtk::ApplicationWindow,
     content: gtk::Box,
-    language_picker: gtk::DropDown,
+    default_new_language: Rc<Cell<Language>>,
     settings: SettingsUi,
     theme_options: Vec<(ThemePreference, gtk::ToggleButton)>,
     project_title: gtk::Label,
@@ -1170,7 +1167,6 @@ pub struct MainUi {
     output_buffer: gtk::TextBuffer,
     output_status: gtk::Label,
     displayed_language: Option<Language>,
-    displayed_new_file_language: Language,
     displayed_active_document_id: Option<u64>,
     displayed_project_name: String,
     displayed_project_files: Vec<(PathBuf, bool)>,
@@ -1327,10 +1323,6 @@ impl SimpleComponent for MainWindow {
                 | MainWindowMsg::SaveAsSelected(_, _)
         );
         match message {
-            MainWindowMsg::LanguageSelected(language) => {
-                self.new_file_language = language;
-                self.save_preferences();
-            }
             MainWindowMsg::InterfaceLanguageSelected(language) => {
                 self.preferred_ui_language = language;
                 self.save_preferences();
@@ -1494,11 +1486,7 @@ impl SimpleComponent for MainWindow {
             ui.status_language.set_visible(active_language.is_some());
             ui.displayed_language = active_language;
         }
-        if ui.displayed_new_file_language != self.new_file_language {
-            ui.language_picker
-                .set_selected(self.new_file_language.selected_index());
-            ui.displayed_new_file_language = self.new_file_language;
-        }
+        ui.default_new_language.set(self.new_file_language);
 
         if ui.displayed_indent_width != self.indent_width {
             ui.indent_width.set(self.indent_width);
@@ -1719,7 +1707,7 @@ fn build_window_content(
 
     let settings = build_settings_window(&window, sender.clone(), preferences);
 
-    let file_sidebar = sidebar::build_file_sidebar(ui_language, preferences.default_language);
+    let file_sidebar = sidebar::build_file_sidebar(ui_language);
     let expanded_folders = file_sidebar.expanded_folders.clone();
     let sidebar_widget = file_sidebar.widget;
     let project_row = file_sidebar.project_row;
@@ -1732,7 +1720,7 @@ fn build_window_content(
     let open_project_button = file_sidebar.open_project_button;
     let open_file_button = file_sidebar.open_file_button;
     let open_popover = file_sidebar.open_popover;
-    let language_picker = file_sidebar.language_picker;
+    let default_new_language = Rc::new(Cell::new(preferences.default_language));
 
     let code_buffer = gtk::TextBuffer::new(None::<&gtk::TextTagTable>);
     code_buffer.set_text(Language::Portugol.sample());
@@ -1923,16 +1911,6 @@ fn build_window_content(
         window.add_css_class("potoo-dark");
     }
 
-    let sender_for_language = sender.clone();
-    language_picker.connect_selected_notify(move |picker| {
-        let selected = if picker.selected() == 1 {
-            Language::Visualg
-        } else {
-            Language::Portugol
-        };
-        sender_for_language.input(MainWindowMsg::LanguageSelected(selected));
-    });
-
     let sender_for_open_project = sender.clone();
     let window_for_open_project = window.clone();
     let open_popover_for_project = open_popover.clone();
@@ -1969,13 +1947,13 @@ fn build_window_content(
 
     let sender_for_new_file = sender.clone();
     let window_for_new_file = window.clone();
-    let language_picker_for_new_file = language_picker.clone();
+    let default_new_language_for_new_file = default_new_language.clone();
     let popover_for_new_file = new_item_popover.clone();
     new_program_button.connect_clicked(move |_| {
         popover_for_new_file.popdown();
         show_new_file_dialog(
             &window_for_new_file,
-            &language_picker_for_new_file,
+            default_new_language_for_new_file.get(),
             ui_language,
             sender_for_new_file.clone(),
         );
@@ -2061,7 +2039,7 @@ fn build_window_content(
     MainUi {
         window,
         content: content_root,
-        language_picker,
+        default_new_language,
         settings,
         theme_options,
         project_title,
@@ -2082,7 +2060,6 @@ fn build_window_content(
         output_buffer,
         output_status,
         displayed_language: Some(Language::Portugol),
-        displayed_new_file_language: preferences.default_language,
         displayed_active_document_id: Some(0),
         displayed_project_name: String::new(),
         displayed_project_files: Vec::new(),
@@ -2379,7 +2356,7 @@ fn show_open_file_dialog(
 
 fn show_new_file_dialog(
     parent: &gtk::ApplicationWindow,
-    language_picker: &gtk::DropDown,
+    default_language: Language,
     ui_language: UiLanguage,
     sender: ComponentSender<MainWindow>,
 ) {
@@ -2423,7 +2400,7 @@ fn show_new_file_dialog(
     content.append(&gtk::Label::new(Some(tr(ui_language, "Linguagem"))));
     let language = gtk::DropDown::from_strings(&["Portugol (.por)", "VisuAlg (.alg)"]);
     language.add_css_class("potoo-settings-picker");
-    language.set_selected(language_picker.selected());
+    language.set_selected(default_language.selected_index());
     content.append(&language);
 
     let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);

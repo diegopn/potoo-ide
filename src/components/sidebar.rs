@@ -1,6 +1,6 @@
 use crate::{
     app::{MainWindow, MainWindowMsg, UiLanguage, tr},
-    components::{clear_box, content_panel::Language, icon_label_button},
+    components::{clear_box, icon_label_button},
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -32,11 +32,10 @@ pub(crate) struct SidebarUi {
     pub(crate) open_popover: gtk::Popover,
     pub(crate) open_project_button: gtk::Button,
     pub(crate) open_file_button: gtk::Button,
-    pub(crate) language_picker: gtk::DropDown,
     pub(crate) expanded_folders: ExpandedFolders,
 }
 
-pub(crate) fn build_file_sidebar(language: UiLanguage, default_language: Language) -> SidebarUi {
+pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
     let sidebar = gtk::Box::new(gtk::Orientation::Vertical, 0);
     sidebar.add_css_class("potoo-file-sidebar");
     sidebar.set_size_request(220, -1);
@@ -51,10 +50,6 @@ pub(crate) fn build_file_sidebar(language: UiLanguage, default_language: Languag
     heading.add_css_class("heading");
     heading.set_hexpand(true);
     heading.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    let language_picker = gtk::DropDown::from_strings(&["Portugol", "VisuAlg"]);
-    language_picker.add_css_class("potoo-sidebar-language-picker");
-    language_picker.set_selected(default_language.selected_index());
-    language_picker.set_tooltip_text(Some(tr(language, "Linguagem para novos arquivos")));
 
     let open_menu = gtk::MenuButton::new();
     open_menu.set_child(Some(&gtk::Image::from_icon_name(
@@ -118,7 +113,6 @@ pub(crate) fn build_file_sidebar(language: UiLanguage, default_language: Languag
     open_menu.set_popover(Some(&open_popover));
 
     heading_row.append(&heading);
-    heading_row.append(&language_picker);
     heading_row.append(&open_menu);
     heading_row.append(&new_file_button);
     sidebar.append(&heading_row);
@@ -159,7 +153,6 @@ pub(crate) fn build_file_sidebar(language: UiLanguage, default_language: Languag
         open_popover,
         open_project_button,
         open_file_button,
-        language_picker,
         expanded_folders: Rc::new(RefCell::new(HashSet::new())),
     }
 }

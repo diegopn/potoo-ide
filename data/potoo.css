@@ -89,30 +89,6 @@ headerbar.potoo-linux-titlebar button.titlebutton {
   font-weight: 700;
 }
 
-.potoo-sidebar-language-picker {
-  min-height: 28px;
-  min-width: 76px;
-  background-color: var(--potoo-panel-bg);
-  background-image: none;
-  border: 1px solid var(--potoo-border);
-  border-radius: 2px;
-  color: var(--potoo-text);
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.potoo-sidebar-language-picker button,
-.potoo-sidebar-language-picker > button {
-  min-height: 26px;
-  padding: 0 6px;
-  background-color: transparent;
-  background-image: none;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  color: var(--potoo-text);
-}
-
 .potoo-menu-button {
   min-width: 30px;
   min-height: 30px;
@@ -206,11 +182,6 @@ popover.potoo-header-popover > arrow {
 
 .potoo-menu-settings-action:hover {
   background-color: var(--potoo-panel-hover-bg);
-}
-
-.potoo-sidebar-language-picker:hover {
-  background-color: var(--potoo-panel-hover-bg);
-  border-color: var(--potoo-accent);
 }
 
 .potoo-run-button {
@@ -655,7 +626,6 @@ dropdown.potoo-settings-picker > button {
   color: var(--potoo-text);
 }
 
-dropdown.potoo-sidebar-language-picker popover.background > contents,
 dropdown.potoo-settings-picker popover.background > contents {
   padding: 4px;
   background-color: var(--potoo-surface-bg);
@@ -664,12 +634,10 @@ dropdown.potoo-settings-picker popover.background > contents {
   box-shadow: 0 3px 10px rgba(18, 23, 27, 0.16);
 }
 
-dropdown.potoo-sidebar-language-picker popover listview,
 dropdown.potoo-settings-picker popover listview {
   background-color: transparent;
 }
 
-dropdown.potoo-sidebar-language-picker popover listview row,
 dropdown.potoo-settings-picker popover listview row {
   min-height: 30px;
   padding: 0 8px;
@@ -677,12 +645,10 @@ dropdown.potoo-settings-picker popover listview row {
   color: var(--potoo-text);
 }
 
-dropdown.potoo-sidebar-language-picker popover listview row:hover,
 dropdown.potoo-settings-picker popover listview row:hover {
   background-color: var(--potoo-panel-hover-bg);
 }
 
-dropdown.potoo-sidebar-language-picker popover listview row:selected,
 dropdown.potoo-settings-picker popover listview row:selected {
   background-color: var(--potoo-accent-soft-bg);
   color: var(--potoo-text);
@@ -731,22 +697,6 @@ window.potoo-window.potoo-dark .potoo-file-sidebar .heading,
 window.potoo-window.potoo-dark .potoo-learning-title,
 window.potoo-window.potoo-dark .potoo-learning-panel .heading {
   color: var(--potoo-text);
-}
-
-window.potoo-window.potoo-dark .potoo-sidebar-language-picker {
-  background-color: var(--potoo-panel-bg);
-  border-color: var(--potoo-border);
-  color: var(--potoo-text);
-}
-
-window.potoo-window.potoo-dark .potoo-sidebar-language-picker button,
-window.potoo-window.potoo-dark .potoo-sidebar-language-picker > button {
-  color: var(--potoo-text);
-}
-
-window.potoo-window.potoo-dark .potoo-sidebar-language-picker:hover {
-  background-color: var(--potoo-panel-hover-bg);
-  border-color: var(--potoo-accent-text);
 }
 
 window.potoo-window.potoo-dark .potoo-menu-button:hover,
