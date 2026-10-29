@@ -1707,7 +1707,15 @@ fn build_window_content(
     editor_output.set_shrink_end_child(false);
     editor_output.set_position(570);
     editor_output.connect_map(|paned| {
-        paned.set_position(paned.height().saturating_sub(236).max(0));
+        let paned = paned.clone();
+        gtk::glib::idle_add_local(move || {
+            let height = paned.height();
+            if height <= 0 {
+                return gtk::glib::ControlFlow::Continue;
+            }
+            paned.set_position(height.saturating_sub(236).max(0));
+            gtk::glib::ControlFlow::Break
+        });
     });
 
     let learning_panel = content_panel::build_learning_panel(ui_language);
@@ -1721,7 +1729,15 @@ fn build_window_content(
     editor_and_learning.set_shrink_end_child(false);
     editor_and_learning.set_position(820);
     editor_and_learning.connect_map(|paned| {
-        paned.set_position(paned.width().saturating_sub(370).max(440));
+        let paned = paned.clone();
+        gtk::glib::idle_add_local(move || {
+            let width = paned.width();
+            if width <= 0 {
+                return gtk::glib::ControlFlow::Continue;
+            }
+            paned.set_position(width.saturating_sub(370).max(440));
+            gtk::glib::ControlFlow::Break
+        });
     });
 
     let workspace = gtk::Paned::new(gtk::Orientation::Horizontal);
