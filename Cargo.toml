@@ -1,7 +1,7 @@
 [package]
 name = "potoo-ide"
 version = "0.1.0"
-description = "Uma IDE desktop para aprender lógica com Portugol, VisuAlg e Potigol"
+description = "Uma IDE desktop para aprender lógica com Portugol e VisuAlg"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/diegopn/potoo-ide"
 homepage = "https://diegopn.github.io/potoo-site/"

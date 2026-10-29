@@ -4,19 +4,19 @@
 
 # Potoo IDE
 
-A desktop IDE for learning programming logic with educational languages, including Portugol, VisuAlg, and Potigol.
+A desktop IDE for students and teachers to practice programming logic with Portugol and VisuAlg.
 
 The project aims to provide a simple, intuitive space for students to practice and for teachers to support the concepts taught through code. The interface is built with Rust, GTK 4, and libadwaita, with inspiration from GNOME Builder. Teachers choose which tools fit their classes; the IDE does not impose one learning path.
 
 ## Languages
 
-- **Portugol**, **VisuAlg**, and **Potigol** are planned for the first stage.
-- Potigol is a beginner-friendly language with Portuguese keywords, strong static typing, and type inference ([official project](https://github.com/potigol/potigol)).
+- The first implementation focuses on **Portugol** and **VisuAlg**.
+- Potigol is a possible later addition. It is a beginner-friendly language with Portuguese keywords, strong static typing, and type inference ([official project](https://github.com/potigol/potigol)).
 - **C0 (Simplified C)** is being considered as another optional language for a future stage. Carnegie Mellon University's [course repository](https://github.com/CMU-07-120/intro-to-software-construction) documents `coin`, the C0 interpreter, and `cc0`, the compiler. The course repository includes an [Unlicense](https://github.com/CMU-07-120/intro-to-software-construction/blob/main/LICENSE), while its [submodule definition](https://github.com/CMU-07-120/intro-to-software-construction/blob/main/.gitmodules) points C0 to a separate [Bitbucket project](https://bitbucket.org/c0-lang/c0/src/master/). We did not find an explicit redistribution license for the C0 source in the upstream locations reviewed, so permission to reuse or bundle `coin` remains unconfirmed. An independently written simplified-C language or interpreter is a separate option and would not automatically be compatible with official C0. The C0 tutorial identifies Frank Pfenning as a principal designer and maintainer; CMU lists [fp@cmu.edu](mailto:fp@cmu.edu) as his contact for permission requests. No permission has been granted. Confirm licensing and compatibility before reusing the official implementation or claiming official C0 compatibility.
 - **PSeInt** and **Linotte** are possibilities for a later stage.
 - [**Karel**](https://en.wikipedia.org/wiki/Karel_(programming_language)) remains a final candidate for evaluation; its fit for the project and the appropriate variant still need to be decided.
 
-The current scaffold does not yet include a code editor or interpreters. Compatibility and integration work will be delivered in stages. Project documentation is maintained in English. Both the app and project website are planned to support English (default), Brazilian Portuguese, and Spanish; app localization has not been implemented yet.
+The current native preview includes an editable code area and the main learning workspace. Portugol and VisuAlg execution engines are not connected yet; compatibility and integration work will be delivered in stages. Project documentation is maintained in English. Both the app and project website are planned to support English (default), Brazilian Portuguese, and Spanish; app localization has not been implemented yet.
 
 ## Platforms
 
