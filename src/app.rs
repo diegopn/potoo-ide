@@ -1045,7 +1045,7 @@ struct SettingsUi {
     ui_language_picker: gtk::DropDown,
 }
 
-struct MainUi {
+pub struct MainUi {
     window: gtk::ApplicationWindow,
     content: gtk::Box,
     language_picker: gtk::DropDown,
