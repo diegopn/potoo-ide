@@ -1709,6 +1709,8 @@ fn build_window_content(
     let settings_button = header.settings_button.clone();
     let menu_open_project_button = header.open_project_button.clone();
     let menu_open_file_button = header.open_file_button.clone();
+    let menu_save_button = header.save_button.clone();
+    let menu_save_as_button = header.save_as_button.clone();
     let menu_popover = header.popover.clone();
     let theme_options = header.theme_options.clone();
     let run_button = header.run_button.clone();
@@ -1781,33 +1783,9 @@ fn build_window_content(
 
     let editor_tabs = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     editor_tabs.set_hexpand(true);
-    let save_button = icon_label_button(
-        "document-save-symbolic",
-        tr(ui_language, "Salvar"),
-        tr(
-            ui_language,
-            if cfg!(target_os = "macos") {
-                "Salvar arquivo (⌘S)"
-            } else {
-                "Salvar arquivo (Ctrl+S)"
-            },
-        ),
-        "potoo-editor-action-button",
-    );
-    let save_as_button = icon_label_button(
-        "document-save-as-symbolic",
-        tr(ui_language, "Salvar como"),
-        tr(ui_language, "Salvar como"),
-        "potoo-editor-action-button",
-    );
-    let editor_actions = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-    editor_actions.set_margin_end(8);
-    editor_actions.append(&save_button);
-    editor_actions.append(&save_as_button);
     let tab_bar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     tab_bar.add_css_class("potoo-editor-tabbar");
     tab_bar.append(&editor_tabs);
-    tab_bar.append(&editor_actions);
 
     let editor = gtk::Box::new(gtk::Orientation::Vertical, 0);
     editor.add_css_class("potoo-editor");
@@ -1974,6 +1952,20 @@ fn build_window_content(
         );
     });
 
+    let sender_for_menu_save = sender.clone();
+    let menu_popover_for_save = menu_popover.clone();
+    menu_save_button.connect_clicked(move |_| {
+        menu_popover_for_save.popdown();
+        sender_for_menu_save.input(MainWindowMsg::SaveCurrent);
+    });
+
+    let sender_for_menu_save_as = sender.clone();
+    let menu_popover_for_save_as = menu_popover.clone();
+    menu_save_as_button.connect_clicked(move |_| {
+        menu_popover_for_save_as.popdown();
+        sender_for_menu_save_as.input(MainWindowMsg::SaveAsCurrent);
+    });
+
     let sender_for_new_file = sender.clone();
     let window_for_new_file = window.clone();
     let language_picker_for_new_file = language_picker.clone();
@@ -1998,16 +1990,6 @@ fn build_window_content(
             ui_language,
             sender_for_new_folder.clone(),
         );
-    });
-
-    let sender_for_save = sender.clone();
-    save_button.connect_clicked(move |_| {
-        sender_for_save.input(MainWindowMsg::SaveCurrent);
-    });
-
-    let sender_for_save_as = sender.clone();
-    save_as_button.connect_clicked(move |_| {
-        sender_for_save_as.input(MainWindowMsg::SaveAsCurrent);
     });
 
     let sender_for_settings = sender.clone();
