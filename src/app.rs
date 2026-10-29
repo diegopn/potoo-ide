@@ -1,6 +1,6 @@
 use crate::components::{
     content_panel::{self, Language, SourceDocument, SyntaxTags},
-    header, sidebar,
+    header, icon_label_button, sidebar,
     sidebar::ProjectFile,
 };
 use gtk::prelude::*;
@@ -60,9 +60,11 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
         UiLanguage::Portuguese => return portuguese,
         UiLanguage::English => match portuguese {
             "Meu primeiro programa" => "My first program",
+            "Abrir pasta" => "Open folder",
             "Abrir pasta de projeto" => "Open project folder",
             "Abrir arquivo" => "Open file",
             "Salvar arquivo" => "Save file",
+            "Salvar" => "Save",
             "Salvar como" => "Save as",
             "Linguagem para novos arquivos" => "Language for new files",
             "Configurações" => "Settings",
@@ -219,9 +221,11 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
         },
         UiLanguage::Spanish => match portuguese {
             "Meu primeiro programa" => "Mi primer programa",
+            "Abrir pasta" => "Abrir carpeta",
             "Abrir pasta de projeto" => "Abrir carpeta del proyecto",
             "Abrir arquivo" => "Abrir archivo",
             "Salvar arquivo" => "Guardar archivo",
+            "Salvar" => "Guardar",
             "Salvar como" => "Guardar como",
             "Linguagem para novos arquivos" => "Lenguaje para archivos nuevos",
             "Configurações" => "Configuración",
@@ -1601,20 +1605,21 @@ fn build_window_content(
         }
     });
 
-    let header = header::build_header(&window, ui_language, preferences.default_language);
+    let header = header::build_header(&window, ui_language);
     let project_title = header.project_title.clone();
-    let language_picker = header.language_picker.clone();
-    let open_project_button = header.open_project_button.clone();
-    let open_file_button = header.open_file_button.clone();
-    let save_button = header.save_button.clone();
-    let save_as_button = header.save_as_button.clone();
     let settings_button = header.settings_button.clone();
     let run_button = header.run_button.clone();
 
     let settings = build_settings_window(&window, sender.clone(), preferences);
 
-    let (sidebar, project_label, file_list, new_file_button) =
-        sidebar::build_file_sidebar(ui_language);
+    let file_sidebar = sidebar::build_file_sidebar(ui_language, preferences.default_language);
+    let sidebar_widget = file_sidebar.widget;
+    let project_label = file_sidebar.project_label;
+    let file_list = file_sidebar.file_list;
+    let new_file_button = file_sidebar.new_file_button;
+    let open_project_button = file_sidebar.open_project_button;
+    let open_file_button = file_sidebar.open_file_button;
+    let language_picker = file_sidebar.language_picker;
 
     let code_buffer = gtk::TextBuffer::new(None::<&gtk::TextTagTable>);
     code_buffer.set_text(Language::Portugol.sample());
@@ -1669,10 +1674,33 @@ fn build_window_content(
 
     let editor_tabs = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     editor_tabs.set_hexpand(true);
+    let save_button = icon_label_button(
+        "document-save-symbolic",
+        tr(ui_language, "Salvar"),
+        tr(
+            ui_language,
+            if cfg!(target_os = "macos") {
+                "Salvar arquivo (⌘S)"
+            } else {
+                "Salvar arquivo (Ctrl+S)"
+            },
+        ),
+        "potoo-editor-action-button",
+    );
+    let save_as_button = icon_label_button(
+        "document-save-as-symbolic",
+        tr(ui_language, "Salvar como"),
+        tr(ui_language, "Salvar como"),
+        "potoo-editor-action-button",
+    );
+    let editor_actions = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    editor_actions.set_margin_end(8);
+    editor_actions.append(&save_button);
+    editor_actions.append(&save_as_button);
     let tab_bar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     tab_bar.add_css_class("potoo-editor-tabbar");
     tab_bar.append(&editor_tabs);
-    tab_bar.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+    tab_bar.append(&editor_actions);
 
     let editor = gtk::Box::new(gtk::Orientation::Vertical, 0);
     editor.add_css_class("potoo-editor");
@@ -1742,7 +1770,7 @@ fn build_window_content(
 
     let workspace = gtk::Paned::new(gtk::Orientation::Horizontal);
     workspace.set_wide_handle(false);
-    workspace.set_start_child(Some(&sidebar));
+    workspace.set_start_child(Some(&sidebar_widget));
     workspace.set_end_child(Some(&editor_and_learning));
     workspace.set_resize_start_child(false);
     workspace.set_resize_end_child(true);

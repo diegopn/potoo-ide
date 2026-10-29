@@ -1,7 +1,4 @@
-use crate::{
-    app::{UiLanguage, tr},
-    components::content_panel::Language,
-};
+use crate::app::{UiLanguage, tr};
 use gtk::prelude::*;
 use std::path::Path;
 
@@ -19,20 +16,11 @@ fn app_icon() -> gtk::Image {
 pub(crate) struct HeaderUi {
     pub(crate) widget: Option<gtk::Widget>,
     pub(crate) project_title: gtk::Label,
-    pub(crate) open_project_button: gtk::Button,
-    pub(crate) open_file_button: gtk::Button,
-    pub(crate) language_picker: gtk::DropDown,
-    pub(crate) save_button: gtk::Button,
-    pub(crate) save_as_button: gtk::Button,
     pub(crate) settings_button: gtk::Button,
     pub(crate) run_button: gtk::Button,
 }
 
-pub(crate) fn build_header(
-    window: &gtk::ApplicationWindow,
-    language: UiLanguage,
-    default_language: Language,
-) -> HeaderUi {
+pub(crate) fn build_header(window: &gtk::ApplicationWindow, language: UiLanguage) -> HeaderUi {
     let brand = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     brand.append(&app_icon());
     let brand_label = gtk::Label::new(Some("Potoo IDE"));
@@ -42,39 +30,6 @@ pub(crate) fn build_header(
     let project_title = gtk::Label::new(Some(tr(language, "Meu primeiro programa")));
     project_title.add_css_class("potoo-project-name");
     project_title.set_ellipsize(gtk::pango::EllipsizeMode::End);
-
-    let open_project_button = icon_button(
-        "folder-open-symbolic",
-        tr(language, "Abrir pasta de projeto"),
-        "potoo-toolbar-button",
-    );
-    let open_file_button = icon_button(
-        "document-open-symbolic",
-        tr(language, "Abrir arquivo"),
-        "potoo-toolbar-button",
-    );
-    let save_button = icon_button(
-        "document-save-symbolic",
-        tr(
-            language,
-            if cfg!(target_os = "macos") {
-                "Salvar arquivo (⌘S)"
-            } else {
-                "Salvar arquivo (Ctrl+S)"
-            },
-        ),
-        "potoo-toolbar-button",
-    );
-    let save_as_button = icon_button(
-        "document-save-as-symbolic",
-        tr(language, "Salvar como"),
-        "potoo-toolbar-button",
-    );
-
-    let language_picker = gtk::DropDown::from_strings(&["Portugol", "VisuAlg"]);
-    language_picker.add_css_class("potoo-language-picker");
-    language_picker.set_selected(default_language.selected_index());
-    language_picker.set_tooltip_text(Some(tr(language, "Linguagem para novos arquivos")));
 
     let settings_button = icon_button(
         "preferences-system-symbolic",
@@ -94,11 +49,6 @@ pub(crate) fn build_header(
     )));
 
     let header_actions = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    header_actions.append(&open_project_button);
-    header_actions.append(&open_file_button);
-    header_actions.append(&language_picker);
-    header_actions.append(&save_button);
-    header_actions.append(&save_as_button);
     header_actions.append(&settings_button);
     header_actions.append(&run_button);
 
@@ -129,11 +79,6 @@ pub(crate) fn build_header(
     HeaderUi {
         widget,
         project_title,
-        open_project_button,
-        open_file_button,
-        language_picker,
-        save_button,
-        save_as_button,
         settings_button,
         run_button,
     }
