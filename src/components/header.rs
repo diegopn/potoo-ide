@@ -1,4 +1,5 @@
 use crate::app::{UiLanguage, tr};
+use crate::components::icon;
 use gtk::prelude::*;
 use std::path::Path;
 
@@ -36,7 +37,7 @@ pub(crate) fn build_header(
     let run_button = gtk::Button::new();
     run_button.add_css_class("potoo-run-button");
     let run_content = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    run_content.append(&gtk::Image::from_icon_name("media-playback-start-symbolic"));
+    run_content.append(&icon("play"));
     run_content.append(&gtk::Label::new(Some(tr(language, "Executar"))));
     run_button.set_child(Some(&run_content));
     run_button.set_tooltip_text(Some(tr(

@@ -26,6 +26,14 @@ window.potoo-window {
   font-size: 13px;
 }
 
+image.potoo-icon {
+  color: inherit;
+}
+
+.potoo-output-status-row image.potoo-icon {
+  color: var(--potoo-accent-text);
+}
+
 window.potoo-window.potoo-dark {
   --potoo-window-bg: #2a2f34;
   --potoo-panel-bg: #32383e;
@@ -183,6 +191,14 @@ popover.potoo-sidebar-popover > arrow {
   border-radius: 2px;
   color: var(--potoo-text);
   box-shadow: none;
+}
+
+expander-widget.potoo-folder-expander > box > title > expander {
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
 }
 
 .potoo-folder-expander:hover {

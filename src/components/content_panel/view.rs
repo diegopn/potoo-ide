@@ -1,7 +1,7 @@
 use super::model::{Language, SourceDocument};
 use crate::{
     app::{MainWindow, MainWindowMsg, UiLanguage, tr},
-    components::clear_box,
+    components::{clear_box, icon},
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -45,7 +45,7 @@ pub(crate) fn rebuild_editor_tabs(
         content.set_margin_end(4);
         content.set_margin_top(8);
         content.set_margin_bottom(8);
-        content.append(&gtk::Image::from_icon_name("text-x-generic-symbolic"));
+        content.append(&icon("document"));
         let name = gtk::Label::new(Some(&document.name));
         name.set_max_width_chars(22);
         name.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
@@ -64,7 +64,7 @@ pub(crate) fn rebuild_editor_tabs(
         });
 
         let close_button = gtk::Button::new();
-        close_button.set_child(Some(&gtk::Image::from_icon_name("window-close-symbolic")));
+        close_button.set_child(Some(&icon("close")));
         close_button.set_tooltip_text(Some(tr(language, "Fechar arquivo")));
         close_button.add_css_class("potoo-close-tab-button");
         let sender_for_close = sender.clone();

@@ -4,6 +4,13 @@ pub(crate) mod sidebar;
 
 use gtk::prelude::*;
 
+pub(crate) fn icon(name: &str) -> gtk::Image {
+    let image = gtk::Image::from_icon_name(&format!("potoo-{name}-symbolic"));
+    image.set_pixel_size(16);
+    image.add_css_class("potoo-icon");
+    image
+}
+
 pub(crate) fn icon_label_button(
     icon_name: &str,
     label: &str,
@@ -13,7 +20,7 @@ pub(crate) fn icon_label_button(
     let button = gtk::Button::new();
     let content = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     content.set_hexpand(true);
-    content.append(&gtk::Image::from_icon_name(icon_name));
+    content.append(&icon(icon_name));
     let label = gtk::Label::new(Some(label));
     label.set_xalign(0.0);
     label.set_hexpand(true);

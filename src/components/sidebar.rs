@@ -1,6 +1,6 @@
 use crate::{
     app::{MainWindow, MainWindowMsg, UiLanguage, tr},
-    components::{clear_box, icon_label_button},
+    components::{clear_box, icon, icon_label_button},
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -53,14 +53,12 @@ pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
     heading.set_ellipsize(gtk::pango::EllipsizeMode::End);
 
     let open_menu = gtk::MenuButton::new();
-    open_menu.set_child(Some(&gtk::Image::from_icon_name(
-        "folder-open-symbolic",
-    )));
+    open_menu.set_child(Some(&icon("folder-open")));
     open_menu.set_tooltip_text(Some(tr(language, "Abrir projeto ou programa")));
     open_menu.add_css_class("potoo-sidebar-action");
 
     let new_file_button = gtk::MenuButton::new();
-    new_file_button.set_child(Some(&gtk::Image::from_icon_name("list-add-symbolic")));
+    new_file_button.set_child(Some(&icon("add")));
     new_file_button.set_tooltip_text(Some(tr(language, "Criar item no projeto")));
     new_file_button.add_css_class("potoo-sidebar-action");
     new_file_button.set_sensitive(false);
@@ -73,13 +71,13 @@ pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
     new_item_menu.set_margin_start(4);
     new_item_menu.set_margin_end(4);
     let new_program_button = icon_label_button(
-        "text-x-generic-symbolic",
+        "new-document",
         tr(language, "Novo programa"),
         tr(language, "Criar um programa Portugol ou VisuAlg"),
         "potoo-sidebar-menu-item",
     );
     let new_folder_button = icon_label_button(
-        "folder-new-symbolic",
+        "new-folder",
         tr(language, "Nova pasta"),
         tr(language, "Criar uma pasta no projeto"),
         "potoo-sidebar-menu-item",
@@ -97,13 +95,13 @@ pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
     open_menu_content.set_margin_start(4);
     open_menu_content.set_margin_end(4);
     let open_project_button = icon_label_button(
-        "folder-open-symbolic",
+        "folder-open",
         tr(language, "Abrir pasta"),
         tr(language, "Abrir pasta de projeto"),
         "potoo-sidebar-menu-item",
     );
     let open_file_button = icon_label_button(
-        "document-open-symbolic",
+        "open-document",
         tr(language, "Abrir arquivo"),
         tr(language, "Abrir arquivo de código"),
         "potoo-sidebar-menu-item",
@@ -125,7 +123,7 @@ pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
     project.set_margin_top(6);
     project.set_margin_bottom(4);
     project.set_visible(false);
-    project.append(&gtk::Image::from_icon_name("folder-symbolic"));
+    project.append(&icon("folder"));
     let project_label = gtk::Label::new(Some(tr(language, "Meu primeiro programa")));
     project_label.set_xalign(0.0);
     project_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
@@ -145,7 +143,7 @@ pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
     let settings_footer = gtk::Box::new(gtk::Orientation::Vertical, 0);
     settings_footer.add_css_class("potoo-sidebar-footer");
     let settings_button = icon_label_button(
-        "emblem-system-symbolic",
+        "settings",
         tr(language, "Configurações"),
         tr(language, "Configurações"),
         "potoo-sidebar-settings-button",
@@ -237,7 +235,14 @@ pub(crate) fn rebuild_file_list(
             title.set_margin_top(4);
             title.set_margin_bottom(4);
             title.add_css_class("potoo-folder-title");
-            title.append(&gtk::Image::from_icon_name("folder-symbolic"));
+            let disclosure = icon(if expanded_paths.contains(&file.path) {
+                "chevron-down"
+            } else {
+                "chevron-right"
+            });
+            disclosure.add_css_class("potoo-folder-disclosure");
+            title.append(&disclosure);
+            title.append(&icon("folder"));
             let folder_name = file
                 .path
                 .file_name()
@@ -256,12 +261,15 @@ pub(crate) fn rebuild_file_list(
             expander.set_expanded(expanded_paths.contains(&file.path));
             let expanded_path = file.path.clone();
             let expanded_state = Rc::clone(expanded_folders);
+            let disclosure_for_expander = disclosure.clone();
             expander.connect_expanded_notify(move |expander| {
                 let mut paths = expanded_state.borrow_mut();
                 if expander.is_expanded() {
                     paths.insert(expanded_path.clone());
+                    disclosure_for_expander.set_icon_name(Some("potoo-chevron-down-symbolic"));
                 } else {
                     paths.remove(&expanded_path);
+                    disclosure_for_expander.set_icon_name(Some("potoo-chevron-right-symbolic"));
                 }
             });
             parent.append(&expander);
@@ -288,7 +296,7 @@ pub(crate) fn rebuild_file_list(
         row.set_margin_end(10);
         row.set_margin_top(7);
         row.set_margin_bottom(7);
-        row.append(&gtk::Image::from_icon_name("text-x-generic-symbolic"));
+        row.append(&icon("document"));
         let file_name = file
             .path
             .file_name()
