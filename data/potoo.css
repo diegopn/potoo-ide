@@ -15,6 +15,7 @@ window.potoo-window {
   --potoo-accent-soft-bg: #e8f2ec;
   --potoo-accent-text: #147447;
   --potoo-switch-knob: #ffffff;
+  font-family: "Inter Variable", Inter, "Segoe UI", sans-serif;
   background-color: var(--potoo-window-bg);
   color: var(--potoo-text);
 }
@@ -22,7 +23,6 @@ window.potoo-window {
 .potoo-root {
   background-color: var(--potoo-surface-bg);
   color: var(--potoo-text);
-  font-family: Inter, "Segoe UI", sans-serif;
   font-size: 14px;
 }
 
