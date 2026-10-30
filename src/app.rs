@@ -2045,6 +2045,7 @@ fn build_window_content(
     editor_row.add_css_class("potoo-editor-row");
     editor_row.append(&line_numbers);
     let line_numbers_separator = gtk::Separator::new(gtk::Orientation::Vertical);
+    line_numbers_separator.add_css_class("potoo-gutter-separator");
     line_numbers_separator.set_visible(preferences.line_numbers_visible);
     editor_row.append(&line_numbers_separator);
     editor_row.append(&code_scroll);

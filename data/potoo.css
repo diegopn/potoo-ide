@@ -184,9 +184,8 @@ headerbar.potoo-linux-titlebar button.titlebutton.close:hover {
 }
 
 .potoo-run-button {
-  height: 34px;
-  min-height: 34px;
-  max-height: 34px;
+  /* GTK adds its native button insets around the CSS minimum. */
+  min-height: 28px;
   padding: 0 14px;
   background-color: var(--potoo-accent);
   background-image: none;
@@ -207,7 +206,7 @@ headerbar.potoo-linux-titlebar button.titlebutton.close:hover {
 .potoo-file-sidebar {
   min-width: 242px;
   background-color: var(--potoo-panel-bg);
-  border-right: 1px solid var(--potoo-border);
+  border-right: 0;
 }
 
 .potoo-sidebar-footer {
@@ -630,6 +629,16 @@ textview.potoo-output-view {
   font-size: 14px;
 }
 
+separator.potoo-gutter-separator {
+  min-width: 1px;
+  margin: 0;
+  padding: 0;
+  background-color: var(--potoo-border-subtle);
+  background-image: none;
+  border: 0;
+  box-shadow: none;
+}
+
 textview.potoo-code-editor.potoo-font-15,
 label.potoo-line-numbers.potoo-font-15 {
   font-size: 15px;
@@ -646,7 +655,7 @@ label.potoo-line-numbers.potoo-font-18 {
 }
 
 .potoo-output-panel {
-  border-top: 1px solid var(--potoo-border);
+  border-top: 0;
   background-color: var(--potoo-surface-bg);
 }
 
@@ -727,7 +736,7 @@ textview.potoo-output-placeholder-text {
 .potoo-learning-panel {
   min-width: 306px;
   background-color: var(--potoo-window-bg);
-  border-left: 1px solid var(--potoo-border);
+  border-left: 0;
 }
 
 .potoo-learning-panel separator {
