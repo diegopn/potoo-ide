@@ -55,17 +55,52 @@ pub(crate) fn build_header(window: &gtk::ApplicationWindow, language: UiLanguage
     header_actions.append(&run_button);
 
     #[cfg(target_os = "linux")]
+    {
+        let window_controls = gtk::Box::new(gtk::Orientation::Horizontal, 2);
+        window_controls.set_valign(gtk::Align::Center);
+
+        let minimize_button = window_control_button("window-minimize", language, "Minimizar");
+        let window_to_minimize = window.clone();
+        minimize_button.connect_clicked(move |_| window_to_minimize.minimize());
+        window_controls.append(&minimize_button);
+
+        let maximize_button = window_control_button("window-maximize", language, "Maximizar");
+        update_maximize_button(&maximize_button, window, language);
+        let window_to_toggle = window.clone();
+        maximize_button.connect_clicked(move |_| {
+            if window_to_toggle.is_maximized() {
+                window_to_toggle.unmaximize();
+            } else {
+                window_to_toggle.maximize();
+            }
+        });
+        let maximize_button_weak = maximize_button.downgrade();
+        window.connect_notify_local(Some("maximized"), move |window, _| {
+            if let Some(button) = maximize_button_weak.upgrade() {
+                update_maximize_button(&button, window, language);
+            }
+        });
+        window_controls.append(&maximize_button);
+
+        let close_button = window_control_button("close", language, "Fechar");
+        let window_to_close = window.clone();
+        close_button.connect_clicked(move |_| window_to_close.close());
+        window_controls.append(&close_button);
+
+        header_actions.append(&window_controls);
+    }
+
+    #[cfg(target_os = "linux")]
     header_actions.set_margin_end(8);
 
     #[cfg(target_os = "linux")]
     let widget = {
         let titlebar = gtk::HeaderBar::new();
         titlebar.add_css_class("potoo-linux-titlebar");
-        titlebar.set_show_title_buttons(true);
+        titlebar.set_show_title_buttons(false);
         titlebar.pack_start(&brand);
         titlebar.set_title_widget(Some(&project_title));
         titlebar.pack_end(&header_actions);
-        titlebar.connect_map(compact_linux_window_controls);
         window.set_titlebar(Some(&titlebar));
         None
     };
@@ -90,25 +125,35 @@ pub(crate) fn build_header(window: &gtk::ApplicationWindow, language: UiLanguage
 }
 
 #[cfg(target_os = "linux")]
-fn compact_linux_window_controls(titlebar: &gtk::HeaderBar) {
-    let mut pending = vec![titlebar.clone().upcast::<gtk::Widget>()];
+fn window_control_button(
+    icon_name: &str,
+    language: UiLanguage,
+    label: &'static str,
+) -> gtk::Button {
+    let button = gtk::Button::new();
+    button.add_css_class("potoo-window-control");
+    button.set_child(Some(&icon(icon_name)));
+    button.set_tooltip_text(Some(tr(language, label)));
+    button.set_size_request(28, 28);
+    button.set_valign(gtk::Align::Center);
+    button.set_vexpand(false);
+    button
+}
 
-    while let Some(widget) = pending.pop() {
-        if ["minimize", "maximize", "close"]
-            .iter()
-            .any(|class| widget.has_css_class(class))
-        {
-            widget.set_valign(gtk::Align::Center);
-            widget.set_vexpand(false);
-            widget.set_size_request(26, 26);
-            widget.set_margin_top(0);
-            widget.set_margin_bottom(0);
-        }
-
-        let mut child = widget.first_child();
-        while let Some(current) = child {
-            child = current.next_sibling();
-            pending.push(current);
-        }
-    }
+#[cfg(target_os = "linux")]
+fn update_maximize_button(
+    button: &gtk::Button,
+    window: &gtk::ApplicationWindow,
+    language: UiLanguage,
+) {
+    let maximized = window.is_maximized();
+    button.set_child(Some(&icon(if maximized {
+        "window-restore"
+    } else {
+        "window-maximize"
+    })));
+    button.set_tooltip_text(Some(tr(
+        language,
+        if maximized { "Restaurar" } else { "Maximizar" },
+    )));
 }

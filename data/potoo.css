@@ -272,91 +272,38 @@ headerbar.potoo-linux-titlebar {
   box-shadow: none;
 }
 
-window.potoo-window headerbar.potoo-linux-titlebar windowcontrols button {
-  min-width: 26px;
-  min-height: 26px;
-  margin: 0 2px;
+window.potoo-window headerbar.potoo-linux-titlebar button.potoo-window-control {
+  min-width: 28px;
+  min-height: 28px;
+  margin: 0;
   padding: 0;
   background-color: transparent;
   background-image: none;
   border: 0;
   border-radius: 0;
   color: var(--potoo-text-muted);
-  opacity: 1;
   box-shadow: none;
 }
 
-window.potoo-window headerbar.potoo-linux-titlebar windowcontrols button.minimize:hover,
-window.potoo-window headerbar.potoo-linux-titlebar windowcontrols button.minimize:active,
-window.potoo-window headerbar.potoo-linux-titlebar windowcontrols button.minimize:focus,
-window.potoo-window headerbar.potoo-linux-titlebar windowcontrols button.maximize:hover,
-window.potoo-window headerbar.potoo-linux-titlebar windowcontrols button.maximize:active,
-window.potoo-window headerbar.potoo-linux-titlebar windowcontrols button.maximize:focus {
+window.potoo-window headerbar.potoo-linux-titlebar button.potoo-window-control:hover,
+window.potoo-window headerbar.potoo-linux-titlebar button.potoo-window-control:active {
   background-color: var(--potoo-panel-hover-bg);
   background-image: none;
   border: 0;
   border-radius: 0;
   color: var(--potoo-text);
-  opacity: 1;
   box-shadow: none;
 }
 
-window.potoo-window headerbar.potoo-linux-titlebar windowcontrols button.minimize:backdrop,
-window.potoo-window headerbar.potoo-linux-titlebar windowcontrols button.maximize:backdrop {
+window.potoo-window headerbar.potoo-linux-titlebar button.potoo-window-control:backdrop {
   background-color: transparent;
   background-image: none;
   color: var(--potoo-text-muted);
-  opacity: 1;
   box-shadow: none;
 }
 
-window.potoo-window headerbar.potoo-linux-titlebar windowcontrols button.maximize:checked {
-  background-color: transparent;
-  background-image: none;
-  border: 0;
-  border-radius: 0;
-  color: var(--potoo-text-muted);
-  opacity: 1;
-  box-shadow: none;
-}
-
-window.potoo-window headerbar.potoo-linux-titlebar windowcontrols button.maximize:checked:hover {
-  background-color: var(--potoo-panel-hover-bg);
-  background-image: none;
-  border: 0;
-  border-radius: 0;
-  color: var(--potoo-text);
-  opacity: 1;
-  box-shadow: none;
-}
-
-window.potoo-window headerbar.potoo-linux-titlebar windowcontrols button.close {
-  background-color: transparent;
-  background-image: none;
-  color: var(--potoo-text-muted);
-  opacity: 1;
-  box-shadow: none;
-}
-
-window.potoo-window headerbar.potoo-linux-titlebar windowcontrols button.close:hover,
-window.potoo-window headerbar.potoo-linux-titlebar windowcontrols button.close:active,
-window.potoo-window headerbar.potoo-linux-titlebar windowcontrols button.close:focus {
-  background-color: var(--potoo-panel-hover-bg);
-  background-image: none;
-  color: var(--potoo-text);
-  opacity: 1;
-  box-shadow: none;
-}
-
-window.potoo-window headerbar.potoo-linux-titlebar windowcontrols button.close:backdrop {
-  background-color: transparent;
-  color: var(--potoo-text-muted);
-  opacity: 1;
-}
-
-headerbar.potoo-linux-titlebar windowcontrols button image {
+headerbar.potoo-linux-titlebar button.potoo-window-control image {
   color: inherit;
-  opacity: 1;
 }
 
 .potoo-brand-name {
@@ -1072,7 +1019,8 @@ headerbar.potoo-dialog-titlebar {
   font-weight: 680;
 }
 
-button.potoo-dialog-close {
+button.potoo-dialog-close,
+button.potoo-window-control {
   min-width: 28px;
   min-height: 28px;
   padding: 0;
@@ -1084,7 +1032,8 @@ button.potoo-dialog-close {
   box-shadow: none;
 }
 
-button.potoo-dialog-close:hover {
+button.potoo-dialog-close:hover,
+button.potoo-window-control:hover {
   background-color: var(--potoo-panel-hover-bg);
   color: var(--potoo-text);
 }
