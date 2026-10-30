@@ -218,7 +218,7 @@ headerbar.potoo-linux-titlebar button.titlebutton {
 
 .potoo-project-language-choice {
   min-height: 36px;
-  padding: 0 12px;
+  padding: 0 16px;
   background-color: var(--potoo-panel-bg);
   background-image: none;
   border: 0;
@@ -254,8 +254,8 @@ headerbar.potoo-linux-titlebar button.titlebutton {
 }
 
 .potoo-project-location-button {
-  min-height: 32px;
-  padding: 0 10px;
+  min-height: 36px;
+  padding: 0 14px;
   background-color: transparent;
   background-image: none;
   border: 0;
@@ -269,8 +269,8 @@ headerbar.potoo-linux-titlebar button.titlebutton {
 }
 
 .potoo-project-cancel-button {
-  min-height: 28px;
-  padding: 0 12px;
+  min-height: 36px;
+  padding: 0 16px;
   background-color: var(--potoo-panel-bg);
   background-image: none;
   border: 0;
@@ -284,6 +284,11 @@ headerbar.potoo-linux-titlebar button.titlebutton {
 .potoo-project-cancel-button:hover {
   background-color: var(--potoo-panel-hover-bg);
   color: var(--potoo-text);
+}
+
+.potoo-project-actions .potoo-run-button {
+  min-height: 36px;
+  padding: 0 16px;
 }
 
 .potoo-project-error {

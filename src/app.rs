@@ -2780,6 +2780,7 @@ fn show_new_project_dialog(
     content.append(&error_label);
 
     let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    actions.add_css_class("potoo-project-actions");
     actions.set_halign(gtk::Align::End);
     actions.set_margin_top(2);
     let cancel_button = gtk::Button::with_label(tr(ui_language, "Cancelar"));
