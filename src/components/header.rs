@@ -132,7 +132,9 @@ fn window_control_button(
 ) -> gtk::Button {
     let button = gtk::Button::new();
     button.add_css_class("potoo-window-control");
-    button.set_child(Some(&icon(icon_name)));
+    let control_icon = icon(icon_name);
+    control_icon.set_pixel_size(18);
+    button.set_child(Some(&control_icon));
     button.set_tooltip_text(Some(tr(language, label)));
     button.set_size_request(28, 28);
     button.set_valign(gtk::Align::Center);
