@@ -63,8 +63,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Meu primeiro programa" => "My first program",
             "Início" => "Home",
             "Vamos programar?" => "Ready to code?",
-            "Retome um programa recente, crie em Portugol ou VisuAlg ou abra uma pasta." => {
-                "Resume a recent program, create one in Portugol or VisuAlg, or open a folder."
+            "Continue de onde parou ou comece a transformar suas ideias em algoritmos." => {
+                "Pick up where you left off or start turning your ideas into algorithms."
             }
             "Programas recentes" => "Recent programs",
             "Comece um novo programa" => "Start a new program",
@@ -322,8 +322,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Meu primeiro programa" => "Mi primer programa",
             "Início" => "Inicio",
             "Vamos programar?" => "¿Vamos a programar?",
-            "Retome um programa recente, crie em Portugol ou VisuAlg ou abra uma pasta." => {
-                "Retoma un programa reciente, crea uno en Portugol o VisuAlg o abre una carpeta."
+            "Continue de onde parou ou comece a transformar suas ideias em algoritmos." => {
+                "Continúa donde lo dejaste o empieza a convertir tus ideas en algoritmos."
             }
             "Programas recentes" => "Programas recientes",
             "Comece um novo programa" => "Empieza un programa nuevo",

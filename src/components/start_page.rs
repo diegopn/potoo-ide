@@ -41,7 +41,7 @@ pub(crate) fn build_start_page(language: UiLanguage) -> StartPageUi {
     title.add_css_class("potoo-start-title");
     let description = gtk::Label::new(Some(tr(
         language,
-        "Retome um programa recente, crie em Portugol ou VisuAlg ou abra uma pasta.",
+        "Continue de onde parou ou comece a transformar suas ideias em algoritmos.",
     )));
     description.set_xalign(0.0);
     description.set_wrap(true);
