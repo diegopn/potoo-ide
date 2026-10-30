@@ -218,11 +218,11 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Espaços por nível de recuo." => "Spaces inserted for each indentation level.",
             "2 espaços" => "2 spaces",
             "4 espaços" => "4 spaces",
-            "Esta pasta ainda não tem arquivos .por ou .alg." => {
-                "This folder does not contain any .por or .alg files yet."
+            "Esta pasta não contém arquivos visíveis." => {
+                "This folder contains no visible files."
             }
-            "Nenhum programa .por ou .alg encontrado. Use + para criar um." => {
-                "No .por or .alg programs found. Use + to create one."
+            "Nenhum programa .por ou .alg nesta pasta. Os demais arquivos aparecem na lista." => {
+                "No .por or .alg programs in this folder. Other files appear in the list."
             }
             "Fechar arquivo" => "Close file",
             "Escolha um nome e a linguagem do novo arquivo." => {
@@ -271,7 +271,9 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Não foi possível abrir a pasta" => "Could not open folder",
             "Não foi possível salvar o arquivo" => "Could not save file",
             "Não foi possível criar o arquivo" => "Could not create file",
-            "Abra um arquivo .por ou .alg." => "Open a .por or .alg file.",
+            "O editor abre apenas arquivos .por ou .alg." => {
+                "The editor opens only .por and .alg files."
+            }
             "Abra uma pasta de projeto antes de criar arquivos." => {
                 "Open a project folder before creating files."
             }
@@ -491,11 +493,11 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Espaços por nível de recuo." => "Espacios insertados por cada nivel de sangría.",
             "2 espaços" => "2 espacios",
             "4 espaços" => "4 espacios",
-            "Esta pasta ainda não tem arquivos .por ou .alg." => {
-                "Esta carpeta todavía no tiene archivos .por o .alg."
+            "Esta pasta não contém arquivos visíveis." => {
+                "Esta carpeta no tiene archivos visibles."
             }
-            "Nenhum programa .por ou .alg encontrado. Use + para criar um." => {
-                "No se encontraron programas .por o .alg. Usa + para crear uno."
+            "Nenhum programa .por ou .alg nesta pasta. Os demais arquivos aparecem na lista." => {
+                "No hay programas .por o .alg en esta carpeta. Los demás archivos aparecen en la lista."
             }
             "Fechar arquivo" => "Cerrar archivo",
             "Escolha um nome e a linguagem do novo arquivo." => {
@@ -546,7 +548,9 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Não foi possível abrir a pasta" => "No se pudo abrir la carpeta",
             "Não foi possível salvar o arquivo" => "No se pudo guardar el archivo",
             "Não foi possível criar o arquivo" => "No se pudo crear el archivo",
-            "Abra um arquivo .por ou .alg." => "Abre un archivo .por o .alg.",
+            "O editor abre apenas arquivos .por ou .alg." => {
+                "El editor solo abre archivos .por o .alg."
+            }
             "Abra uma pasta de projeto antes de criar arquivos." => {
                 "Abre una carpeta de proyecto antes de crear archivos."
             }
@@ -1170,7 +1174,9 @@ impl MainWindow {
         }
 
         let Some(language) = Language::from_path(&path) else {
-            self.output_status = self.text("Abra um arquivo .por ou .alg.").to_string();
+            self.output_status = self
+                .text("O editor abre apenas arquivos .por ou .alg.")
+                .to_string();
             return;
         };
         match fs::read_to_string(&path) {
@@ -1231,13 +1237,17 @@ impl MainWindow {
         let root_file = self.project_root.as_ref().and_then(|root| {
             self.project_files
                 .iter()
-                .find(|file| !file.is_directory && file.path.parent() == Some(root.as_path()))
+                .find(|file| {
+                    !file.is_directory
+                        && file.path.parent() == Some(root.as_path())
+                        && Language::from_path(&file.path).is_some()
+                })
                 .map(|file| file.path.clone())
         });
         let first_source_file = root_file.or_else(|| {
             self.project_files
                 .iter()
-                .find(|file| !file.is_directory)
+                .find(|file| !file.is_directory && Language::from_path(&file.path).is_some())
                 .map(|file| file.path.clone())
         });
         if let Some(path) = first_source_file {
@@ -4154,7 +4164,7 @@ fn scan_source_directory(
                 is_directory: true,
             });
             scan_source_directory(root, &path, project_entries)?;
-        } else if file_type.is_file() && Language::from_path(&path).is_some() {
+        } else if file_type.is_file() {
             project_entries.push(ProjectFile {
                 relative_path: path
                     .strip_prefix(root)

@@ -1,6 +1,6 @@
 use crate::{
     app::{MainWindow, MainWindowMsg, UiLanguage, tr},
-    components::{clear_box, icon, icon_label_button},
+    components::{clear_box, content_panel::Language, icon, icon_label_button},
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -202,7 +202,7 @@ pub(crate) fn rebuild_file_list(
         if project_open {
             let empty_label = gtk::Label::new(Some(tr(
                 language,
-                "Esta pasta ainda não tem arquivos .por ou .alg.",
+                "Esta pasta não contém arquivos visíveis.",
             )));
             empty_label.set_wrap(true);
             empty_label.set_xalign(0.0);
@@ -222,10 +222,14 @@ pub(crate) fn rebuild_file_list(
         folder_contents.insert(project_root.to_path_buf(), file_list.clone());
     }
     let expanded_paths = expanded_folders.borrow().clone();
-    if project_open && files.iter().all(|file| file.is_directory) {
+    if project_open
+        && !files
+            .iter()
+            .any(|file| !file.is_directory && Language::from_path(&file.path).is_some())
+    {
         let empty_label = gtk::Label::new(Some(tr(
             language,
-            "Nenhum programa .por ou .alg encontrado. Use + para criar um.",
+            "Nenhum programa .por ou .alg nesta pasta. Os demais arquivos aparecem na lista.",
         )));
         empty_label.set_wrap(true);
         empty_label.set_xalign(0.0);
