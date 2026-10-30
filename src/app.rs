@@ -62,9 +62,9 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
         UiLanguage::English => match portuguese {
             "Meu primeiro programa" => "My first program",
             "Início" => "Home",
-            "Abra um programa" => "Open a program",
-            "Continue um exercício recente ou comece um novo." => {
-                "Continue a recent exercise or start a new one."
+            "Vamos programar?" => "Ready to code?",
+            "Retome um programa recente, crie em Portugol ou VisuAlg ou abra uma pasta." => {
+                "Resume a recent program, create one in Portugol or VisuAlg, or open a folder."
             }
             "Programas recentes" => "Recent programs",
             "Comece um novo programa" => "Start a new program",
@@ -318,9 +318,9 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
         UiLanguage::Spanish => match portuguese {
             "Meu primeiro programa" => "Mi primer programa",
             "Início" => "Inicio",
-            "Abra um programa" => "Abre un programa",
-            "Continue um exercício recente ou comece um novo." => {
-                "Continúa un ejercicio reciente o empieza uno nuevo."
+            "Vamos programar?" => "¿Vamos a programar?",
+            "Retome um programa recente, crie em Portugol ou VisuAlg ou abra uma pasta." => {
+                "Retoma un programa reciente, crea uno en Portugol o VisuAlg o abre una carpeta."
             }
             "Programas recentes" => "Programas recientes",
             "Comece um novo programa" => "Empieza un programa nuevo",

@@ -36,12 +36,12 @@ pub(crate) fn build_start_page(language: UiLanguage) -> StartPageUi {
     let intro = gtk::Box::new(gtk::Orientation::Vertical, 8);
     intro.add_css_class("potoo-start-intro");
     intro.set_margin_bottom(30);
-    let title = gtk::Label::new(Some(tr(language, "Abra um programa")));
+    let title = gtk::Label::new(Some(tr(language, "Vamos programar?")));
     title.set_xalign(0.0);
     title.add_css_class("potoo-start-title");
     let description = gtk::Label::new(Some(tr(
         language,
-        "Continue um exercício recente ou comece um novo.",
+        "Retome um programa recente, crie em Portugol ou VisuAlg ou abra uma pasta.",
     )));
     description.set_xalign(0.0);
     description.set_wrap(true);
