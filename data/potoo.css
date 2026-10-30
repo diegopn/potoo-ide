@@ -70,8 +70,10 @@ window.potoo-window.potoo-dark .potoo-root {
   color: var(--potoo-text);
 }
 
+window.potoo-window,
 window.potoo-settings-window,
 window.potoo-dialog-window,
+window.potoo-window decoration,
 window.potoo-settings-window decoration,
 window.potoo-dialog-window decoration {
   border-radius: 0;
