@@ -84,9 +84,11 @@ pub(crate) fn build_start_page(language: UiLanguage) -> StartPageUi {
     open_folder_button.add_css_class("potoo-start-open-folder");
     let folder_content = gtk::Box::new(gtk::Orientation::Horizontal, 12);
     folder_content.set_hexpand(true);
+    folder_content.set_valign(gtk::Align::Center);
     folder_content.append(&icon("folder-open"));
     let folder_text = gtk::Box::new(gtk::Orientation::Vertical, 3);
     folder_text.set_hexpand(true);
+    folder_text.set_valign(gtk::Align::Center);
     let folder_title = gtk::Label::new(Some(tr(language, "Selecionar uma pasta")));
     folder_title.set_xalign(0.0);
     folder_title.add_css_class("potoo-start-action-title");
@@ -122,9 +124,11 @@ fn language_option(language: &str, description: &str) -> gtk::Button {
     button.add_css_class("potoo-start-language-option");
     let content = gtk::Box::new(gtk::Orientation::Horizontal, 12);
     content.set_hexpand(true);
+    content.set_valign(gtk::Align::Center);
     content.append(&icon("new-document"));
     let text = gtk::Box::new(gtk::Orientation::Vertical, 4);
     text.set_hexpand(true);
+    text.set_valign(gtk::Align::Center);
     let title_label = gtk::Label::new(Some(language));
     title_label.set_xalign(0.0);
     title_label.add_css_class("potoo-start-action-title");
