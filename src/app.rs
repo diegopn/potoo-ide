@@ -2,6 +2,7 @@ use crate::components::{
     content_panel::{self, Language, SourceDocument, SyntaxTags},
     header, icon, sidebar,
     sidebar::ProjectFile,
+    start_page,
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -60,6 +61,24 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
         UiLanguage::Portuguese => return portuguese,
         UiLanguage::English => match portuguese {
             "Meu primeiro programa" => "My first program",
+            "Abra um programa" => "Open a program",
+            "Continue um exercício recente ou comece um novo." => {
+                "Continue a recent exercise or start a new one."
+            }
+            "Programas recentes" => "Recent programs",
+            "Seus programas recentes aparecerão aqui." => "Your recent programs will appear here.",
+            "Comece um novo programa" => "Start a new program",
+            "Projeto Portugol" => "Portugol project",
+            "Projeto VisuAlg" => "VisuAlg project",
+            "Comece com um arquivo .por" => "Start with a .por file",
+            "Comece com um arquivo .alg" => "Start with a .alg file",
+            "Selecionar uma pasta" => "Choose a folder",
+            "Abra um projeto que não aparece na lista." => "Open a project that is not listed.",
+            "Projeto" => "Project",
+            "Abrir um programa recente" => "Open a recent program",
+            "O arquivo ou a pasta recente não está mais disponível." => {
+                "This recent file or folder is no longer available."
+            }
             "Abrir pasta" => "Open folder",
             "Abrir pasta de projeto" => "Open project folder",
             "Abrir arquivo" => "Open file",
@@ -296,6 +315,28 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
         },
         UiLanguage::Spanish => match portuguese {
             "Meu primeiro programa" => "Mi primer programa",
+            "Abra um programa" => "Abre un programa",
+            "Continue um exercício recente ou comece um novo." => {
+                "Continúa un ejercicio reciente o empieza uno nuevo."
+            }
+            "Programas recentes" => "Programas recientes",
+            "Seus programas recentes aparecerão aqui." => {
+                "Tus programas recientes aparecerán aquí."
+            }
+            "Comece um novo programa" => "Empieza un programa nuevo",
+            "Projeto Portugol" => "Proyecto Portugol",
+            "Projeto VisuAlg" => "Proyecto VisuAlg",
+            "Comece com um arquivo .por" => "Empieza con un archivo .por",
+            "Comece com um arquivo .alg" => "Empieza con un archivo .alg",
+            "Selecionar uma pasta" => "Seleccionar una carpeta",
+            "Abra um projeto que não aparece na lista." => {
+                "Abre un proyecto que no aparece en la lista."
+            }
+            "Projeto" => "Proyecto",
+            "Abrir um programa recente" => "Abrir un programa reciente",
+            "O arquivo ou a pasta recente não está mais disponível." => {
+                "Este archivo o carpeta reciente ya no está disponible."
+            }
             "Abrir pasta" => "Abrir carpeta",
             "Abrir pasta de projeto" => "Abrir carpeta del proyecto",
             "Abrir arquivo" => "Abrir archivo",
@@ -655,6 +696,7 @@ struct SessionSnapshot {
 pub(crate) enum MainWindowMsg {
     InterfaceLanguageSelected(UiLanguage),
     ProjectSelected(PathBuf),
+    RecentSelected(PathBuf),
     ProjectSwitchDecision(bool),
     CreateProject(PathBuf, String, Language),
     CreateFile(String, Language, PathBuf),
@@ -710,6 +752,8 @@ pub(crate) struct MainWindow {
     settings_visible: bool,
     output_text: String,
     output_status: String,
+    recent_paths: Vec<PathBuf>,
+    start_page_visible: bool,
 }
 
 impl MainWindow {
@@ -741,6 +785,26 @@ impl MainWindow {
                 format!("{}: {error}", self.text("Não foi possível salvar a sessão"));
         }
     }
+
+    fn remember_recent(&mut self, path: PathBuf) {
+        let Some(path) = normalize_recent_path(path) else {
+            return;
+        };
+        self.recent_paths.retain(|recent| recent != &path);
+        self.recent_paths.insert(0, path);
+        self.recent_paths.truncate(MAX_RECENT_ITEMS);
+        if let Err(error) = persist_recent_paths(&self.recent_paths) {
+            self.output_status = format!(
+                "{}: {error}",
+                self.text("Não foi possível atualizar programas recentes")
+            );
+        }
+    }
+
+    fn forget_recent(&mut self, path: &Path) {
+        self.recent_paths.retain(|recent| recent != path);
+        let _ = persist_recent_paths(&self.recent_paths);
+    }
 }
 
 fn preference_file() -> PathBuf {
@@ -753,6 +817,57 @@ fn session_file() -> PathBuf {
     gtk::glib::user_data_dir()
         .join("potoo-ide")
         .join("session.ini")
+}
+
+fn recent_file() -> PathBuf {
+    gtk::glib::user_data_dir()
+        .join("potoo-ide")
+        .join("recent.ini")
+}
+
+const MAX_RECENT_ITEMS: usize = 5;
+
+fn normalize_recent_path(path: PathBuf) -> Option<PathBuf> {
+    let path = path.canonicalize().unwrap_or(path);
+    if path.is_dir() || (path.is_file() && Language::from_path(&path).is_some()) {
+        Some(path)
+    } else {
+        None
+    }
+}
+
+fn load_recent_paths() -> Vec<PathBuf> {
+    let Some(key_file) = load_key_file(&recent_file()) else {
+        return Vec::new();
+    };
+    let count = key_file
+        .integer("recent", "count")
+        .unwrap_or(0)
+        .clamp(0, MAX_RECENT_ITEMS as i32) as usize;
+    let mut paths = Vec::with_capacity(count);
+    for index in 0..count {
+        let key = format!("path-{index}");
+        let Ok(path) = key_file.string("recent", &key) else {
+            continue;
+        };
+        let Some(path) = normalize_recent_path(PathBuf::from(path.as_str())) else {
+            continue;
+        };
+        if !paths.contains(&path) {
+            paths.push(path);
+        }
+    }
+    paths
+}
+
+fn persist_recent_paths(paths: &[PathBuf]) -> Result<(), String> {
+    let key_file = gtk::glib::KeyFile::new();
+    let paths = paths.iter().take(MAX_RECENT_ITEMS).collect::<Vec<_>>();
+    key_file.set_integer("recent", "count", paths.len() as i32);
+    for (index, path) in paths.into_iter().enumerate() {
+        key_file.set_string("recent", &format!("path-{index}"), &path.to_string_lossy());
+    }
+    save_key_file(&key_file, &recent_file())
 }
 
 fn load_key_file(path: &Path) -> Option<gtk::glib::KeyFile> {
@@ -1032,12 +1147,17 @@ impl MainWindow {
     }
 
     fn open_document(&mut self, path: PathBuf) {
+        let standalone = self
+            .project_root
+            .as_ref()
+            .map_or(true, |root| !path.starts_with(root));
         if let Some(document) = self
             .documents
             .iter()
             .find(|doc| doc.path.as_ref() == Some(&path))
         {
             self.active_document_id = Some(document.id);
+            self.start_page_visible = false;
             return;
         }
 
@@ -1062,6 +1182,15 @@ impl MainWindow {
                     .map(|name| name.to_string_lossy().into_owned())
                     .unwrap_or_else(|| path.display().to_string());
                 self.create_document(Some(path), name, language, contents.clone(), contents);
+                self.start_page_visible = false;
+                if standalone {
+                    if let Some(path) = self
+                        .active_document()
+                        .and_then(|document| document.path.clone())
+                    {
+                        self.remember_recent(path);
+                    }
+                }
                 self.output_status = self.text("Arquivo aberto").to_string();
             }
             Err(error) => {
@@ -1085,7 +1214,9 @@ impl MainWindow {
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| root.display().to_string());
+        self.remember_recent(root.clone());
         self.project_root = Some(root);
+        self.start_page_visible = false;
         self.project_files = files;
         self.documents.clear();
         self.active_document_id = None;
@@ -1122,6 +1253,10 @@ impl MainWindow {
                     return;
                 }
             };
+        let standalone = self
+            .project_root
+            .as_ref()
+            .map_or(true, |root| !path.starts_with(root));
         match fs::write(&path, self.documents[index].contents.as_bytes()) {
             Ok(()) => {
                 let document = &mut self.documents[index];
@@ -1145,6 +1280,9 @@ impl MainWindow {
                     if let Ok(files) = scan_project_files(root) {
                         self.project_files = files;
                     }
+                }
+                if standalone {
+                    self.remember_recent(path.clone());
                 }
                 self.output_status = self.text("Arquivo salvo").to_string();
             }
@@ -1330,11 +1468,14 @@ struct SettingsUi {
 pub struct MainUi {
     window: gtk::ApplicationWindow,
     content: gtk::Box,
+    main_stack: gtk::Stack,
     dark_theme: Rc<Cell<bool>>,
     default_new_language: Rc<Cell<Language>>,
     project_root_for_new_items: Rc<RefCell<Option<PathBuf>>>,
     settings: SettingsUi,
     project_title: gtk::Label,
+    run_button: gtk::Button,
+    start_page: start_page::StartPageUi,
     project_row: gtk::Box,
     project_label: gtk::Label,
     file_list: gtk::Box,
@@ -1359,6 +1500,8 @@ pub struct MainUi {
     displayed_project_name: String,
     displayed_project_files: Vec<(PathBuf, bool)>,
     displayed_project_open: bool,
+    displayed_recent_paths: Vec<PathBuf>,
+    displayed_start_page: bool,
     displayed_tabs: Vec<(u64, String, bool, bool)>,
     displayed_pending_project: Option<PathBuf>,
     displayed_pending_close_document_id: Option<u64>,
@@ -1401,25 +1544,45 @@ impl SimpleComponent for MainWindow {
         let preferences = load_preferences();
         let saved_session = load_session();
         let unreadable_session = session_file().exists() && saved_session.is_none();
+        let recovering_session = saved_session
+            .as_ref()
+            .is_some_and(|session| !session.clean_exit);
         let restored_root = saved_session
             .as_ref()
             .and_then(|session| session.project_root.clone())
-            .filter(|path| path.is_dir());
-        let (mut documents, mut active_document_id, recovered_changes) = saved_session
-            .map(restore_session)
-            .unwrap_or_else(|| (Vec::new(), None, false));
-        if documents.is_empty() && restored_root.is_none() {
-            let sample = Language::Portugol.sample().to_string();
-            documents.push(SourceDocument {
-                id: 1,
-                path: None,
-                name: Language::Portugol.file_name().to_string(),
-                language: Language::Portugol,
-                contents: sample.clone(),
-                saved_contents: sample,
-            });
-            active_document_id = Some(1);
+            .filter(|path| path.is_dir())
+            .filter(|_| recovering_session);
+        let mut recent_paths = load_recent_paths();
+        if recent_paths.is_empty() {
+            if let Some(session) = &saved_session {
+                let migration_paths = session.project_root.iter().chain(
+                    session
+                        .documents
+                        .iter()
+                        .filter_map(|document| document.path.as_ref()),
+                );
+                for path in migration_paths {
+                    if let Some(path) = normalize_recent_path(path.clone()) {
+                        if !recent_paths.contains(&path) {
+                            recent_paths.push(path);
+                        }
+                    }
+                }
+                recent_paths.truncate(MAX_RECENT_ITEMS);
+                if !recent_paths.is_empty() {
+                    let _ = persist_recent_paths(&recent_paths);
+                }
+            }
         }
+        let (documents, active_document_id, recovered_changes) = if recovering_session {
+            saved_session
+                .map(restore_session)
+                .unwrap_or_else(|| (Vec::new(), None, false))
+        } else {
+            (Vec::new(), None, false)
+        };
+        let start_page_visible =
+            !recovering_session || (restored_root.is_none() && documents.is_empty());
         let project_files = restored_root
             .as_deref()
             .and_then(|root| scan_project_files(root).ok())
@@ -1487,10 +1650,14 @@ impl SimpleComponent for MainWindow {
             } else {
                 tr(preferences.ui_language, "Pronto para executar").to_string()
             },
+            recent_paths,
+            start_page_visible,
         };
         let mut widgets = build_window_content(
             root.clone(),
             model.project_root.clone(),
+            model.start_page_visible,
+            &model.recent_paths,
             sender.clone(),
             preferences,
             initial_dark,
@@ -1500,6 +1667,12 @@ impl SimpleComponent for MainWindow {
             &widgets.editor_tabs,
             &model.documents,
             model.active_document_id,
+            model.ui_language,
+            sender.clone(),
+        );
+        start_page::rebuild_recent_items(
+            &widgets.start_page.recent_list,
+            &model.recent_paths,
             model.ui_language,
             sender,
         );
@@ -1532,6 +1705,7 @@ impl SimpleComponent for MainWindow {
         let persist_after = matches!(
             &message,
             MainWindowMsg::ProjectSelected(_)
+                | MainWindowMsg::RecentSelected(_)
                 | MainWindowMsg::ProjectSwitchDecision(_)
                 | MainWindowMsg::CreateProject(_, _, _)
                 | MainWindowMsg::CreateFile(_, _, _)
@@ -1557,6 +1731,24 @@ impl SimpleComponent for MainWindow {
                     self.pending_project = Some(path);
                 } else {
                     self.load_project(path);
+                }
+            }
+            MainWindowMsg::RecentSelected(path) => {
+                if let Some(path) = normalize_recent_path(path.clone()) {
+                    if path.is_dir() {
+                        if self.documents.iter().any(SourceDocument::is_dirty) {
+                            self.pending_project = Some(path);
+                        } else {
+                            self.load_project(path);
+                        }
+                    } else {
+                        self.open_document(path);
+                    }
+                } else {
+                    self.forget_recent(&path);
+                    self.output_status = self
+                        .text("O arquivo ou a pasta recente não está mais disponível.")
+                        .to_string();
                 }
             }
             MainWindowMsg::ProjectSwitchDecision(discard_changes) => {
@@ -1823,10 +2015,38 @@ impl SimpleComponent for MainWindow {
             ui.displayed_settings_visible = self.settings_visible;
         }
 
+        if ui.displayed_start_page != self.start_page_visible {
+            ui.main_stack
+                .set_visible_child_name(if self.start_page_visible {
+                    "start"
+                } else {
+                    "workspace"
+                });
+            ui.run_button.set_visible(!self.start_page_visible);
+            ui.project_title.set_text(if self.start_page_visible {
+                tr(self.ui_language, "Abra um programa")
+            } else {
+                &self.project_name
+            });
+            ui.displayed_start_page = self.start_page_visible;
+        }
+
         if ui.displayed_project_name != self.project_name {
-            ui.project_title.set_text(&self.project_name);
+            if !self.start_page_visible {
+                ui.project_title.set_text(&self.project_name);
+            }
             ui.project_label.set_text(&self.project_name);
             ui.displayed_project_name.clone_from(&self.project_name);
+        }
+
+        if ui.displayed_recent_paths != self.recent_paths {
+            start_page::rebuild_recent_items(
+                &ui.start_page.recent_list,
+                &self.recent_paths,
+                self.ui_language,
+                sender.clone(),
+            );
+            ui.displayed_recent_paths.clone_from(&self.recent_paths);
         }
 
         let active_path = active_document.and_then(|document| document.path.as_ref());
@@ -1979,6 +2199,8 @@ fn update_cursor_position(buffer: &gtk::TextBuffer, label: &gtk::Label, language
 fn build_window_content(
     window: gtk::ApplicationWindow,
     initial_project_root: Option<PathBuf>,
+    initial_start_page: bool,
+    initial_recent_paths: &[PathBuf],
     sender: ComponentSender<MainWindow>,
     preferences: Preferences,
     initial_dark: bool,
@@ -1999,6 +2221,14 @@ fn build_window_content(
     let header = header::build_header(&window, ui_language);
     let project_title = header.project_title.clone();
     let run_button = header.run_button.clone();
+    project_title.set_text(if initial_start_page {
+        tr(ui_language, "Abra um programa")
+    } else {
+        tr(ui_language, "Meu primeiro programa")
+    });
+    run_button.set_visible(!initial_start_page);
+
+    let start_page = start_page::build_start_page(ui_language);
 
     let dark_theme = Rc::new(Cell::new(initial_dark));
     let settings = build_settings_window(&window, sender.clone(), preferences, initial_dark);
@@ -2211,7 +2441,18 @@ fn build_window_content(
     if let Some(header_widget) = &header.widget {
         content_root.append(header_widget);
     }
-    content_root.append(&content);
+    let main_stack = gtk::Stack::new();
+    main_stack.add_css_class("potoo-main-stack");
+    main_stack.set_hexpand(true);
+    main_stack.set_vexpand(true);
+    main_stack.add_named(&content, Some("workspace"));
+    main_stack.add_named(&start_page.widget, Some("start"));
+    main_stack.set_visible_child_name(if initial_start_page {
+        "start"
+    } else {
+        "workspace"
+    });
+    content_root.append(&main_stack);
     if initial_dark {
         window.add_css_class("potoo-dark");
     }
@@ -2272,6 +2513,47 @@ fn build_window_content(
             dark_theme_for_project.get(),
             sender_for_new_project.clone(),
         );
+    });
+
+    let sender_for_start_portugol = sender.clone();
+    let window_for_start_portugol = window.clone();
+    let dark_for_start_portugol = dark_theme.clone();
+    start_page.portugol_button.connect_clicked(move |_| {
+        show_new_project_dialog(
+            &window_for_start_portugol,
+            ui_language,
+            Language::Portugol,
+            dark_for_start_portugol.get(),
+            sender_for_start_portugol.clone(),
+        );
+    });
+
+    let sender_for_start_visualg = sender.clone();
+    let window_for_start_visualg = window.clone();
+    let dark_for_start_visualg = dark_theme.clone();
+    start_page.visualg_button.connect_clicked(move |_| {
+        show_new_project_dialog(
+            &window_for_start_visualg,
+            ui_language,
+            Language::Visualg,
+            dark_for_start_visualg.get(),
+            sender_for_start_visualg.clone(),
+        );
+    });
+
+    let sender_for_start_open = sender.clone();
+    let window_for_start_open = window.clone();
+    start_page.open_folder_button.connect_clicked(move |_| {
+        show_open_project_dialog(
+            &window_for_start_open,
+            ui_language,
+            sender_for_start_open.clone(),
+        );
+    });
+
+    let sender_for_start_settings = sender.clone();
+    start_page.settings_button.connect_clicked(move |_| {
+        sender_for_start_settings.input(MainWindowMsg::OpenSettings);
     });
 
     let sender_for_save = sender.clone();
@@ -2390,11 +2672,14 @@ fn build_window_content(
     MainUi {
         window,
         content: content_root,
+        main_stack,
         dark_theme,
         default_new_language,
         project_root_for_new_items,
         settings,
         project_title,
+        run_button,
+        start_page,
         project_row,
         project_label,
         file_list,
@@ -2419,6 +2704,8 @@ fn build_window_content(
         displayed_project_name: String::new(),
         displayed_project_files: Vec::new(),
         displayed_project_open: false,
+        displayed_recent_paths: initial_recent_paths.to_vec(),
+        displayed_start_page: initial_start_page,
         displayed_tabs: Vec::new(),
         displayed_pending_project: None,
         displayed_pending_close_document_id: None,

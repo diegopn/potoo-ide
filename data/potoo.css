@@ -31,6 +31,146 @@ window.potoo-window {
   font-size: 14px;
 }
 
+.potoo-main-stack,
+.potoo-start-page,
+.potoo-start-scroll {
+  background-color: var(--potoo-window-bg);
+  color: var(--potoo-text);
+}
+
+.potoo-start-content {
+  color: var(--potoo-text);
+}
+
+.potoo-start-title {
+  color: var(--potoo-text);
+  font-size: 24px;
+  font-weight: 720;
+  letter-spacing: -0.35px;
+}
+
+.potoo-start-description {
+  color: var(--potoo-text-muted);
+  font-size: 15px;
+}
+
+.potoo-start-section-title {
+  color: var(--potoo-text);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.potoo-start-recent-list {
+  background-color: var(--potoo-surface-bg);
+  border: 1px solid var(--potoo-border);
+}
+
+.potoo-start-recent-separator {
+  background-color: var(--potoo-border-subtle);
+}
+
+.potoo-start-recent-empty {
+  min-height: 62px;
+  padding: 0 16px;
+  color: var(--potoo-text-muted);
+  font-size: 13px;
+}
+
+button.potoo-start-recent-row {
+  min-height: 68px;
+  padding: 9px 14px;
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 0;
+  color: var(--potoo-text-secondary);
+  text-align: left;
+  box-shadow: none;
+}
+
+button.potoo-start-recent-row:hover {
+  background-color: var(--potoo-panel-bg);
+  color: var(--potoo-text);
+}
+
+.potoo-start-recent-name,
+.potoo-start-action-title {
+  color: var(--potoo-text);
+  font-size: 14px;
+  font-weight: 620;
+}
+
+.potoo-start-recent-location,
+.potoo-start-action-description {
+  color: var(--potoo-text-muted);
+  font-size: 12px;
+}
+
+.potoo-start-recent-badge,
+.potoo-start-language-badge {
+  padding: 4px 8px;
+  background-color: var(--potoo-panel-deep-bg);
+  color: var(--potoo-text-secondary);
+  font-size: 12px;
+  font-weight: 560;
+}
+
+.potoo-start-create-options {
+  min-height: 86px;
+}
+
+button.potoo-start-language-option,
+button.potoo-start-open-folder {
+  min-height: 78px;
+  padding: 13px 15px;
+  background-color: var(--potoo-panel-bg);
+  background-image: none;
+  border: 1px solid var(--potoo-border);
+  border-radius: 0;
+  color: var(--potoo-text-secondary);
+  text-align: left;
+  box-shadow: none;
+}
+
+button.potoo-start-language-option:hover,
+button.potoo-start-open-folder:hover {
+  background-color: var(--potoo-panel-hover-bg);
+  border-color: var(--potoo-border);
+  color: var(--potoo-text);
+}
+
+button.potoo-start-language-option:hover .potoo-start-language-badge {
+  background-color: var(--potoo-accent-soft-bg);
+  color: var(--potoo-accent-text);
+}
+
+button.potoo-start-open-folder {
+  min-height: 66px;
+  background-color: var(--potoo-surface-bg);
+}
+
+.potoo-start-footer {
+  padding: 7px 12px;
+  background-color: var(--potoo-window-bg);
+  border-top: 1px solid var(--potoo-border-subtle);
+}
+
+button.potoo-start-settings {
+  min-height: 32px;
+  padding: 4px 8px;
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 0;
+  color: var(--potoo-text-muted);
+  box-shadow: none;
+}
+
+button.potoo-start-settings:hover {
+  background-color: var(--potoo-panel-bg);
+  color: var(--potoo-text);
+}
+
 window.potoo-window :focus {
   outline-style: none;
   outline-width: 0;
