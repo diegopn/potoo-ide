@@ -40,7 +40,7 @@ pub(crate) struct SidebarUi {
 pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
     let sidebar = gtk::Box::new(gtk::Orientation::Vertical, 0);
     sidebar.add_css_class("potoo-file-sidebar");
-    sidebar.set_size_request(220, -1);
+    sidebar.set_size_request(242, -1);
 
     let heading_row = gtk::Box::new(gtk::Orientation::Horizontal, 3);
     heading_row.set_margin_start(12);
@@ -73,8 +73,8 @@ pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
     new_item_menu.set_margin_end(4);
     let new_program_button = icon_label_button(
         "new-document",
-        tr(language, "Novo programa"),
-        tr(language, "Criar um programa Portugol ou VisuAlg"),
+        tr(language, "Novo arquivo"),
+        tr(language, "Criar um arquivo Portugol ou VisuAlg"),
         "potoo-sidebar-menu-item",
     );
     let new_folder_button = icon_label_button(

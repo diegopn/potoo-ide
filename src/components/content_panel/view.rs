@@ -84,7 +84,7 @@ pub(crate) fn rebuild_editor_tabs(
 pub(crate) fn build_learning_panel(language: UiLanguage) -> gtk::Widget {
     let panel = gtk::Box::new(gtk::Orientation::Vertical, 0);
     panel.add_css_class("potoo-learning-panel");
-    panel.set_size_request(370, -1);
+    panel.set_size_request(306, -1);
 
     let content = gtk::Box::new(gtk::Orientation::Vertical, 16);
     content.set_margin_start(18);
@@ -248,14 +248,14 @@ pub(crate) fn make_syntax_tags(buffer: &gtk::TextBuffer) -> SyntaxTags {
 
 pub(crate) fn set_syntax_palette(tags: &SyntaxTags, dark: bool) {
     tags.keyword
-        .set_property("foreground", if dark { "#80d2a2" } else { "#147a49" });
+        .set_property("foreground", if dark { "#78d19c" } else { "#066b42" });
     tags.string
-        .set_property("foreground", if dark { "#d6aa72" } else { "#8a5a23" });
+        .set_property("foreground", if dark { "#dfb47d" } else { "#825022" });
     tags.number
-        .set_property("foreground", if dark { "#b5a0eb" } else { "#6c57a3" });
+        .set_property("foreground", if dark { "#b9a9e8" } else { "#55468e" });
     tags.current_line.set_property(
         "paragraph-background",
-        if dark { "#2d4937" } else { "#e4f1e9" },
+        if dark { "#2d3e35" } else { "#e2f1e8" },
     );
 }
 
