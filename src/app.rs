@@ -1,6 +1,6 @@
 use crate::components::{
     content_panel::{self, Language, SourceDocument, SyntaxTags},
-    header, icon, icon_label_button, sidebar,
+    header, icon, sidebar,
     sidebar::ProjectFile,
 };
 use gtk::prelude::*;
@@ -210,11 +210,15 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Alterações não salvas" => "Unsaved changes",
             "Descartar e abrir" => "Discard and open",
             "Este arquivo tem alterações não salvas" => "This file has unsaved changes",
+            "O arquivo aberto tem alterações que ainda não foram salvas. O que você gostaria de fazer?" => {
+                "This file has unsaved changes. What would you like to do?"
+            }
             "Salve o arquivo antes de fechar ou descarte as alterações para continuar." => {
                 "Save this file before closing it, or discard the changes to continue."
             }
             "Continuar editando" => "Keep editing",
             "Descartar alterações" => "Discard changes",
+            "Salvar e fechar" => "Save and close",
             "Há alterações não salvas" => "There are unsaved changes",
             "Descartar e sair" => "Discard and quit",
             "Salve os arquivos abertos antes de trocar de pasta ou descarte as alterações para continuar." => {
@@ -454,11 +458,15 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Alterações não salvas" => "Cambios sin guardar",
             "Descartar e abrir" => "Descartar y abrir",
             "Este arquivo tem alterações não salvas" => "Este archivo tiene cambios sin guardar",
+            "O arquivo aberto tem alterações que ainda não foram salvas. O que você gostaria de fazer?" => {
+                "Este archivo tiene cambios sin guardar. ¿Qué quieres hacer?"
+            }
             "Salve o arquivo antes de fechar ou descarte as alterações para continuar." => {
                 "Guarda este archivo antes de cerrarlo o descarta los cambios para continuar."
             }
             "Continuar editando" => "Seguir editando",
             "Descartar alterações" => "Descartar cambios",
+            "Salvar e fechar" => "Guardar y cerrar",
             "Há alterações não salvas" => "Hay cambios sin guardar",
             "Descartar e sair" => "Descartar y salir",
             "Salve os arquivos abertos antes de trocar de pasta ou descarte as alterações para continuar." => {
@@ -566,14 +574,6 @@ impl ThemePreference {
         }
     }
 
-    fn color_scheme(self) -> adw::ColorScheme {
-        match self {
-            Self::System => adw::ColorScheme::Default,
-            Self::Light => adw::ColorScheme::ForceLight,
-            Self::Dark => adw::ColorScheme::ForceDark,
-        }
-    }
-
     fn key(self) -> &'static str {
         match self {
             Self::System => "system",
@@ -588,6 +588,21 @@ impl ThemePreference {
             "dark" => Self::Dark,
             _ => Self::System,
         }
+    }
+}
+
+fn system_theme_is_dark() -> bool {
+    gtk::Settings::default().is_some_and(|settings| {
+        settings.property::<gtk::InterfaceColorScheme>("gtk-interface-color-scheme")
+            == gtk::InterfaceColorScheme::Dark
+    })
+}
+
+fn theme_is_dark(theme: ThemePreference) -> bool {
+    match theme {
+        ThemePreference::System => system_theme_is_dark(),
+        ThemePreference::Light => false,
+        ThemePreference::Dark => true,
     }
 }
 
@@ -644,6 +659,7 @@ pub(crate) enum MainWindowMsg {
     ActivateDocument(u64),
     CloseDocument(u64),
     CloseDocumentDecision(u64, bool),
+    SaveAndCloseDocument(u64),
     SaveCurrent,
     SaveAsSelected(u64, PathBuf),
     SaveAsCanceled(u64),
@@ -673,6 +689,7 @@ pub(crate) struct MainWindow {
     project_files: Vec<ProjectFile>,
     pending_project: Option<PathBuf>,
     pending_close_document_id: Option<u64>,
+    pending_close_after_save_id: Option<u64>,
     pending_save_as_id: Option<u64>,
     pending_close_app: bool,
     close_app_ready: bool,
@@ -1308,6 +1325,7 @@ struct SettingsUi {
 pub struct MainUi {
     window: gtk::ApplicationWindow,
     content: gtk::Box,
+    dark_theme: Rc<Cell<bool>>,
     default_new_language: Rc<Cell<Language>>,
     project_root_for_new_items: Rc<RefCell<Option<PathBuf>>>,
     settings: SettingsUi,
@@ -1404,12 +1422,19 @@ impl SimpleComponent for MainWindow {
             .and_then(Path::file_name)
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| tr(preferences.ui_language, "Meu primeiro programa").to_string());
-        let style_manager = adw::StyleManager::default();
-        style_manager.set_color_scheme(preferences.theme.color_scheme());
-        let sender_for_system_theme = sender.clone();
-        style_manager.connect_dark_notify(move |manager| {
-            sender_for_system_theme.input(MainWindowMsg::SystemThemeChanged(manager.is_dark()));
-        });
+        let initial_dark = theme_is_dark(preferences.theme);
+        if let Some(settings) = gtk::Settings::default() {
+            let sender_for_system_theme = sender.clone();
+            settings.connect_notify_local(
+                Some("gtk-interface-color-scheme"),
+                move |settings, _| {
+                    let dark = settings
+                        .property::<gtk::InterfaceColorScheme>("gtk-interface-color-scheme")
+                        == gtk::InterfaceColorScheme::Dark;
+                    sender_for_system_theme.input(MainWindowMsg::SystemThemeChanged(dark));
+                },
+            );
+        }
 
         let mut model = Self {
             new_file_language: preferences.default_language,
@@ -1421,13 +1446,14 @@ impl SimpleComponent for MainWindow {
             project_files,
             pending_project: None,
             pending_close_document_id: None,
+            pending_close_after_save_id: None,
             pending_save_as_id: None,
             pending_close_app: false,
             close_app_ready: false,
             ui_language: preferences.ui_language,
             preferred_ui_language: preferences.ui_language,
             theme: preferences.theme,
-            dark: style_manager.is_dark(),
+            dark: initial_dark,
             font_size: preferences.font_size,
             line_numbers_visible: preferences.line_numbers_visible,
             word_wrap: preferences.word_wrap,
@@ -1460,6 +1486,7 @@ impl SimpleComponent for MainWindow {
             model.project_root.clone(),
             sender.clone(),
             preferences,
+            initial_dark,
         );
         root.set_child(Some(&widgets.content));
         content_panel::rebuild_editor_tabs(
@@ -1506,6 +1533,7 @@ impl SimpleComponent for MainWindow {
                 | MainWindowMsg::ActivateDocument(_)
                 | MainWindowMsg::CloseDocument(_)
                 | MainWindowMsg::CloseDocumentDecision(_, _)
+                | MainWindowMsg::SaveAndCloseDocument(_)
                 | MainWindowMsg::SaveCurrent
                 | MainWindowMsg::SaveAsSelected(_, _)
         );
@@ -1568,14 +1596,52 @@ impl SimpleComponent for MainWindow {
                     }
                 }
             }
+            MainWindowMsg::SaveAndCloseDocument(id) => {
+                if self.pending_close_document_id == Some(id) {
+                    self.pending_close_document_id = None;
+                    if let Some(path) = self
+                        .documents
+                        .iter()
+                        .find(|document| document.id == id)
+                        .and_then(|document| document.path.clone())
+                    {
+                        self.save_document(id, path);
+                        if self
+                            .documents
+                            .iter()
+                            .find(|document| document.id == id)
+                            .is_some_and(|document| !document.is_dirty())
+                        {
+                            self.close_document(id);
+                        }
+                    } else {
+                        self.pending_close_after_save_id = Some(id);
+                        self.pending_save_as_id = Some(id);
+                    }
+                }
+            }
             MainWindowMsg::SaveCurrent => self.request_save(),
             MainWindowMsg::SaveAsSelected(id, path) => {
                 self.pending_save_as_id = None;
                 self.save_document(id, path);
+                if self.pending_close_after_save_id == Some(id) {
+                    self.pending_close_after_save_id = None;
+                    if self
+                        .documents
+                        .iter()
+                        .find(|document| document.id == id)
+                        .is_some_and(|document| !document.is_dirty())
+                    {
+                        self.close_document(id);
+                    }
+                }
             }
             MainWindowMsg::SaveAsCanceled(id) => {
                 if self.pending_save_as_id == Some(id) {
                     self.pending_save_as_id = None;
+                }
+                if self.pending_close_after_save_id == Some(id) {
+                    self.pending_close_after_save_id = None;
                 }
             }
             MainWindowMsg::FileOperationFailed(message) => self.output_status = message,
@@ -1596,13 +1662,7 @@ impl SimpleComponent for MainWindow {
             }
             MainWindowMsg::ThemeSelected(theme) => {
                 self.theme = theme;
-                let style_manager = adw::StyleManager::default();
-                style_manager.set_color_scheme(theme.color_scheme());
-                self.dark = match theme {
-                    ThemePreference::System => style_manager.is_dark(),
-                    ThemePreference::Light => false,
-                    ThemePreference::Dark => true,
-                };
+                self.dark = theme_is_dark(theme);
                 self.save_preferences();
             }
             MainWindowMsg::SystemThemeChanged(dark) => {
@@ -1704,6 +1764,7 @@ impl SimpleComponent for MainWindow {
         }
 
         if ui.displayed_dark != self.dark {
+            ui.dark_theme.set(self.dark);
             if self.dark {
                 ui.window.add_css_class("potoo-dark");
                 ui.settings.window.add_css_class("potoo-dark");
@@ -1813,21 +1874,37 @@ impl SimpleComponent for MainWindow {
             ui.displayed_pending_project
                 .clone_from(&self.pending_project);
             if self.pending_project.is_some() {
-                show_project_switch_confirmation(&ui.window, self.ui_language, sender.clone());
+                show_project_switch_confirmation(
+                    &ui.window,
+                    self.ui_language,
+                    ui.dark_theme.get(),
+                    sender.clone(),
+                );
             }
         }
 
         if ui.displayed_pending_close_document_id != self.pending_close_document_id {
             ui.displayed_pending_close_document_id = self.pending_close_document_id;
             if let Some(id) = self.pending_close_document_id {
-                show_close_document_confirmation(&ui.window, id, self.ui_language, sender.clone());
+                show_close_document_confirmation(
+                    &ui.window,
+                    id,
+                    self.ui_language,
+                    ui.dark_theme.get(),
+                    sender.clone(),
+                );
             }
         }
 
         if ui.displayed_pending_close_app != self.pending_close_app {
             ui.displayed_pending_close_app = self.pending_close_app;
             if self.pending_close_app {
-                show_close_app_confirmation(&ui.window, self.ui_language, sender.clone());
+                show_close_app_confirmation(
+                    &ui.window,
+                    self.ui_language,
+                    ui.dark_theme.get(),
+                    sender.clone(),
+                );
             }
         }
 
@@ -1882,6 +1959,7 @@ fn build_window_content(
     initial_project_root: Option<PathBuf>,
     sender: ComponentSender<MainWindow>,
     preferences: Preferences,
+    initial_dark: bool,
 ) -> MainUi {
     let ui_language = preferences.ui_language;
     let close_authorized = Rc::new(Cell::new(false));
@@ -1900,7 +1978,8 @@ fn build_window_content(
     let project_title = header.project_title.clone();
     let run_button = header.run_button.clone();
 
-    let settings = build_settings_window(&window, sender.clone(), preferences);
+    let dark_theme = Rc::new(Cell::new(initial_dark));
+    let settings = build_settings_window(&window, sender.clone(), preferences, initial_dark);
 
     let file_sidebar = sidebar::build_file_sidebar(ui_language);
     let expanded_folders = file_sidebar.expanded_folders.clone();
@@ -1923,7 +2002,6 @@ fn build_window_content(
     let code_buffer = gtk::TextBuffer::new(None::<&gtk::TextTagTable>);
     code_buffer.set_text(Language::Portugol.sample());
     let syntax_tags = content_panel::make_syntax_tags(&code_buffer);
-    let initial_dark = adw::StyleManager::default().is_dark();
     content_panel::set_syntax_palette(&syntax_tags, initial_dark);
     content_panel::highlight_buffer(&code_buffer, Language::Portugol, &syntax_tags);
 
@@ -2131,11 +2209,13 @@ fn build_window_content(
     let sender_for_new_project = sender.clone();
     let window_for_new_project = window.clone();
     let default_new_language_for_project = default_new_language.clone();
+    let dark_theme_for_project = dark_theme.clone();
     new_project_button.connect_clicked(move |_| {
         show_new_project_dialog(
             &window_for_new_project,
             ui_language,
             default_new_language_for_project.get(),
+            dark_theme_for_project.get(),
             sender_for_new_project.clone(),
         );
     });
@@ -2149,6 +2229,7 @@ fn build_window_content(
     let window_for_new_file = window.clone();
     let default_new_language_for_new_file = default_new_language.clone();
     let project_root_for_new_file = project_root_for_new_items.clone();
+    let dark_theme_for_new_file = dark_theme.clone();
     let popover_for_new_file = new_item_popover.clone();
     new_program_button.connect_clicked(move |_| {
         popover_for_new_file.popdown();
@@ -2160,6 +2241,7 @@ fn build_window_content(
             default_new_language_for_new_file.get(),
             ui_language,
             project_directory_options(&project_root, ui_language),
+            dark_theme_for_new_file.get(),
             sender_for_new_file.clone(),
         );
     });
@@ -2167,6 +2249,7 @@ fn build_window_content(
     let sender_for_new_folder = sender.clone();
     let window_for_new_folder = window.clone();
     let project_root_for_new_folder = project_root_for_new_items.clone();
+    let dark_theme_for_new_folder = dark_theme.clone();
     let popover_for_new_folder = new_item_popover.clone();
     new_folder_button.connect_clicked(move |_| {
         popover_for_new_folder.popdown();
@@ -2177,6 +2260,7 @@ fn build_window_content(
             &window_for_new_folder,
             ui_language,
             project_directory_options(&project_root, ui_language),
+            dark_theme_for_new_folder.get(),
             sender_for_new_folder.clone(),
         );
     });
@@ -2247,6 +2331,7 @@ fn build_window_content(
     MainUi {
         window,
         content: content_root,
+        dark_theme,
         default_new_language,
         project_root_for_new_items,
         settings,
@@ -2298,6 +2383,7 @@ fn build_settings_window(
     parent: &gtk::ApplicationWindow,
     sender: ComponentSender<MainWindow>,
     preferences: Preferences,
+    initial_dark: bool,
 ) -> SettingsUi {
     let language = preferences.ui_language;
     let window = gtk::Window::new();
@@ -2308,7 +2394,7 @@ fn build_settings_window(
     window.set_transient_for(Some(parent));
     window.add_css_class("potoo-window");
     window.add_css_class("potoo-settings-window");
-    if adw::StyleManager::default().is_dark() {
+    if initial_dark {
         window.add_css_class("potoo-dark");
     }
 
@@ -2780,6 +2866,7 @@ fn show_new_project_dialog(
     parent: &gtk::ApplicationWindow,
     ui_language: UiLanguage,
     default_language: Language,
+    initial_dark: bool,
     sender: ComponentSender<MainWindow>,
 ) {
     let dialog = gtk::Window::new();
@@ -2790,7 +2877,7 @@ fn show_new_project_dialog(
     dialog.set_modal(true);
     dialog.add_css_class("potoo-window");
     dialog.add_css_class("potoo-dialog-window");
-    if adw::StyleManager::default().is_dark() {
+    if initial_dark {
         dialog.add_css_class("potoo-dark");
     }
     set_dialog_titlebar(&dialog, ui_language, "Criar projeto");
@@ -3067,6 +3154,7 @@ fn show_new_file_dialog(
     default_language: Language,
     ui_language: UiLanguage,
     folder_options: Vec<(String, PathBuf)>,
+    initial_dark: bool,
     sender: ComponentSender<MainWindow>,
 ) {
     let dialog = gtk::Window::new();
@@ -3077,7 +3165,7 @@ fn show_new_file_dialog(
     dialog.set_modal(true);
     dialog.add_css_class("potoo-window");
     dialog.add_css_class("potoo-dialog-window");
-    if adw::StyleManager::default().is_dark() {
+    if initial_dark {
         dialog.add_css_class("potoo-dark");
     }
     set_dialog_titlebar(&dialog, ui_language, "Novo arquivo");
@@ -3216,6 +3304,7 @@ fn show_new_folder_dialog(
     parent: &gtk::ApplicationWindow,
     ui_language: UiLanguage,
     folder_options: Vec<(String, PathBuf)>,
+    initial_dark: bool,
     sender: ComponentSender<MainWindow>,
 ) {
     let dialog = gtk::Window::new();
@@ -3226,7 +3315,7 @@ fn show_new_folder_dialog(
     dialog.set_modal(true);
     dialog.add_css_class("potoo-window");
     dialog.add_css_class("potoo-dialog-window");
-    if adw::StyleManager::default().is_dark() {
+    if initial_dark {
         dialog.add_css_class("potoo-dark");
     }
     set_dialog_titlebar(&dialog, ui_language, "Nova pasta");
@@ -3369,25 +3458,19 @@ fn show_save_dialog(
 fn show_project_switch_confirmation(
     parent: &gtk::ApplicationWindow,
     language: UiLanguage,
+    initial_dark: bool,
     sender: ComponentSender<MainWindow>,
 ) {
-    let dialog = gtk::AlertDialog::builder()
-        .message(tr(language, "Alterações não salvas"))
-        .detail(tr(language, "Salve os arquivos abertos antes de trocar de pasta ou descarte as alterações para continuar."))
-        .buttons([tr(language, "Cancelar"), tr(language, "Descartar e abrir")])
-        .cancel_button(0)
-        .default_button(0)
-        .modal(true)
-        .build();
-    dialog.choose(
-        Some(parent),
-        None::<&gtk::gio::Cancellable>,
-        move |response| {
-            sender.input(MainWindowMsg::ProjectSwitchDecision(matches!(
-                response,
-                Ok(1)
-            )));
-        },
+    show_potoo_confirmation(
+        parent,
+        language,
+        initial_dark,
+        "Alterações não salvas",
+        "Alterações não salvas",
+        "Salve os arquivos abertos antes de trocar de pasta ou descarte as alterações para continuar.",
+        vec!["Cancelar", "Descartar e abrir"],
+        Some(1),
+        move |response| sender.input(MainWindowMsg::ProjectSwitchDecision(response == 1)),
     );
 }
 
@@ -3395,30 +3478,26 @@ fn show_close_document_confirmation(
     parent: &gtk::ApplicationWindow,
     id: u64,
     language: UiLanguage,
+    initial_dark: bool,
     sender: ComponentSender<MainWindow>,
 ) {
-    let dialog = gtk::AlertDialog::builder()
-        .message(tr(language, "Este arquivo tem alterações não salvas"))
-        .detail(tr(
-            language,
-            "Salve o arquivo antes de fechar ou descarte as alterações para continuar.",
-        ))
-        .buttons([
-            tr(language, "Continuar editando"),
-            tr(language, "Descartar alterações"),
-        ])
-        .cancel_button(0)
-        .default_button(0)
-        .modal(true)
-        .build();
-    dialog.choose(
-        Some(parent),
-        None::<&gtk::gio::Cancellable>,
-        move |response| {
-            sender.input(MainWindowMsg::CloseDocumentDecision(
-                id,
-                matches!(response, Ok(1)),
-            ));
+    show_potoo_confirmation(
+        parent,
+        language,
+        initial_dark,
+        "Alterações não salvas",
+        "O arquivo aberto tem alterações que ainda não foram salvas. O que você gostaria de fazer?",
+        "Salve o arquivo antes de fechar ou descarte as alterações para continuar.",
+        vec![
+            "Continuar editando",
+            "Descartar alterações",
+            "Salvar e fechar",
+        ],
+        Some(2),
+        move |response| match response {
+            1 => sender.input(MainWindowMsg::CloseDocumentDecision(id, true)),
+            2 => sender.input(MainWindowMsg::SaveAndCloseDocument(id)),
+            _ => sender.input(MainWindowMsg::CloseDocumentDecision(id, false)),
         },
     );
 }
@@ -3426,29 +3505,113 @@ fn show_close_document_confirmation(
 fn show_close_app_confirmation(
     parent: &gtk::ApplicationWindow,
     language: UiLanguage,
+    initial_dark: bool,
     sender: ComponentSender<MainWindow>,
 ) {
-    let dialog = gtk::AlertDialog::builder()
-        .message(tr(language, "Há alterações não salvas"))
-        .detail(tr(
-            language,
-            "Salve os arquivos antes de sair ou descarte as alterações para fechar o Potoo IDE.",
-        ))
-        .buttons([
-            tr(language, "Continuar editando"),
-            tr(language, "Descartar e sair"),
-        ])
-        .cancel_button(0)
-        .default_button(0)
-        .modal(true)
-        .build();
-    dialog.choose(
-        Some(parent),
-        None::<&gtk::gio::Cancellable>,
-        move |response| {
-            sender.input(MainWindowMsg::CloseAppDecision(matches!(response, Ok(1))));
-        },
+    show_potoo_confirmation(
+        parent,
+        language,
+        initial_dark,
+        "Alterações não salvas",
+        "Alterações não salvas",
+        "Salve os arquivos antes de sair ou descarte as alterações para fechar o Potoo IDE.",
+        vec!["Continuar editando", "Descartar e sair"],
+        Some(1),
+        move |response| sender.input(MainWindowMsg::CloseAppDecision(response == 1)),
     );
+}
+
+fn show_potoo_confirmation(
+    parent: &gtk::ApplicationWindow,
+    language: UiLanguage,
+    initial_dark: bool,
+    title: &'static str,
+    message: &'static str,
+    detail: &'static str,
+    actions: Vec<&'static str>,
+    primary_action: Option<usize>,
+    on_response: impl Fn(usize) + 'static,
+) {
+    let dialog = gtk::Window::new();
+    dialog.set_title(Some(tr(language, title)));
+    dialog.set_default_size(520, 240);
+    dialog.set_resizable(false);
+    dialog.set_transient_for(Some(parent));
+    dialog.set_modal(true);
+    dialog.add_css_class("potoo-window");
+    dialog.add_css_class("potoo-dialog-window");
+    if initial_dark {
+        dialog.add_css_class("potoo-dark");
+    }
+    set_dialog_titlebar(&dialog, language, title);
+
+    let surface = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    surface.add_css_class("potoo-dialog-surface");
+
+    let content = gtk::Box::new(gtk::Orientation::Horizontal, 14);
+    content.add_css_class("potoo-confirm-content");
+    content.set_margin_start(22);
+    content.set_margin_end(22);
+    content.set_margin_top(22);
+    content.set_margin_bottom(22);
+
+    let mark = gtk::Label::new(Some("!"));
+    mark.add_css_class("potoo-confirm-mark");
+    mark.set_valign(gtk::Align::Start);
+    content.append(&mark);
+
+    let copy = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    copy.set_valign(gtk::Align::Center);
+    let message_label = gtk::Label::new(Some(tr(language, message)));
+    message_label.set_xalign(0.0);
+    message_label.set_wrap(true);
+    message_label.add_css_class("potoo-confirm-message");
+    let detail_label = gtk::Label::new(Some(tr(language, detail)));
+    detail_label.set_xalign(0.0);
+    detail_label.set_wrap(true);
+    detail_label.add_css_class("potoo-confirm-detail");
+    copy.append(&message_label);
+    copy.append(&detail_label);
+    content.append(&copy);
+    surface.append(&content);
+
+    let actions_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    actions_row.add_css_class("potoo-dialog-actions");
+    let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    spacer.set_hexpand(true);
+    actions_row.append(&spacer);
+
+    let response_sent = Rc::new(Cell::new(false));
+    let on_response: Rc<dyn Fn(usize)> = Rc::new(on_response);
+    for (index, label) in actions.into_iter().enumerate() {
+        let button = gtk::Button::with_label(tr(language, label));
+        button.add_css_class(if Some(index) == primary_action {
+            "potoo-run-button"
+        } else {
+            "potoo-project-cancel-button"
+        });
+        let dialog_for_button = dialog.clone();
+        let response_sent_for_button = response_sent.clone();
+        let on_response_for_button = on_response.clone();
+        button.connect_clicked(move |_| {
+            if !response_sent_for_button.replace(true) {
+                on_response_for_button(index);
+            }
+            dialog_for_button.close();
+        });
+        actions_row.append(&button);
+    }
+    surface.append(&actions_row);
+    dialog.set_child(Some(&surface));
+
+    let response_sent_for_close = response_sent;
+    dialog.connect_close_request(move |_| {
+        if !response_sent_for_close.replace(true) {
+            on_response(0);
+        }
+        gtk::glib::Propagation::Proceed
+    });
+    dialog.present();
 }
 
 fn new_source_path(

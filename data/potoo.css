@@ -35,6 +35,15 @@ window.potoo-window :focus {
   box-shadow: none;
 }
 
+window.potoo-window button,
+window.potoo-window entry,
+window.potoo-window dropdown > button,
+window.potoo-window switch,
+window.potoo-window popover > contents,
+window.potoo-window paned > separator {
+  border-radius: 0;
+}
+
 image.potoo-icon {
   color: inherit;
 }
@@ -233,7 +242,6 @@ headerbar.potoo-linux-titlebar button.titlebutton {
   border-bottom: 1px solid var(--potoo-border);
   border-radius: 0;
   color: var(--potoo-text-secondary);
-  text-align: left;
   box-shadow: none;
 }
 
@@ -888,7 +896,6 @@ button.potoo-dialog-close:hover {
   border-left: 3px solid transparent;
   border-radius: 0;
   color: var(--potoo-text);
-  text-align: left;
   box-shadow: none;
 }
 
@@ -977,6 +984,31 @@ button.potoo-about-link {
 
 .potoo-dialog-body {
   background-color: var(--potoo-window-bg);
+}
+
+.potoo-confirm-content {
+  background-color: var(--potoo-window-bg);
+}
+
+.potoo-confirm-mark {
+  min-width: 36px;
+  min-height: 36px;
+  background-color: var(--potoo-accent-soft-bg);
+  color: var(--potoo-accent-text);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.potoo-confirm-message {
+  color: var(--potoo-text);
+  font-size: 14px;
+  font-weight: 620;
+}
+
+.potoo-confirm-detail {
+  color: var(--potoo-text-secondary);
+  font-size: 13px;
+  font-weight: 450;
 }
 
 .potoo-dialog-intro {
@@ -1118,8 +1150,12 @@ switch.potoo-settings-switch slider {
 
 paned > separator {
   background-color: var(--potoo-border);
-  min-width: 1px;
-  min-height: 1px;
+  background-image: none;
+  border: 0;
+  margin: -4px;
+  min-width: 9px;
+  min-height: 9px;
+  padding: 0;
 }
 
 window.potoo-window.potoo-dark .potoo-header,
@@ -1306,8 +1342,4 @@ window.potoo-window.potoo-dark switch.potoo-settings-switch:checked {
 window.potoo-window.potoo-dark switch.potoo-settings-switch slider {
   background-color: var(--potoo-switch-knob);
   border-color: var(--potoo-text-muted);
-}
-
-window.potoo-window.potoo-dark paned > separator {
-  background-color: var(--potoo-border);
 }

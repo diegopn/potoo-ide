@@ -6,7 +6,7 @@
 
 A desktop IDE for students and teachers to practice programming logic with Portugol and VisuAlg.
 
-The project aims to provide a simple, intuitive space for students to practice and for teachers to support the concepts taught through code. The interface is built with Rust, GTK 4, libadwaita, and Relm4, with inspiration from GNOME Builder. Teachers choose which tools fit their classes; the IDE does not impose one learning path.
+The project aims to provide a simple, intuitive space for students to practice and for teachers to support the concepts taught through code. The interface is built with Rust, GTK 4, and Relm4, with Potoo-owned components and inspiration from GNOME Builder. Teachers choose which tools fit their classes; the IDE does not impose one learning path.
 
 ## Languages
 
@@ -31,7 +31,7 @@ The goal is to offer Potoo IDE for Linux, Windows, and macOS. This base prepares
 
 ## Development
 
-Requirements for running the native version: Rust 1.93 or later, GTK 4.20, and libadwaita 1.8 with the platform development libraries.
+Requirements for running the native version: Rust 1.93 or later and GTK 4.20 with the platform development libraries.
 
 ```sh
 cargo run --locked

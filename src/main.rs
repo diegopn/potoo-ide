@@ -184,7 +184,7 @@ fn register_app_icons() {
 fn main() {
     register_app_fonts();
 
-    let application = adw::Application::builder()
+    let application = gtk::Application::builder()
         .application_id("io.github.diegopn.potooide")
         .build();
 
