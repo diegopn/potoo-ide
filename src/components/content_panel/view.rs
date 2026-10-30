@@ -12,6 +12,7 @@ pub(crate) struct SyntaxTags {
     string: gtk::TextTag,
     number: gtk::TextTag,
     current_line: gtk::TextTag,
+    matching_delimiter: gtk::TextTag,
 }
 
 pub(crate) fn rebuild_editor_tabs(
@@ -267,15 +268,21 @@ pub(crate) fn make_syntax_tags(buffer: &gtk::TextBuffer) -> SyntaxTags {
     let string = gtk::TextTag::builder().name("string").build();
     let number = gtk::TextTag::builder().name("number").build();
     let current_line = gtk::TextTag::builder().name("current-line").build();
+    let matching_delimiter = gtk::TextTag::builder()
+        .name("matching-delimiter")
+        .weight(700)
+        .build();
     table.add(&keyword);
     table.add(&string);
     table.add(&number);
     table.add(&current_line);
+    table.add(&matching_delimiter);
     SyntaxTags {
         keyword,
         string,
         number,
         current_line,
+        matching_delimiter,
     }
 }
 
@@ -288,8 +295,12 @@ pub(crate) fn set_syntax_palette(tags: &SyntaxTags, dark: bool) {
         .set_property("foreground", if dark { "#b9a9e8" } else { "#55468e" });
     tags.current_line.set_property(
         "paragraph-background",
-        if dark { "#2d3e35" } else { "#e2f1e8" },
+        if dark { "#282f2b" } else { "#f2f7f3" },
     );
+    tags.matching_delimiter
+        .set_property("background", if dark { "#416a53" } else { "#cce8d8" });
+    tags.matching_delimiter
+        .set_property("foreground", if dark { "#ffffff" } else { "#075b3e" });
 }
 
 pub(crate) fn highlight_buffer(buffer: &gtk::TextBuffer, language: Language, tags: &SyntaxTags) {
@@ -345,10 +356,114 @@ pub(crate) fn highlight_buffer(buffer: &gtk::TextBuffer, language: Language, tag
         index += 1;
     }
 
-    if let Some(mut line) = buffer.iter_at_line(6) {
+    let cursor = buffer.iter_at_offset(buffer.cursor_position());
+    if let Some(mut line) = buffer.iter_at_line(cursor.line()) {
         let first = line.offset() as usize;
         line.forward_to_line_end();
         apply_tag_range(buffer, &tags.current_line, first, line.offset() as usize);
+    }
+
+    if let Some((first, second)) = matching_delimiter_at_cursor(&chars, language, cursor.offset()) {
+        apply_tag_range(buffer, &tags.matching_delimiter, first, first + 1);
+        apply_tag_range(buffer, &tags.matching_delimiter, second, second + 1);
+    }
+}
+
+fn matching_delimiter_at_cursor(
+    chars: &[char],
+    language: Language,
+    cursor_offset: i32,
+) -> Option<(usize, usize)> {
+    let mut pairs = vec![None; chars.len()];
+    let mut open = Vec::<(usize, char)>::new();
+    let mut index = 0;
+
+    while index < chars.len() {
+        let current = chars[index];
+        let next = chars.get(index + 1).copied();
+
+        if current == '"' || current == '\'' {
+            let quote = current;
+            index += 1;
+            while index < chars.len() {
+                if chars[index] == '\\' {
+                    index = (index + 2).min(chars.len());
+                    continue;
+                }
+                let closes_string = chars[index] == quote;
+                index += 1;
+                if closes_string {
+                    break;
+                }
+            }
+            continue;
+        }
+
+        if current == '/' && next == Some('/') {
+            index += 2;
+            while index < chars.len() && chars[index] != '\n' {
+                index += 1;
+            }
+            continue;
+        }
+
+        if language == Language::Portugol && current == '/' && next == Some('*') {
+            index += 2;
+            let mut closed = false;
+            while index + 1 < chars.len() {
+                if chars[index] == '*' && chars[index + 1] == '/' {
+                    index += 2;
+                    closed = true;
+                    break;
+                }
+                index += 1;
+            }
+            if !closed {
+                break;
+            }
+            continue;
+        }
+
+        if language == Language::Visualg && current == '{' {
+            while index < chars.len() && chars[index] != '}' {
+                index += 1;
+            }
+            index = (index + 1).min(chars.len());
+            continue;
+        }
+
+        if matches!(current, '{' | '(' | '[') {
+            open.push((index, current));
+        } else if let Some(expected_open) = matching_open(current) {
+            if open
+                .last()
+                .is_some_and(|(_, delimiter)| *delimiter == expected_open)
+            {
+                if let Some((opening_index, _)) = open.pop() {
+                    pairs[opening_index] = Some(index);
+                    pairs[index] = Some(opening_index);
+                }
+            }
+        }
+
+        index += 1;
+    }
+
+    let cursor = usize::try_from(cursor_offset).unwrap_or(0).min(chars.len());
+    let current = (cursor < chars.len()).then_some(cursor);
+    let previous = cursor.checked_sub(1).filter(|offset| *offset < chars.len());
+    let delimiter = current
+        .filter(|offset| pairs[*offset].is_some())
+        .or_else(|| previous.filter(|offset| pairs[*offset].is_some()))?;
+    Some((delimiter, pairs[delimiter]?))
+}
+
+fn matching_open(closing: char) -> Option<char> {
+    match closing {
+        '}' => Some('{'),
+        ')' => Some('('),
+        ']' => Some('['),
+        _ => None,
     }
 }
 

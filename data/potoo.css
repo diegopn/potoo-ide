@@ -15,6 +15,8 @@ window.potoo-window {
   --potoo-accent-hover: #076642;
   --potoo-accent-soft-bg: #e2f1e8;
   --potoo-accent-text: #096744;
+  --potoo-selection-bg: #b9ddc9;
+  --potoo-selection-text: #111111;
   --potoo-control-bg: #dfe5e1;
   --potoo-control-hover-bg: #d1dbd5;
   --potoo-switch-knob: var(--potoo-surface-bg);
@@ -69,6 +71,8 @@ window.potoo-window.potoo-dark {
   --potoo-accent-hover: #2c9868;
   --potoo-accent-soft-bg: #2d3e35;
   --potoo-accent-text: #8ad3a9;
+  --potoo-selection-bg: #356247;
+  --potoo-selection-text: #ffffff;
   --potoo-control-bg: #363e44;
   --potoo-control-hover-bg: #444e55;
   background-color: var(--potoo-window-bg);
@@ -738,6 +742,11 @@ textview.potoo-output-view {
   color: var(--potoo-text);
   font-family: "JetBrains Mono", "Cascadia Code", monospace;
   font-size: 14px;
+}
+
+textview.potoo-code-editor text selection {
+  background-color: var(--potoo-selection-bg);
+  color: var(--potoo-selection-text);
 }
 
 separator.potoo-gutter-separator {

@@ -162,6 +162,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Depurador" => "Debugger",
             "Interface" => "Interface",
             "Espaços" => "Spaces",
+            "Linha" => "Line",
+            "Coluna" => "Column",
             "A saída aparecerá aqui após a execução." => {
                 "Program output will appear here after you run it."
             }
@@ -402,6 +404,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Depurador" => "Depurador",
             "Interface" => "Interfaz",
             "Espaços" => "Espacios",
+            "Linha" => "Línea",
+            "Coluna" => "Columna",
             "A saída aparecerá aqui após a execução." => {
                 "La salida aparecerá aquí después de ejecutar el programa."
             }
@@ -676,6 +680,7 @@ pub(crate) enum MainWindowMsg {
     CloseSettings,
     Run,
     SourceChanged(String),
+    CursorMoved,
     PersistRecovery(u64),
 }
 
@@ -1339,6 +1344,7 @@ pub struct MainUi {
     editor_tabs: gtk::Box,
     status_language: gtk::Label,
     status_details: gtk::Label,
+    status_position: gtk::Label,
     indent_width: Rc<Cell<u32>>,
     code_buffer: gtk::TextBuffer,
     code_view: gtk::TextView,
@@ -1708,6 +1714,7 @@ impl SimpleComponent for MainWindow {
                     sender_for_recovery.input(MainWindowMsg::PersistRecovery(generation));
                 });
             }
+            MainWindowMsg::CursorMoved => {}
             MainWindowMsg::PersistRecovery(generation) => {
                 if generation == self.recovery_generation {
                     self.persist_session(false, false);
@@ -1953,7 +1960,20 @@ impl SimpleComponent for MainWindow {
             active_language.unwrap_or(self.new_file_language),
             &ui.syntax_tags,
         );
+        update_cursor_position(&ui.code_buffer, &ui.status_position, self.ui_language);
+        ui.status_position.set_visible(active_document.is_some());
     }
+}
+
+fn update_cursor_position(buffer: &gtk::TextBuffer, label: &gtk::Label, language: UiLanguage) {
+    let cursor = buffer.iter_at_offset(buffer.cursor_position());
+    label.set_text(&format!(
+        "{} {} · {} {}",
+        tr(language, "Linha"),
+        cursor.line() + 1,
+        tr(language, "Coluna"),
+        cursor.line_offset() + 1
+    ));
 }
 
 fn build_window_content(
@@ -2169,12 +2189,19 @@ fn build_window_content(
     )));
     status_language.add_css_class("potoo-status-primary");
     status_details.add_css_class("potoo-muted");
+    let status_position = gtk::Label::new(Some("Linha 1 · Coluna 1"));
+    status_position.add_css_class("potoo-muted");
     let status_bar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     status_bar.add_css_class("potoo-statusbar");
     status_bar.append(&gtk::Separator::new(gtk::Orientation::Vertical));
     status_bar.append(&status_language);
     status_bar.append(&gtk::Separator::new(gtk::Orientation::Vertical));
     status_bar.append(&status_details);
+    let status_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    status_spacer.set_hexpand(true);
+    status_bar.append(&status_spacer);
+    status_bar.append(&gtk::Separator::new(gtk::Orientation::Vertical));
+    status_bar.append(&status_position);
     let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
     content.append(&workspace);
     content.append(&status_bar);
@@ -2310,6 +2337,11 @@ fn build_window_content(
         sender_for_source.input(MainWindowMsg::SourceChanged(contents.to_string()));
     });
 
+    let sender_for_cursor = sender.clone();
+    code_buffer.connect_mark_set(move |_, _, _| {
+        sender_for_cursor.input(MainWindowMsg::CursorMoved);
+    });
+
     let key_controller = gtk::EventControllerKey::new();
     let sender_for_shortcuts = sender;
     let window_for_shortcuts = window.clone();
@@ -2372,6 +2404,7 @@ fn build_window_content(
         editor_tabs,
         status_language,
         status_details,
+        status_position,
         indent_width,
         code_buffer,
         code_view,
