@@ -194,7 +194,8 @@ pub(crate) fn rebuild_recent_items(
 
         let detail = gtk::Box::new(gtk::Orientation::Vertical, 3);
         detail.set_hexpand(true);
-        let name = gtk::Label::new(Some(display_name(path)));
+        let display_name = display_name(path);
+        let name = gtk::Label::new(Some(&display_name));
         name.set_xalign(0.0);
         name.set_ellipsize(gtk::pango::EllipsizeMode::End);
         name.add_css_class("potoo-start-recent-name");
