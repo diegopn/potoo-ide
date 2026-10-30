@@ -1,12 +1,12 @@
 use crate::components::{
     content_panel::{self, Language, SourceDocument, SyntaxTags},
-    header, sidebar,
+    header, icon, icon_label_button, sidebar,
     sidebar::ProjectFile,
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::{
-    cell::Cell,
+    cell::{Cell, RefCell},
     fs,
     fs::OpenOptions,
     path::{Path, PathBuf},
@@ -60,15 +60,60 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
         UiLanguage::Portuguese => return portuguese,
         UiLanguage::English => match portuguese {
             "Meu primeiro programa" => "My first program",
+            "Abrir pasta" => "Open folder",
             "Abrir pasta de projeto" => "Open project folder",
             "Abrir arquivo" => "Open file",
+            "Abrir projeto ou programa" => "Open project or program",
+            "Nenhum projeto aberto" => "No project open",
+            "Abra uma pasta ou um programa para começar." => {
+                "Open a folder or program to get started."
+            }
             "Salvar arquivo" => "Save file",
-            "Salvar como" => "Save as",
-            "Linguagem para novos arquivos" => "Language for new files",
+            "Salvar" => "Save",
             "Configurações" => "Settings",
             "Executar" => "Run",
             "Arquivos" => "Files",
             "Criar arquivo" => "Create file",
+            "Criar item no projeto" => "Create project item",
+            "Novo projeto" => "New project",
+            "Criar projeto" => "Create project",
+            "Criar um projeto Portugol ou VisuAlg" => "Create a Portugol or VisuAlg project",
+            "Crie uma pasta com um programa inicial na linguagem escolhida." => {
+                "Create a folder with a starter program in the selected language."
+            }
+            "Nome do projeto" => "Project name",
+            "Por exemplo: Meu primeiro projeto" => "For example: My first project",
+            "Meu projeto" => "My project",
+            "Local do projeto" => "Project location",
+            "Escolher pasta" => "Choose folder",
+            "Escolha a pasta de destino" => "Choose a destination folder",
+            "Selecione uma pasta local para criar o projeto." => {
+                "Choose a local folder to create the project."
+            }
+            "Não foi possível escolher a pasta do projeto" => {
+                "Could not choose the project folder"
+            }
+            "Digite um nome válido para o projeto." => "Enter a valid project name.",
+            "Já existe um projeto com esse nome." => "A project with that name already exists.",
+            "Não foi possível criar o projeto" => "Could not create the project",
+            "Projeto criado" => "Project created",
+            "Novo programa" => "New program",
+            "Criar um programa Portugol ou VisuAlg" => "Create a Portugol or VisuAlg program",
+            "Nova pasta" => "New folder",
+            "Criar uma pasta no projeto" => "Create a folder in the project",
+            "Criar pasta" => "Create folder",
+            "Organize seus programas em uma pasta do projeto." => {
+                "Organize your programs in a project folder."
+            }
+            "Nome da pasta" => "Folder name",
+            "Nome da pasta, por exemplo: exercicios" => "Folder name, for example: exercises",
+            "Pasta criada" => "Folder created",
+            "Já existe uma pasta com esse nome." => "A folder with that name already exists.",
+            "Digite um nome válido para a pasta." => "Enter a valid folder name.",
+            "Não foi possível criar a pasta" => "Could not create folder",
+            "Abra uma pasta de projeto antes de criar itens." => {
+                "Open a project folder before creating items."
+            }
             "Aprenda enquanto programa" => "Learn as you code",
             "Linha 7 · decisão" => "Line 7 · decision",
             "Uma condição verifica se uma expressão é verdadeira antes de executar um bloco." => {
@@ -96,6 +141,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Personalize a aparência e o editor." => "Customize the appearance and editor.",
             "Aparência" => "Appearance",
+            "Sistema" => "System",
             "Seguir o sistema" => "Follow system",
             "Claro" => "Light",
             "Escuro" => "Dark",
@@ -114,19 +160,15 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "O idioma escolhido será aplicado ao reabrir o Potoo." => {
                 "The selected language will apply the next time you open Potoo."
             }
-            "Idioma para novos programas" => "Language for new programs",
-            "Escolha a linguagem padrão dos novos arquivos." => {
-                "Choose the default language for new files."
-            }
             "Recuo" => "Indentation",
             "Espaços por nível de recuo." => "Spaces inserted for each indentation level.",
             "2 espaços" => "2 spaces",
             "4 espaços" => "4 spaces",
-            "Abra uma pasta de projeto para navegar pelos arquivos." => {
-                "Open a project folder to browse its files."
-            }
             "Esta pasta ainda não tem arquivos .por ou .alg." => {
                 "This folder does not contain any .por or .alg files yet."
+            }
+            "Nenhum programa .por ou .alg encontrado. Use + para criar um." => {
+                "No .por or .alg programs found. Use + to create one."
             }
             "Fechar arquivo" => "Close file",
             "Escolha um nome e a linguagem do novo arquivo." => {
@@ -219,15 +261,62 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
         },
         UiLanguage::Spanish => match portuguese {
             "Meu primeiro programa" => "Mi primer programa",
+            "Abrir pasta" => "Abrir carpeta",
             "Abrir pasta de projeto" => "Abrir carpeta del proyecto",
             "Abrir arquivo" => "Abrir archivo",
+            "Abrir projeto ou programa" => "Abrir proyecto o programa",
+            "Nenhum projeto aberto" => "No hay ningún proyecto abierto",
+            "Abra uma pasta ou um programa para começar." => {
+                "Abre una carpeta o un programa para empezar."
+            }
             "Salvar arquivo" => "Guardar archivo",
-            "Salvar como" => "Guardar como",
-            "Linguagem para novos arquivos" => "Lenguaje para archivos nuevos",
+            "Salvar" => "Guardar",
             "Configurações" => "Configuración",
             "Executar" => "Ejecutar",
             "Arquivos" => "Archivos",
             "Criar arquivo" => "Crear archivo",
+            "Criar item no projeto" => "Crear elemento del proyecto",
+            "Novo projeto" => "Nuevo proyecto",
+            "Criar projeto" => "Crear proyecto",
+            "Criar um projeto Portugol ou VisuAlg" => "Crear un proyecto Portugol o VisuAlg",
+            "Crie uma pasta com um programa inicial na linguagem escolhida." => {
+                "Crea una carpeta con un programa inicial en el lenguaje elegido."
+            }
+            "Nome do projeto" => "Nombre del proyecto",
+            "Por exemplo: Meu primeiro projeto" => "Por ejemplo: Mi primer proyecto",
+            "Meu projeto" => "Mi proyecto",
+            "Local do projeto" => "Ubicación del proyecto",
+            "Escolher pasta" => "Elegir carpeta",
+            "Escolha a pasta de destino" => "Elige una carpeta de destino",
+            "Selecione uma pasta local para criar o projeto." => {
+                "Elige una carpeta local para crear el proyecto."
+            }
+            "Não foi possível escolher a pasta do projeto" => {
+                "No se pudo elegir la carpeta del proyecto"
+            }
+            "Digite um nome válido para o projeto." => "Escribe un nombre válido para el proyecto.",
+            "Já existe um projeto com esse nome." => "Ya existe un proyecto con ese nombre.",
+            "Não foi possível criar o projeto" => "No se pudo crear el proyecto",
+            "Projeto criado" => "Proyecto creado",
+            "Novo programa" => "Nuevo programa",
+            "Criar um programa Portugol ou VisuAlg" => "Crear un programa Portugol o VisuAlg",
+            "Nova pasta" => "Nueva carpeta",
+            "Criar uma pasta no projeto" => "Crear una carpeta en el proyecto",
+            "Criar pasta" => "Crear carpeta",
+            "Organize seus programas em uma pasta do projeto." => {
+                "Organiza tus programas en una carpeta del proyecto."
+            }
+            "Nome da pasta" => "Nombre de la carpeta",
+            "Nome da pasta, por exemplo: exercicios" => {
+                "Nombre de la carpeta, por ejemplo: ejercicios"
+            }
+            "Pasta criada" => "Carpeta creada",
+            "Já existe uma pasta com esse nome." => "Ya existe una carpeta con ese nombre.",
+            "Digite um nome válido para a pasta." => "Escribe un nombre válido para la carpeta.",
+            "Não foi possível criar a pasta" => "No se pudo crear la carpeta",
+            "Abra uma pasta de projeto antes de criar itens." => {
+                "Abre una carpeta de proyecto antes de crear elementos."
+            }
             "Aprenda enquanto programa" => "Aprende mientras programas",
             "Linha 7 · decisão" => "Línea 7 · decisión",
             "Uma condição verifica se uma expressão é verdadeira antes de executar um bloco." => {
@@ -255,6 +344,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Personalize a aparência e o editor." => "Personaliza la apariencia y el editor.",
             "Aparência" => "Apariencia",
+            "Sistema" => "Sistema",
             "Seguir o sistema" => "Seguir el sistema",
             "Claro" => "Claro",
             "Escuro" => "Oscuro",
@@ -275,19 +365,15 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "O idioma escolhido será aplicado ao reabrir o Potoo." => {
                 "El idioma elegido se aplicará la próxima vez que abras Potoo."
             }
-            "Idioma para novos programas" => "Lenguaje para programas nuevos",
-            "Escolha a linguagem padrão dos novos arquivos." => {
-                "Elige el lenguaje predeterminado para archivos nuevos."
-            }
             "Recuo" => "Sangría",
             "Espaços por nível de recuo." => "Espacios insertados por cada nivel de sangría.",
             "2 espaços" => "2 espacios",
             "4 espaços" => "4 espacios",
-            "Abra uma pasta de projeto para navegar pelos arquivos." => {
-                "Abre una carpeta de proyecto para explorar sus archivos."
-            }
             "Esta pasta ainda não tem arquivos .por ou .alg." => {
                 "Esta carpeta todavía no tiene archivos .por o .alg."
+            }
+            "Nenhum programa .por ou .alg encontrado. Use + para criar um." => {
+                "No se encontraron programas .por o .alg. Usa + para crear uno."
             }
             "Fechar arquivo" => "Cerrar archivo",
             "Escolha um nome e a linguagem do novo arquivo." => {
@@ -482,17 +568,17 @@ struct SessionSnapshot {
 
 #[derive(Debug)]
 pub(crate) enum MainWindowMsg {
-    LanguageSelected(Language),
     InterfaceLanguageSelected(UiLanguage),
     ProjectSelected(PathBuf),
     ProjectSwitchDecision(bool),
+    CreateProject(PathBuf, String, Language),
     CreateFile(String, Language),
+    CreateFolder(String),
     OpenFile(PathBuf),
     ActivateDocument(u64),
     CloseDocument(u64),
     CloseDocumentDecision(u64, bool),
     SaveCurrent,
-    SaveAsCurrent,
     SaveAsSelected(u64, PathBuf),
     SaveAsCanceled(u64),
     FileOperationFailed(String),
@@ -899,7 +985,19 @@ impl MainWindow {
         self.project_files = files;
         self.documents.clear();
         self.active_document_id = None;
-        if let Some(path) = self.project_files.first().map(|file| file.path.clone()) {
+        let root_file = self.project_root.as_ref().and_then(|root| {
+            self.project_files
+                .iter()
+                .find(|file| !file.is_directory && file.path.parent() == Some(root.as_path()))
+                .map(|file| file.path.clone())
+        });
+        let first_source_file = root_file.or_else(|| {
+            self.project_files
+                .iter()
+                .find(|file| !file.is_directory)
+                .map(|file| file.path.clone())
+        });
+        if let Some(path) = first_source_file {
             self.open_document(path);
         } else {
             self.output_status = self
@@ -958,7 +1056,7 @@ impl MainWindow {
     fn create_project_file(&mut self, name: String, language: Language) {
         let Some(root) = self.project_root.clone() else {
             self.output_status = self
-                .text("Abra uma pasta de projeto antes de criar arquivos.")
+                .text("Abra uma pasta de projeto antes de criar itens.")
                 .to_string();
             return;
         };
@@ -1000,6 +1098,76 @@ impl MainWindow {
         }
     }
 
+    fn create_project_folder(&mut self, name: String) {
+        let Some(root) = self.project_root.clone() else {
+            self.output_status = self
+                .text("Abra uma pasta de projeto antes de criar itens.")
+                .to_string();
+            return;
+        };
+        let name = name.trim();
+        if !is_valid_directory_name(name) {
+            self.output_status = self.text("Digite um nome válido para a pasta.").to_string();
+            return;
+        }
+
+        match fs::create_dir(root.join(name)) {
+            Ok(()) => {
+                if let Ok(files) = scan_project_files(&root) {
+                    self.project_files = files;
+                }
+                self.output_status = self.text("Pasta criada").to_string();
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                self.output_status = self.text("Já existe uma pasta com esse nome.").to_string();
+            }
+            Err(error) => {
+                self.output_status = format!(
+                    "{}: {error}",
+                    self.text("Não foi possível criar a pasta")
+                );
+            }
+        }
+    }
+
+    fn create_project(
+        &mut self,
+        parent: PathBuf,
+        name: String,
+        language: Language,
+        sender: ComponentSender<Self>,
+    ) {
+        let name = name.trim();
+        if !is_valid_directory_name(name) {
+            self.output_status = self
+                .text("Digite um nome válido para o projeto.")
+                .to_string();
+            return;
+        }
+
+        let root = parent.join(name);
+        if let Err(error) = fs::create_dir(&root) {
+            self.output_status = if error.kind() == std::io::ErrorKind::AlreadyExists {
+                self.text("Já existe um projeto com esse nome.").to_string()
+            } else {
+                format!("{}: {error}", self.text("Não foi possível criar o projeto"))
+            };
+            return;
+        }
+
+        let source_path = root.join(language.file_name());
+        if let Err(error) = fs::write(&source_path, language.sample()) {
+            self.output_status = format!(
+                "{}: {error}",
+                self.text("Não foi possível criar o projeto")
+            );
+            return;
+        }
+
+        self.output_status = self.text("Projeto criado").to_string();
+        sender.input(MainWindowMsg::ProjectSelected(root));
+    }
+
     fn close_document(&mut self, id: u64) {
         let Some(index) = self.documents.iter().position(|document| document.id == id) else {
             return;
@@ -1018,12 +1186,12 @@ impl MainWindow {
         }
     }
 
-    fn request_save(&mut self, save_as: bool) {
+    fn request_save(&mut self) {
         match self
             .active_document()
             .map(|document| (document.id, document.path.clone()))
         {
-            Some((id, Some(path))) if !save_as => self.save_document(id, path),
+            Some((id, Some(path))) => self.save_document(id, path),
             Some((id, _)) => self.pending_save_as_id = Some(id),
             None => {
                 self.output_status = self
@@ -1036,24 +1204,25 @@ impl MainWindow {
 
 struct SettingsUi {
     window: gtk::Window,
-    theme_picker: gtk::DropDown,
+    theme_buttons: [gtk::Button; 3],
     font_size_picker: gtk::DropDown,
     line_numbers_switch: gtk::Switch,
     word_wrap_switch: gtk::Switch,
     indent_width_picker: gtk::DropDown,
-    default_language_picker: gtk::DropDown,
     ui_language_picker: gtk::DropDown,
 }
 
-struct MainUi {
+pub struct MainUi {
     window: gtk::ApplicationWindow,
     content: gtk::Box,
-    language_picker: gtk::DropDown,
+    default_new_language: Rc<Cell<Language>>,
     settings: SettingsUi,
     project_title: gtk::Label,
+    project_row: gtk::Box,
     project_label: gtk::Label,
     file_list: gtk::Box,
-    new_file_button: gtk::Button,
+    new_file_button: gtk::MenuButton,
+    expanded_folders: sidebar::ExpandedFolders,
     editor_tabs: gtk::Box,
     status_language: gtk::Label,
     status_details: gtk::Label,
@@ -1066,7 +1235,6 @@ struct MainUi {
     output_buffer: gtk::TextBuffer,
     output_status: gtk::Label,
     displayed_language: Option<Language>,
-    displayed_new_file_language: Language,
     displayed_active_document_id: Option<u64>,
     displayed_project_name: String,
     displayed_project_files: Vec<(PathBuf, bool)>,
@@ -1108,6 +1276,7 @@ impl SimpleComponent for MainWindow {
     ) -> ComponentParts<Self> {
         root.set_title(Some("Potoo IDE"));
         root.set_default_size(1440, 900);
+        root.maximize();
         root.add_css_class("potoo-window");
         let preferences = load_preferences();
         let saved_session = load_session();
@@ -1191,8 +1360,27 @@ impl SimpleComponent for MainWindow {
                 tr(preferences.ui_language, "Pronto para executar").to_string()
             },
         };
-        let widgets = build_window_content(root.clone(), sender, preferences);
+        let mut widgets = build_window_content(root.clone(), sender.clone(), preferences);
         root.set_child(Some(&widgets.content));
+        content_panel::rebuild_editor_tabs(
+            &widgets.editor_tabs,
+            &model.documents,
+            model.active_document_id,
+            model.ui_language,
+            sender,
+        );
+        widgets.displayed_tabs = model
+            .documents
+            .iter()
+            .map(|document| {
+                (
+                    document.id,
+                    document.name.clone(),
+                    document.is_dirty(),
+                    Some(document.id) == model.active_document_id,
+                )
+            })
+            .collect();
 
         if !unreadable_session {
             if let Err(error) = persist_session(&model, false, false) {
@@ -1211,20 +1399,17 @@ impl SimpleComponent for MainWindow {
             &message,
             MainWindowMsg::ProjectSelected(_)
                 | MainWindowMsg::ProjectSwitchDecision(_)
+                | MainWindowMsg::CreateProject(_, _, _)
                 | MainWindowMsg::CreateFile(_, _)
+                | MainWindowMsg::CreateFolder(_)
                 | MainWindowMsg::OpenFile(_)
                 | MainWindowMsg::ActivateDocument(_)
                 | MainWindowMsg::CloseDocument(_)
                 | MainWindowMsg::CloseDocumentDecision(_, _)
                 | MainWindowMsg::SaveCurrent
-                | MainWindowMsg::SaveAsCurrent
                 | MainWindowMsg::SaveAsSelected(_, _)
         );
         match message {
-            MainWindowMsg::LanguageSelected(language) => {
-                self.new_file_language = language;
-                self.save_preferences();
-            }
             MainWindowMsg::InterfaceLanguageSelected(language) => {
                 self.preferred_ui_language = language;
                 self.save_preferences();
@@ -1248,7 +1433,11 @@ impl SimpleComponent for MainWindow {
                     self.pending_project = None;
                 }
             }
+            MainWindowMsg::CreateProject(parent, name, language) => {
+                self.create_project(parent, name, language, sender.clone());
+            }
             MainWindowMsg::CreateFile(name, language) => self.create_project_file(name, language),
+            MainWindowMsg::CreateFolder(name) => self.create_project_folder(name),
             MainWindowMsg::OpenFile(path) => self.open_document(path),
             MainWindowMsg::ActivateDocument(id) => {
                 if self.documents.iter().any(|doc| doc.id == id) {
@@ -1275,8 +1464,7 @@ impl SimpleComponent for MainWindow {
                     }
                 }
             }
-            MainWindowMsg::SaveCurrent => self.request_save(false),
-            MainWindowMsg::SaveAsCurrent => self.request_save(true),
+            MainWindowMsg::SaveCurrent => self.request_save(),
             MainWindowMsg::SaveAsSelected(id, path) => {
                 self.pending_save_as_id = None;
                 self.save_document(id, path);
@@ -1387,14 +1575,7 @@ impl SimpleComponent for MainWindow {
             ui.status_language.set_visible(active_language.is_some());
             ui.displayed_language = active_language;
         }
-        if ui.displayed_new_file_language != self.new_file_language {
-            ui.language_picker
-                .set_selected(self.new_file_language.selected_index());
-            ui.settings
-                .default_language_picker
-                .set_selected(self.new_file_language.selected_index());
-            ui.displayed_new_file_language = self.new_file_language;
-        }
+        ui.default_new_language.set(self.new_file_language);
 
         if ui.displayed_indent_width != self.indent_width {
             ui.indent_width.set(self.indent_width);
@@ -1429,9 +1610,7 @@ impl SimpleComponent for MainWindow {
         }
 
         if ui.displayed_theme != self.theme {
-            ui.settings
-                .theme_picker
-                .set_selected(self.theme.selected_index());
+            select_theme_button(&ui.settings.theme_buttons, self.theme.selected_index());
             ui.displayed_theme = self.theme;
         }
         if ui.displayed_font_size != self.font_size {
@@ -1490,11 +1669,14 @@ impl SimpleComponent for MainWindow {
                 &self.project_files,
                 active_path,
                 project_open,
+                self.project_root.as_deref(),
                 self.ui_language,
+                &ui.expanded_folders,
                 sender.clone(),
             );
             ui.displayed_project_files = project_file_signature;
             ui.displayed_project_open = project_open;
+            ui.project_row.set_visible(project_open);
             ui.new_file_button.set_sensitive(project_open);
         }
 
@@ -1600,20 +1782,28 @@ fn build_window_content(
         }
     });
 
-    let header = header::build_header(&window, ui_language, preferences.default_language);
+    let header = header::build_header(&window, ui_language);
     let project_title = header.project_title.clone();
-    let language_picker = header.language_picker.clone();
-    let open_project_button = header.open_project_button.clone();
-    let open_file_button = header.open_file_button.clone();
-    let save_button = header.save_button.clone();
-    let save_as_button = header.save_as_button.clone();
-    let settings_button = header.settings_button.clone();
     let run_button = header.run_button.clone();
 
     let settings = build_settings_window(&window, sender.clone(), preferences);
 
-    let (sidebar, project_label, file_list, new_file_button) =
-        sidebar::build_file_sidebar(ui_language);
+    let file_sidebar = sidebar::build_file_sidebar(ui_language);
+    let expanded_folders = file_sidebar.expanded_folders.clone();
+    let sidebar_widget = file_sidebar.widget;
+    let project_row = file_sidebar.project_row;
+    let project_label = file_sidebar.project_label;
+    let new_project_button = file_sidebar.new_project_button;
+    let file_list = file_sidebar.file_list;
+    let new_file_button = file_sidebar.new_file_button;
+    let new_program_button = file_sidebar.new_program_button;
+    let new_folder_button = file_sidebar.new_folder_button;
+    let new_item_popover = file_sidebar.new_item_popover;
+    let open_project_button = file_sidebar.open_project_button;
+    let open_file_button = file_sidebar.open_file_button;
+    let open_popover = file_sidebar.open_popover;
+    let settings_button = file_sidebar.settings_button;
+    let default_new_language = Rc::new(Cell::new(preferences.default_language));
 
     let code_buffer = gtk::TextBuffer::new(None::<&gtk::TextTagTable>);
     code_buffer.set_text(Language::Portugol.sample());
@@ -1668,10 +1858,29 @@ fn build_window_content(
 
     let editor_tabs = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     editor_tabs.set_hexpand(true);
+    let save_tooltip = tr(
+        ui_language,
+        if cfg!(target_os = "macos") {
+            "Salvar arquivo (⌘S)"
+        } else {
+            "Salvar arquivo (Ctrl+S)"
+        },
+    );
+    let save_button = gtk::Button::new();
+    let save_content = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    save_content.append(&icon("save"));
+    save_content.append(&gtk::Label::new(Some(tr(ui_language, "Salvar"))));
+    save_button.set_child(Some(&save_content));
+    save_button.set_tooltip_text(Some(save_tooltip));
+    save_button.add_css_class("potoo-save-button");
+
+    let editor_actions = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    editor_actions.add_css_class("potoo-editor-tab-actions");
+    editor_actions.append(&save_button);
     let tab_bar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     tab_bar.add_css_class("potoo-editor-tabbar");
     tab_bar.append(&editor_tabs);
-    tab_bar.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+    tab_bar.append(&editor_actions);
 
     let editor = gtk::Box::new(gtk::Orientation::Vertical, 0);
     editor.add_css_class("potoo-editor");
@@ -1688,7 +1897,7 @@ fn build_window_content(
     output_status_row.set_margin_start(12);
     output_status_row.set_margin_end(12);
     output_status_row.set_margin_bottom(8);
-    output_status_row.append(&gtk::Image::from_icon_name("emblem-synchronizing-symbolic"));
+    output_status_row.append(&icon("ready"));
     output_status_row.append(&output_status);
 
     let output_area = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -1697,7 +1906,7 @@ fn build_window_content(
     output_area.append(&output_status_row);
 
     let editor_output = gtk::Paned::new(gtk::Orientation::Vertical);
-    editor_output.set_wide_handle(true);
+    editor_output.set_wide_handle(false);
     editor_output.set_start_child(Some(&editor));
     editor_output.set_end_child(Some(&output_area));
     editor_output.set_resize_start_child(true);
@@ -1705,10 +1914,24 @@ fn build_window_content(
     editor_output.set_shrink_start_child(false);
     editor_output.set_shrink_end_child(false);
     editor_output.set_position(570);
+    let window_for_output = window.clone();
+    editor_output.connect_map(move |paned| {
+        let paned = paned.clone();
+        let window = window_for_output.clone();
+        gtk::glib::timeout_add_local(Duration::from_millis(32), move || {
+            let height = paned.height();
+            let window_height = window.height();
+            if height <= 0 || window_height <= 0 || height < window_height.saturating_sub(150) {
+                return gtk::glib::ControlFlow::Continue;
+            }
+            paned.set_position(height.saturating_sub(200).max(0));
+            gtk::glib::ControlFlow::Break
+        });
+    });
 
     let learning_panel = content_panel::build_learning_panel(ui_language);
     let editor_and_learning = gtk::Paned::new(gtk::Orientation::Horizontal);
-    editor_and_learning.set_wide_handle(true);
+    editor_and_learning.set_wide_handle(false);
     editor_and_learning.set_start_child(Some(&editor_output));
     editor_and_learning.set_end_child(Some(&learning_panel));
     editor_and_learning.set_resize_start_child(true);
@@ -1716,10 +1939,21 @@ fn build_window_content(
     editor_and_learning.set_shrink_start_child(false);
     editor_and_learning.set_shrink_end_child(false);
     editor_and_learning.set_position(820);
+    editor_and_learning.connect_map(|paned| {
+        let paned = paned.clone();
+        gtk::glib::idle_add_local(move || {
+            let width = paned.width();
+            if width <= 0 {
+                return gtk::glib::ControlFlow::Continue;
+            }
+            paned.set_position(width.saturating_sub(370).max(440));
+            gtk::glib::ControlFlow::Break
+        });
+    });
 
     let workspace = gtk::Paned::new(gtk::Orientation::Horizontal);
-    workspace.set_wide_handle(true);
-    workspace.set_start_child(Some(&sidebar));
+    workspace.set_wide_handle(false);
+    workspace.set_start_child(Some(&sidebar_widget));
     workspace.set_end_child(Some(&editor_and_learning));
     workspace.set_resize_start_child(false);
     workspace.set_resize_end_child(true);
@@ -1738,10 +1972,6 @@ fn build_window_content(
     status_details.add_css_class("potoo-muted");
     let status_bar = gtk::Box::new(gtk::Orientation::Horizontal, 16);
     status_bar.add_css_class("potoo-statusbar");
-    status_bar.set_margin_start(12);
-    status_bar.set_margin_end(12);
-    status_bar.set_margin_top(6);
-    status_bar.set_margin_bottom(6);
     status_bar.append(&gtk::Separator::new(gtk::Orientation::Vertical));
     status_bar.append(&status_language);
     status_bar.append(&gtk::Separator::new(gtk::Orientation::Vertical));
@@ -1761,19 +1991,11 @@ fn build_window_content(
         window.add_css_class("potoo-dark");
     }
 
-    let sender_for_language = sender.clone();
-    language_picker.connect_selected_notify(move |picker| {
-        let selected = if picker.selected() == 1 {
-            Language::Visualg
-        } else {
-            Language::Portugol
-        };
-        sender_for_language.input(MainWindowMsg::LanguageSelected(selected));
-    });
-
     let sender_for_open_project = sender.clone();
     let window_for_open_project = window.clone();
+    let open_popover_for_project = open_popover.clone();
     open_project_button.connect_clicked(move |_| {
+        open_popover_for_project.popdown();
         show_open_project_dialog(
             &window_for_open_project,
             ui_language,
@@ -1783,7 +2005,9 @@ fn build_window_content(
 
     let sender_for_open_file = sender.clone();
     let window_for_open_file = window.clone();
+    let open_popover_for_file = open_popover.clone();
     open_file_button.connect_clicked(move |_| {
+        open_popover_for_file.popdown();
         show_open_file_dialog(
             &window_for_open_file,
             ui_language,
@@ -1791,15 +2015,15 @@ fn build_window_content(
         );
     });
 
-    let sender_for_new_file = sender.clone();
-    let window_for_new_file = window.clone();
-    let language_picker_for_new_file = language_picker.clone();
-    new_file_button.connect_clicked(move |_| {
-        show_new_file_dialog(
-            &window_for_new_file,
-            &language_picker_for_new_file,
+    let sender_for_new_project = sender.clone();
+    let window_for_new_project = window.clone();
+    let default_new_language_for_project = default_new_language.clone();
+    new_project_button.connect_clicked(move |_| {
+        show_new_project_dialog(
+            &window_for_new_project,
             ui_language,
-            sender_for_new_file.clone(),
+            default_new_language_for_project.get(),
+            sender_for_new_project.clone(),
         );
     });
 
@@ -1808,9 +2032,30 @@ fn build_window_content(
         sender_for_save.input(MainWindowMsg::SaveCurrent);
     });
 
-    let sender_for_save_as = sender.clone();
-    save_as_button.connect_clicked(move |_| {
-        sender_for_save_as.input(MainWindowMsg::SaveAsCurrent);
+    let sender_for_new_file = sender.clone();
+    let window_for_new_file = window.clone();
+    let default_new_language_for_new_file = default_new_language.clone();
+    let popover_for_new_file = new_item_popover.clone();
+    new_program_button.connect_clicked(move |_| {
+        popover_for_new_file.popdown();
+        show_new_file_dialog(
+            &window_for_new_file,
+            default_new_language_for_new_file.get(),
+            ui_language,
+            sender_for_new_file.clone(),
+        );
+    });
+
+    let sender_for_new_folder = sender.clone();
+    let window_for_new_folder = window.clone();
+    let popover_for_new_folder = new_item_popover.clone();
+    new_folder_button.connect_clicked(move |_| {
+        popover_for_new_folder.popdown();
+        show_new_folder_dialog(
+            &window_for_new_folder,
+            ui_language,
+            sender_for_new_folder.clone(),
+        );
     });
 
     let sender_for_settings = sender.clone();
@@ -1837,12 +2082,11 @@ fn build_window_content(
     key_controller.connect_key_pressed(move |_, key, _, modifiers| {
         let primary_modifier = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK)
             || (cfg!(target_os = "macos") && modifiers.contains(gtk::gdk::ModifierType::META_MASK));
-        if key == gtk::gdk::Key::s && primary_modifier {
-            if modifiers.contains(gtk::gdk::ModifierType::SHIFT_MASK) {
-                sender_for_shortcuts.input(MainWindowMsg::SaveAsCurrent);
-            } else {
-                sender_for_shortcuts.input(MainWindowMsg::SaveCurrent);
-            }
+        if key == gtk::gdk::Key::s
+            && primary_modifier
+            && !modifiers.contains(gtk::gdk::ModifierType::SHIFT_MASK)
+        {
+            sender_for_shortcuts.input(MainWindowMsg::SaveCurrent);
             gtk::glib::Propagation::Stop
         } else if key == gtk::gdk::Key::o && primary_modifier {
             show_open_file_dialog(
@@ -1880,12 +2124,14 @@ fn build_window_content(
     MainUi {
         window,
         content: content_root,
-        language_picker,
+        default_new_language,
         settings,
         project_title,
+        project_row,
         project_label,
         file_list,
         new_file_button,
+        expanded_folders,
         editor_tabs,
         status_language,
         status_details,
@@ -1898,7 +2144,6 @@ fn build_window_content(
         output_buffer,
         output_status,
         displayed_language: Some(Language::Portugol),
-        displayed_new_file_language: preferences.default_language,
         displayed_active_document_id: Some(0),
         displayed_project_name: String::new(),
         displayed_project_files: Vec::new(),
@@ -1932,8 +2177,8 @@ fn build_settings_window(
     let language = preferences.ui_language;
     let window = gtk::Window::new();
     window.set_title(Some(tr(language, "Configurações")));
-    window.set_default_size(520, 660);
-    window.set_resizable(false);
+    window.set_default_size(620, 700);
+    window.set_resizable(true);
     window.set_modal(true);
     window.set_transient_for(Some(parent));
     window.add_css_class("potoo-window");
@@ -1942,34 +2187,38 @@ fn build_settings_window(
         window.add_css_class("potoo-dark");
     }
 
-    let page = gtk::Box::new(gtk::Orientation::Vertical, 20);
+    let page = gtk::Box::new(gtk::Orientation::Vertical, 12);
     page.add_css_class("potoo-settings-page");
-    page.set_margin_start(24);
-    page.set_margin_end(24);
-    page.set_margin_top(24);
-    page.set_margin_bottom(24);
+    page.set_margin_start(18);
+    page.set_margin_end(18);
+    page.set_margin_top(16);
+    page.set_margin_bottom(16);
 
-    let title = gtk::Label::new(Some(tr(language, "Configurações")));
-    title.set_xalign(0.0);
-    title.add_css_class("potoo-settings-title");
     let description = gtk::Label::new(Some(tr(language, "Personalize a aparência e o editor.")));
     description.set_xalign(0.0);
     description.add_css_class("potoo-settings-description");
-    page.append(&title);
+    description.set_margin_bottom(2);
     page.append(&description);
 
     let appearance = settings_section(tr(language, "Aparência"));
-    let theme_picker = gtk::DropDown::from_strings(&[
-        tr(language, "Seguir o sistema"),
-        tr(language, "Claro"),
-        tr(language, "Escuro"),
-    ]);
-    theme_picker.add_css_class("potoo-settings-picker");
-    theme_picker.set_selected(preferences.theme.selected_index());
+    let theme_buttons = [
+        gtk::Button::with_label(tr(language, "Sistema")),
+        gtk::Button::with_label(tr(language, "Claro")),
+        gtk::Button::with_label(tr(language, "Escuro")),
+    ];
+    for button in &theme_buttons {
+        button.add_css_class("potoo-theme-choice");
+    }
+    select_theme_button(&theme_buttons, preferences.theme.selected_index());
+    let theme_options = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    theme_options.add_css_class("potoo-theme-options");
+    for button in &theme_buttons {
+        theme_options.append(button);
+    }
     appearance.append(&settings_row(
         tr(language, "Tema"),
         tr(language, "Use a aparência do sistema ou escolha um tema."),
-        &theme_picker,
+        &theme_options,
     ));
     page.append(&appearance);
 
@@ -1984,6 +2233,7 @@ fn build_settings_window(
     ));
 
     let line_numbers_switch = gtk::Switch::new();
+    line_numbers_switch.add_css_class("potoo-settings-switch");
     line_numbers_switch.set_active(preferences.line_numbers_visible);
     editor.append(&settings_row(
         tr(language, "Numeração de linhas"),
@@ -1992,6 +2242,7 @@ fn build_settings_window(
     ));
 
     let word_wrap_switch = gtk::Switch::new();
+    word_wrap_switch.add_css_class("potoo-settings-switch");
     word_wrap_switch.set_active(preferences.word_wrap);
     editor.append(&settings_row(
         tr(language, "Quebra automática de linha"),
@@ -2009,18 +2260,6 @@ fn build_settings_window(
         &indent_width_picker,
     ));
 
-    let default_language_picker = gtk::DropDown::from_strings(&["Portugol", "VisuAlg"]);
-    default_language_picker.add_css_class("potoo-settings-picker");
-    default_language_picker.set_selected(if preferences.default_language == Language::Visualg {
-        1
-    } else {
-        0
-    });
-    editor.append(&settings_row(
-        tr(language, "Idioma para novos programas"),
-        tr(language, "Escolha a linguagem padrão dos novos arquivos."),
-        &default_language_picker,
-    ));
     page.append(&editor);
 
     let interface = settings_section(tr(language, "Interface"));
@@ -2038,16 +2277,25 @@ fn build_settings_window(
     page.append(&interface);
     let scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
+        .vscrollbar_policy(gtk::PolicyType::Automatic)
+        .hexpand(true)
+        .vexpand(true)
         .child(&page)
         .build();
     window.set_child(Some(&scroll));
 
     let sender_for_theme = sender.clone();
-    theme_picker.connect_selected_notify(move |picker| {
-        sender_for_theme.input(MainWindowMsg::ThemeSelected(
-            ThemePreference::from_selected_index(picker.selected()),
-        ));
-    });
+    for (index, button) in theme_buttons.iter().enumerate() {
+        let theme_buttons_for_click = theme_buttons.clone();
+        let sender_for_click = sender_for_theme.clone();
+        button.connect_clicked(move |_| {
+            let index = index as u32;
+            select_theme_button(&theme_buttons_for_click, index);
+            sender_for_click.input(MainWindowMsg::ThemeSelected(
+                ThemePreference::from_selected_index(index),
+            ));
+        });
+    }
 
     let sender_for_font_size = sender.clone();
     font_size_picker.connect_selected_notify(move |picker| {
@@ -2076,17 +2324,6 @@ fn build_settings_window(
         ));
     });
 
-    let sender_for_default_language = sender.clone();
-    default_language_picker.connect_selected_notify(move |picker| {
-        sender_for_default_language.input(MainWindowMsg::LanguageSelected(
-            if picker.selected() == 1 {
-                Language::Visualg
-            } else {
-                Language::Portugol
-            },
-        ));
-    });
-
     let sender_for_ui_language = sender.clone();
     ui_language_picker.connect_selected_notify(move |picker| {
         sender_for_ui_language.input(MainWindowMsg::InterfaceLanguageSelected(
@@ -2101,18 +2338,17 @@ fn build_settings_window(
 
     SettingsUi {
         window,
-        theme_picker,
+        theme_buttons,
         font_size_picker,
         line_numbers_switch,
         word_wrap_switch,
         indent_width_picker,
-        default_language_picker,
         ui_language_picker,
     }
 }
 
 fn settings_section(title: &str) -> gtk::Box {
-    let section = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    let section = gtk::Box::new(gtk::Orientation::Vertical, 0);
     section.add_css_class("potoo-settings-section");
     let heading = gtk::Label::new(Some(title));
     heading.set_xalign(0.0);
@@ -2121,9 +2357,20 @@ fn settings_section(title: &str) -> gtk::Box {
     section
 }
 
+fn select_theme_button(buttons: &[gtk::Button; 3], selected_index: u32) {
+    for (index, button) in buttons.iter().enumerate() {
+        if index as u32 == selected_index {
+            button.add_css_class("potoo-theme-choice-selected");
+        } else {
+            button.remove_css_class("potoo-theme-choice-selected");
+        }
+    }
+}
+
 fn settings_row<W: IsA<gtk::Widget>>(title: &str, description: &str, control: &W) -> gtk::Box {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 16);
     row.add_css_class("potoo-settings-row");
+    control.set_valign(gtk::Align::Center);
 
     let labels = gtk::Box::new(gtk::Orientation::Vertical, 4);
     labels.set_hexpand(true);
@@ -2214,9 +2461,221 @@ fn show_open_file_dialog(
     );
 }
 
+fn show_new_project_dialog(
+    parent: &gtk::ApplicationWindow,
+    ui_language: UiLanguage,
+    default_language: Language,
+    sender: ComponentSender<MainWindow>,
+) {
+    let dialog = gtk::Window::new();
+    dialog.set_title(Some(tr(ui_language, "Criar projeto")));
+    dialog.set_default_size(480, 350);
+    dialog.set_resizable(false);
+    dialog.set_transient_for(Some(parent));
+    dialog.set_modal(true);
+    dialog.add_css_class("potoo-window");
+    dialog.add_css_class("potoo-dialog-window");
+    if adw::StyleManager::default().is_dark() {
+        dialog.add_css_class("potoo-dark");
+    }
+
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    content.add_css_class("potoo-dialog-surface");
+    content.set_margin_start(24);
+    content.set_margin_end(24);
+    content.set_margin_top(18);
+    content.set_margin_bottom(16);
+
+    let description = gtk::Label::new(Some(tr(
+        ui_language,
+        "Crie uma pasta com um programa inicial na linguagem escolhida.",
+    )));
+    description.set_xalign(0.0);
+    description.set_wrap(true);
+    description.add_css_class("potoo-settings-description");
+    content.append(&description);
+
+    let name_field = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    let name_label = gtk::Label::new(Some(tr(ui_language, "Nome do projeto")));
+    name_label.set_xalign(0.0);
+    name_label.add_css_class("potoo-project-field-label");
+    let name = gtk::Entry::new();
+    name.set_placeholder_text(Some(tr(
+        ui_language,
+        "Por exemplo: Meu primeiro projeto",
+    )));
+    name.set_text(tr(ui_language, "Meu projeto"));
+    name.add_css_class("potoo-project-name-entry");
+    name_field.append(&name_label);
+    name_field.append(&name);
+    content.append(&name_field);
+
+    let language_field = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    let language_label = gtk::Label::new(Some(tr(ui_language, "Linguagem")));
+    language_label.set_xalign(0.0);
+    language_label.add_css_class("potoo-project-field-label");
+    let language_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let portugol_button = gtk::Button::with_label("Portugol");
+    let visualg_button = gtk::Button::with_label("VisuAlg");
+    for button in [&portugol_button, &visualg_button] {
+        button.add_css_class("potoo-project-language-choice");
+        button.set_hexpand(true);
+    }
+    match default_language {
+        Language::Portugol => portugol_button.add_css_class("selected"),
+        Language::Visualg => visualg_button.add_css_class("selected"),
+    }
+    language_row.append(&portugol_button);
+    language_row.append(&visualg_button);
+    language_field.append(&language_label);
+    language_field.append(&language_row);
+    content.append(&language_field);
+
+    let selected_language = Rc::new(Cell::new(default_language));
+    let visualg_button_for_portugol = visualg_button.clone();
+    let selected_language_for_portugol = selected_language.clone();
+    portugol_button.connect_clicked(move |button| {
+        button.add_css_class("selected");
+        visualg_button_for_portugol.remove_css_class("selected");
+        selected_language_for_portugol.set(Language::Portugol);
+    });
+    let portugol_button_for_visualg = portugol_button.clone();
+    let selected_language_for_visualg = selected_language.clone();
+    visualg_button.connect_clicked(move |button| {
+        button.add_css_class("selected");
+        portugol_button_for_visualg.remove_css_class("selected");
+        selected_language_for_visualg.set(Language::Visualg);
+    });
+
+    let location_field = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    let location_label = gtk::Label::new(Some(tr(ui_language, "Local do projeto")));
+    location_label.set_xalign(0.0);
+    location_label.add_css_class("potoo-project-field-label");
+    let initial_folder = project_default_directory();
+    let selected_folder = Rc::new(RefCell::new(initial_folder.clone()));
+    let location_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let location = gtk::Label::new(Some(&initial_folder.display().to_string()));
+    location.set_xalign(0.0);
+    location.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+    location.set_hexpand(true);
+    location.add_css_class("potoo-project-location");
+    location.set_tooltip_text(Some(&initial_folder.display().to_string()));
+    let choose_folder = gtk::Button::with_label(tr(ui_language, "Escolher pasta"));
+    choose_folder.add_css_class("potoo-project-location-button");
+    location_row.append(&location);
+    location_row.append(&choose_folder);
+    location_field.append(&location_label);
+    location_field.append(&location_row);
+    content.append(&location_field);
+
+    let error_label = gtk::Label::new(Some(tr(
+        ui_language,
+        "Digite um nome válido para o projeto.",
+    )));
+    error_label.set_xalign(0.0);
+    error_label.add_css_class("potoo-project-error");
+    error_label.set_visible(false);
+    content.append(&error_label);
+
+    let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    actions.set_halign(gtk::Align::End);
+    actions.set_margin_top(2);
+    let cancel_button = gtk::Button::with_label(tr(ui_language, "Cancelar"));
+    cancel_button.add_css_class("potoo-project-cancel-button");
+    let create_button = gtk::Button::with_label(tr(ui_language, "Criar projeto"));
+    create_button.add_css_class("potoo-run-button");
+    actions.append(&cancel_button);
+    actions.append(&create_button);
+    content.append(&actions);
+    dialog.set_child(Some(&content));
+
+    let dialog_for_cancel = dialog.clone();
+    cancel_button.connect_clicked(move |_| dialog_for_cancel.close());
+
+    let dialog_for_picker = dialog.clone();
+    let selected_folder_for_picker = selected_folder.clone();
+    let location_for_picker = location.clone();
+    let sender_for_picker = sender.clone();
+    choose_folder.connect_clicked(move |_| {
+        let picker = gtk::FileDialog::new();
+        picker.set_title(tr(ui_language, "Escolha a pasta de destino"));
+        picker.set_modal(true);
+        let current_folder = selected_folder_for_picker.borrow().clone();
+        picker.set_initial_folder(Some(&gtk::gio::File::for_path(current_folder)));
+        let selected_folder_for_result = selected_folder_for_picker.clone();
+        let location_for_result = location_for_picker.clone();
+        let sender_for_result = sender_for_picker.clone();
+        picker.select_folder(
+            Some(&dialog_for_picker),
+            None::<&gtk::gio::Cancellable>,
+            move |result| match result {
+                Ok(folder) => match folder.path() {
+                    Some(path) => {
+                        selected_folder_for_result.replace(path.clone());
+                        let path_text = path.display().to_string();
+                        location_for_result.set_text(&path_text);
+                        location_for_result.set_tooltip_text(Some(&path_text));
+                    }
+                    None => sender_for_result.input(MainWindowMsg::FileOperationFailed(
+                        tr(ui_language, "Selecione uma pasta local para criar o projeto.")
+                            .to_string(),
+                    )),
+                },
+                Err(error) if error.matches(gtk::gio::IOErrorEnum::Cancelled) => {}
+                Err(error) => sender_for_result.input(MainWindowMsg::FileOperationFailed(
+                    format!(
+                        "{}: {error}",
+                        tr(ui_language, "Não foi possível escolher a pasta do projeto")
+                    ),
+                )),
+            },
+        );
+    });
+
+    let dialog_for_create = dialog.clone();
+    let name_for_create = name.clone();
+    let error_for_create = error_label.clone();
+    let selected_language_for_create = selected_language.clone();
+    let selected_folder_for_create = selected_folder.clone();
+    create_button.connect_clicked(move |_| {
+        let project_name = name_for_create.text().to_string();
+        if !is_valid_directory_name(project_name.trim()) {
+            error_for_create.set_visible(true);
+            return;
+        }
+        sender.input(MainWindowMsg::CreateProject(
+            selected_folder_for_create.borrow().clone(),
+            project_name,
+            selected_language_for_create.get(),
+        ));
+        dialog_for_create.close();
+    });
+    let create_button_for_entry = create_button.clone();
+    let error_for_name = error_label.clone();
+    name.connect_changed(move |entry| {
+        let name_is_valid = !entry.text().trim().is_empty();
+        create_button_for_entry.set_sensitive(name_is_valid);
+        if name_is_valid {
+            error_for_name.set_visible(false);
+        }
+    });
+    let create_button_for_entry = create_button.clone();
+    name.connect_activate(move |_| create_button_for_entry.emit_clicked());
+    dialog.present();
+}
+
+fn project_default_directory() -> PathBuf {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .filter(|path| path.is_dir())
+        .or_else(|| std::env::current_dir().ok())
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
 fn show_new_file_dialog(
     parent: &gtk::ApplicationWindow,
-    language_picker: &gtk::DropDown,
+    default_language: Language,
     ui_language: UiLanguage,
     sender: ComponentSender<MainWindow>,
 ) {
@@ -2260,7 +2719,7 @@ fn show_new_file_dialog(
     content.append(&gtk::Label::new(Some(tr(ui_language, "Linguagem"))));
     let language = gtk::DropDown::from_strings(&["Portugol (.por)", "VisuAlg (.alg)"]);
     language.add_css_class("potoo-settings-picker");
-    language.set_selected(language_picker.selected());
+    language.set_selected(default_language.selected_index());
     content.append(&language);
 
     let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -2287,6 +2746,71 @@ fn show_new_file_dialog(
             name_for_create.text().to_string(),
             selected_language,
         ));
+        dialog_for_create.close();
+    });
+    let create_button_for_entry = create_button.clone();
+    name.connect_activate(move |_| create_button_for_entry.emit_clicked());
+    dialog.present();
+}
+
+fn show_new_folder_dialog(
+    parent: &gtk::ApplicationWindow,
+    ui_language: UiLanguage,
+    sender: ComponentSender<MainWindow>,
+) {
+    let dialog = gtk::Window::new();
+    dialog.set_title(Some(tr(ui_language, "Nova pasta")));
+    dialog.set_default_size(400, 220);
+    dialog.set_resizable(false);
+    dialog.set_transient_for(Some(parent));
+    dialog.set_modal(true);
+    dialog.add_css_class("potoo-window");
+    dialog.add_css_class("potoo-dialog-window");
+    if adw::StyleManager::default().is_dark() {
+        dialog.add_css_class("potoo-dark");
+    }
+
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    content.add_css_class("potoo-dialog-surface");
+    content.set_margin_start(24);
+    content.set_margin_end(24);
+    content.set_margin_top(22);
+    content.set_margin_bottom(18);
+    let title = gtk::Label::new(Some(tr(ui_language, "Nova pasta")));
+    title.set_xalign(0.0);
+    title.add_css_class("potoo-settings-title");
+    content.append(&title);
+    let description = gtk::Label::new(Some(tr(
+        ui_language,
+        "Organize seus programas em uma pasta do projeto.",
+    )));
+    description.set_xalign(0.0);
+    description.add_css_class("potoo-settings-description");
+    content.append(&description);
+    content.append(&gtk::Label::new(Some(tr(ui_language, "Nome da pasta"))));
+    let name = gtk::Entry::new();
+    name.set_placeholder_text(Some(tr(
+        ui_language,
+        "Nome da pasta, por exemplo: exercicios",
+    )));
+    content.append(&name);
+
+    let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    actions.set_halign(gtk::Align::End);
+    let cancel_button = gtk::Button::with_label(tr(ui_language, "Cancelar"));
+    let create_button = gtk::Button::with_label(tr(ui_language, "Criar pasta"));
+    create_button.add_css_class("potoo-run-button");
+    actions.append(&cancel_button);
+    actions.append(&create_button);
+    content.append(&actions);
+    dialog.set_child(Some(&content));
+
+    let dialog_for_cancel = dialog.clone();
+    cancel_button.connect_clicked(move |_| dialog_for_cancel.close());
+    let dialog_for_create = dialog.clone();
+    let name_for_create = name.clone();
+    create_button.connect_clicked(move |_| {
+        sender.input(MainWindowMsg::CreateFolder(name_for_create.text().to_string()));
         dialog_for_create.close();
     });
     let create_button_for_entry = create_button.clone();
@@ -2481,6 +3005,18 @@ fn is_reserved_windows_file_name(name: &str) -> bool {
     })
 }
 
+fn is_valid_directory_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with('.')
+        && !name.ends_with('.')
+        && !name.contains('/')
+        && !name.contains('\\')
+        && !is_reserved_windows_file_name(name)
+        && !name
+            .chars()
+            .any(|character| character.is_control() || "<>:\"|?*".contains(character))
+}
+
 fn supported_save_path(
     path: PathBuf,
     default_language: Language,
@@ -2500,27 +3036,28 @@ fn supported_save_path(
 }
 
 fn scan_project_files(root: &Path) -> std::io::Result<Vec<ProjectFile>> {
-    let mut paths = Vec::new();
-    scan_source_directory(root, &mut paths)?;
-    let mut files = paths
-        .into_iter()
-        .map(|path| ProjectFile {
-            relative_path: path
-                .strip_prefix(root)
-                .unwrap_or(&path)
-                .to_string_lossy()
-                .into_owned(),
-            path,
-        })
-        .collect::<Vec<_>>();
-    files.sort_by_key(|file| file.relative_path.to_lowercase());
-    Ok(files)
+    let mut entries = Vec::new();
+    scan_source_directory(root, root, &mut entries)?;
+    Ok(entries)
 }
 
-fn scan_source_directory(directory: &Path, files: &mut Vec<PathBuf>) -> std::io::Result<()> {
-    let mut entries = fs::read_dir(directory)?.collect::<Result<Vec<_>, _>>()?;
-    entries.sort_by_key(|entry| entry.file_name());
-    for entry in entries {
+fn scan_source_directory(
+    root: &Path,
+    directory: &Path,
+    project_entries: &mut Vec<ProjectFile>,
+) -> std::io::Result<()> {
+    let mut children = fs::read_dir(directory)?.collect::<Result<Vec<_>, _>>()?;
+    children.sort_by(|left, right| {
+        let left_is_directory = left.file_type().map(|kind| kind.is_dir()).unwrap_or(false);
+        let right_is_directory = right.file_type().map(|kind| kind.is_dir()).unwrap_or(false);
+        right_is_directory.cmp(&left_is_directory).then_with(|| {
+            left.file_name()
+                .to_string_lossy()
+                .to_lowercase()
+                .cmp(&right.file_name().to_string_lossy().to_lowercase())
+        })
+    });
+    for entry in children {
         let name = entry.file_name();
         let visible_name = name.to_string_lossy();
         if visible_name.starts_with('.')
@@ -2531,9 +3068,26 @@ fn scan_source_directory(directory: &Path, files: &mut Vec<PathBuf>) -> std::io:
         let path = entry.path();
         let file_type = entry.file_type()?;
         if file_type.is_dir() {
-            scan_source_directory(&path, files)?;
+            project_entries.push(ProjectFile {
+                relative_path: path
+                    .strip_prefix(root)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .into_owned(),
+                path: path.clone(),
+                is_directory: true,
+            });
+            scan_source_directory(root, &path, project_entries)?;
         } else if file_type.is_file() && Language::from_path(&path).is_some() {
-            files.push(path);
+            project_entries.push(ProjectFile {
+                relative_path: path
+                    .strip_prefix(root)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .into_owned(),
+                path,
+                is_directory: false,
+            });
         }
     }
     Ok(())

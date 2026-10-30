@@ -1,25 +1,126 @@
 window.potoo-window {
-  background-color: #eef9f0;
-  color: #174332;
+  --potoo-window-bg: #f4f5f6;
+  --potoo-panel-bg: #eef0f2;
+  --potoo-panel-hover-bg: #e5e8eb;
+  --potoo-surface-bg: #ffffff;
+  --potoo-editor-bg: #ffffff;
+  --potoo-gutter-bg: #f7f8f9;
+  --potoo-border: #d2d7dc;
+  --potoo-border-subtle: #e3e6e9;
+  --potoo-text: #111111;
+  --potoo-text-secondary: #4b5563;
+  --potoo-text-muted: #626c75;
+  --potoo-accent: #147a49;
+  --potoo-accent-hover: #0f663b;
+  --potoo-accent-soft-bg: #e8f2ec;
+  --potoo-accent-text: #147447;
+  --potoo-switch-knob: #ffffff;
+  background-color: var(--potoo-window-bg);
+  color: var(--potoo-text);
+}
+
+.potoo-root {
+  background-color: var(--potoo-surface-bg);
+  color: var(--potoo-text);
+  font-family: Inter, "Segoe UI", sans-serif;
+  font-size: 13px;
+}
+
+window.potoo-window :focus {
+  outline-style: none;
+  outline-width: 0;
+  box-shadow: none;
+}
+
+image.potoo-icon {
+  color: inherit;
+}
+
+.potoo-output-status-row image.potoo-icon {
+  color: var(--potoo-accent-text);
 }
 
 window.potoo-window.potoo-dark {
-  background-color: #0a0b0a;
-  color: #ffffff;
+  --potoo-window-bg: #2a2f34;
+  --potoo-panel-bg: #32383e;
+  --potoo-panel-hover-bg: #3d444b;
+  --potoo-surface-bg: #32383e;
+  --potoo-editor-bg: #252a2f;
+  --potoo-gutter-bg: #2b3035;
+  --potoo-border: #4a5259;
+  --potoo-border-subtle: #3c4248;
+  --potoo-text: #ffffff;
+  --potoo-text-secondary: #d1d5db;
+  --potoo-text-muted: #aab2b9;
+  --potoo-accent: #1e7548;
+  --potoo-accent-hover: #176c43;
+  --potoo-accent-soft-bg: #2f4237;
+  --potoo-accent-text: #72cc99;
+  --potoo-switch-knob: #f1f3f5;
+  background-color: var(--potoo-window-bg);
+  color: var(--potoo-text);
+}
+
+window.potoo-window.potoo-dark .potoo-root {
+  background-color: var(--potoo-window-bg);
+  color: var(--potoo-text);
+}
+
+window.potoo-settings-window,
+window.potoo-dialog-window,
+window.potoo-settings-window decoration,
+window.potoo-dialog-window decoration {
+  border-radius: 0;
+}
+
+window.potoo-settings-window headerbar,
+window.potoo-settings-window .titlebar,
+window.potoo-dialog-window headerbar,
+window.potoo-dialog-window .titlebar {
+  background-color: var(--potoo-window-bg);
+  background-image: none;
+  border: 0;
+  border-bottom: 1px solid var(--potoo-border);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+window.potoo-settings-window headerbar button.titlebutton,
+window.potoo-settings-window .titlebar button.titlebutton,
+window.potoo-dialog-window headerbar button.titlebutton,
+window.potoo-dialog-window .titlebar button.titlebutton {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 0;
+  color: var(--potoo-text-muted);
+  box-shadow: none;
+}
+
+window.potoo-settings-window headerbar button.titlebutton:hover,
+window.potoo-settings-window .titlebar button.titlebutton:hover,
+window.potoo-dialog-window headerbar button.titlebutton:hover,
+window.potoo-dialog-window .titlebar button.titlebutton:hover {
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
 }
 
 .potoo-header {
-  min-height: 58px;
-  background-color: #eef9f0;
-  border-bottom: 1px solid #b4dfc2;
+  min-height: 48px;
+  background-color: var(--potoo-window-bg);
+  border-bottom: 1px solid var(--potoo-border);
 }
 
 headerbar.potoo-linux-titlebar {
-  min-height: 58px;
+  min-height: 48px;
   padding: 0 8px 0 14px;
-  background-color: #eef9f0;
+  background-color: var(--potoo-window-bg);
+  background-image: none;
   border: 0;
-  border-bottom: 1px solid #b4dfc2;
+  border-bottom: 1px solid var(--potoo-border);
   border-radius: 0;
   box-shadow: none;
 }
@@ -32,152 +133,341 @@ headerbar.potoo-linux-titlebar button.titlebutton {
 }
 
 .potoo-brand-name {
-  color: #103b2d;
+  color: var(--potoo-text);
   font-size: 15px;
   font-weight: 850;
   letter-spacing: -0.35px;
 }
 
 .potoo-project-name {
-  color: #174332;
+  color: var(--potoo-text);
   font-size: 13px;
   font-weight: 700;
 }
 
-.potoo-language-picker {
-  min-height: 34px;
-  background-color: #e5f6e9;
-  border: 1px solid #b4dfc2;
-  border-radius: 2px;
-  color: #174332;
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.potoo-language-picker button,
-.potoo-language-picker > button {
-  min-height: 32px;
-  padding: 0 9px;
-  background-color: transparent;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  color: #174332;
-}
-
-.potoo-settings-button {
-  min-width: 34px;
-  min-height: 34px;
-  padding: 0;
-  background-color: #e5f6e9;
-  border: 1px solid #b4dfc2;
-  border-radius: 2px;
-  color: #174332;
-  box-shadow: none;
-}
-
-.potoo-settings-button:hover,
-.potoo-language-picker:hover {
-  background-color: #d4efdc;
-  border-color: #15945b;
-}
-
 .potoo-run-button {
-  min-height: 34px;
-  padding: 0 13px;
-  background-color: #15945b;
-  border: 1px solid #15945b;
-  border-radius: 2px;
-  color: #ffffff;
+  min-height: 26px;
+  padding: 0 11px;
+  background-color: var(--potoo-accent);
+  background-image: none;
+  border: 1px solid var(--potoo-accent);
+  border-radius: 0;
+  color: var(--potoo-surface-bg);
   font-size: 12px;
   font-weight: 780;
   box-shadow: none;
 }
 
 .potoo-run-button:hover {
-  background-color: #103b2d;
-  border-color: #103b2d;
-  color: #ffffff;
+  background-color: var(--potoo-accent-hover);
+  border-color: var(--potoo-accent-hover);
+  color: var(--potoo-surface-bg);
 }
 
 .potoo-file-sidebar {
   min-width: 220px;
-  background-color: #e5f6e9;
-  border-right: 1px solid #b4dfc2;
+  background-color: var(--potoo-panel-bg);
+  border-right: 1px solid var(--potoo-border);
 }
 
-.potoo-toolbar-button,
-.potoo-sidebar-action {
-  min-width: 32px;
-  min-height: 32px;
-  padding: 0;
-  background-color: #e5f6e9;
-  border: 1px solid #b4dfc2;
-  border-radius: 2px;
-  color: #174332;
+.potoo-sidebar-footer {
+  padding: 8px;
+  border-top: 1px solid var(--potoo-border);
+}
+
+.potoo-sidebar-settings-button {
+  min-height: 34px;
+  padding: 0 8px;
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 3px;
+  color: var(--potoo-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
   box-shadow: none;
 }
 
-.potoo-toolbar-button:hover,
-.potoo-sidebar-action:hover {
-  background-color: #d4efdc;
-  border-color: #15945b;
+.potoo-sidebar-settings-button:hover {
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
+}
+
+.potoo-sidebar-settings-button:focus {
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
+}
+
+.potoo-sidebar-create-project {
+  min-height: 34px;
+  padding: 0 8px;
+  background-color: var(--potoo-accent-soft-bg);
+  background-image: none;
+  border: 0;
+  border-radius: 2px;
+  color: var(--potoo-accent-text);
+  font-size: 12px;
+  font-weight: 560;
+  box-shadow: none;
+}
+
+.potoo-sidebar-create-project:hover {
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
+}
+
+.potoo-project-language-choice {
+  min-height: 36px;
+  padding: 0 12px;
+  background-color: var(--potoo-panel-bg);
+  background-image: none;
+  border: 0;
+  border-bottom: 1px solid var(--potoo-border);
+  border-radius: 0;
+  color: var(--potoo-text-secondary);
+  box-shadow: none;
+}
+
+.potoo-project-language-choice.selected {
+  background-color: var(--potoo-accent-soft-bg);
+  border-bottom: 2px solid var(--potoo-accent);
+  color: var(--potoo-accent-text);
+  font-weight: 600;
+}
+
+.potoo-project-language-choice:not(.selected):hover {
+  background-color: var(--potoo-panel-hover-bg);
+}
+
+.potoo-project-field-label {
+  color: var(--potoo-text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.potoo-project-location {
+  min-height: 32px;
+  padding: 0 8px;
+  background-color: var(--potoo-panel-bg);
+  color: var(--potoo-text-secondary);
+  font-size: 12px;
+}
+
+.potoo-project-location-button {
+  min-height: 32px;
+  padding: 0 10px;
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 2px;
+  color: var(--potoo-accent-text);
+  box-shadow: none;
+}
+
+.potoo-project-location-button:hover {
+  background-color: var(--potoo-panel-hover-bg);
+}
+
+.potoo-project-cancel-button {
+  min-height: 28px;
+  padding: 0 12px;
+  background-color: var(--potoo-panel-bg);
+  background-image: none;
+  border: 0;
+  border-radius: 0;
+  color: var(--potoo-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.potoo-project-cancel-button:hover {
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
+}
+
+.potoo-project-error {
+  color: #b42318;
+  font-size: 12px;
+}
+
+window.potoo-window.potoo-dark .potoo-project-error {
+  color: #ff9187;
+}
+
+popover.potoo-sidebar-popover {
+  background-color: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+popover.potoo-sidebar-popover > contents {
+  background-color: var(--potoo-surface-bg);
+  border: 1px solid var(--potoo-border);
+  border-radius: 3px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+
+popover.potoo-sidebar-popover > arrow {
+  background-color: var(--potoo-surface-bg);
+  border-color: var(--potoo-border);
+}
+
+.potoo-sidebar-menu-item {
+  min-height: 32px;
+  padding: 0 8px;
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 2px;
+  color: var(--potoo-text);
+  box-shadow: none;
+}
+
+.potoo-sidebar-menu-item:hover {
+  background-color: var(--potoo-panel-hover-bg);
+}
+
+.potoo-folder-expander {
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 2px;
+  color: var(--potoo-text);
+  box-shadow: none;
+}
+
+expander-widget.potoo-folder-expander > box > title > expander {
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+}
+
+.potoo-folder-expander:hover {
+  background-color: var(--potoo-panel-hover-bg);
+}
+
+.potoo-folder-title {
+  min-height: 30px;
+  color: var(--potoo-text);
+}
+
+.potoo-sidebar-action {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  background-color: transparent;
+  background-image: none;
+  border: 1px solid transparent;
+  border-radius: 0;
+  color: var(--potoo-text-muted);
+  box-shadow: none;
+}
+
+menubutton.potoo-sidebar-action > button {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  background-color: transparent;
+  background-image: none;
+  border: 1px solid transparent;
+  border-radius: 0;
+  color: var(--potoo-text-muted);
+  box-shadow: none;
+}
+
+.potoo-project-row {
+  min-height: 34px;
+  color: var(--potoo-text-secondary);
+  border-bottom: 1px solid var(--potoo-border-subtle);
+}
+
+.potoo-project-row label {
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.potoo-sidebar-empty-state {
+  padding: 2px 0;
+}
+
+.potoo-sidebar-empty-title {
+  color: var(--potoo-text-secondary);
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.potoo-sidebar-action:hover,
+.potoo-sidebar-action:checked {
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
+}
+
+menubutton.potoo-sidebar-action > button:hover,
+menubutton.potoo-sidebar-action > button:checked {
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
 }
 
 .potoo-file-row {
   min-height: 36px;
   padding: 0;
   background-color: transparent;
+  background-image: none;
   border: 0;
   border-radius: 2px;
-  color: #174332;
+  color: var(--potoo-text);
   box-shadow: none;
 }
 
 .potoo-file-row:hover {
-  background-color: #d4efdc;
+  background-color: var(--potoo-panel-hover-bg);
 }
 
 .potoo-file-row-selected {
-  background-color: #d4efdc;
-  border-left: 3px solid #15945b;
-  color: #103b2d;
+  background-color: var(--potoo-accent-soft-bg);
+  border-left: 3px solid var(--potoo-accent);
+  color: var(--potoo-text);
 }
 
 .potoo-file-sidebar .heading,
 .potoo-learning-title,
 .potoo-learning-panel .heading {
-  color: #174332;
+  color: var(--potoo-text);
   font-weight: 760;
 }
 
 .potoo-file-sidebar .navigation-sidebar row:selected {
-  background-color: #d4efdc;
-  border-left: 3px solid #15945b;
-  color: #103b2d;
+  background-color: var(--potoo-accent-soft-bg);
+  border-left: 3px solid var(--potoo-accent);
+  color: var(--potoo-text);
 }
 
 .potoo-editor-tabbar {
   min-height: 42px;
-  background-color: #eef9f0;
-  border-bottom: 1px solid #b4dfc2;
+  background-color: var(--potoo-window-bg);
+  border-bottom: 1px solid var(--potoo-border);
 }
 
 .potoo-editor-tab {
   min-height: 41px;
   padding: 0;
   background-color: transparent;
+  background-image: none;
   border: 0;
   border-top: 2px solid transparent;
   border-radius: 0;
-  color: #397553;
+  color: var(--potoo-text-muted);
   font-size: 12px;
   box-shadow: none;
 }
 
 .potoo-editor-tab-container {
   min-height: 42px;
-  border-right: 1px solid #b4dfc2;
+  border-right: 1px solid var(--potoo-border);
 }
 
 .potoo-close-tab-button {
@@ -186,59 +476,94 @@ headerbar.potoo-linux-titlebar button.titlebutton {
   margin: 7px 4px 7px 0;
   padding: 0;
   background-color: transparent;
+  background-image: none;
   border: 0;
-  border-radius: 2px;
-  color: #397553;
+  border-radius: 0;
+  color: var(--potoo-text-muted);
   box-shadow: none;
 }
 
 .potoo-close-tab-button:hover {
-  background-color: #d4efdc;
-  color: #174332;
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
+}
+
+.potoo-close-tab-button-selected {
+  min-height: 41px;
+  margin: 0 4px 0 0;
+  background-color: var(--potoo-surface-bg);
+  border-top: 2px solid var(--potoo-accent);
+}
+
+.potoo-close-tab-button-selected:hover {
+  background-color: var(--potoo-panel-hover-bg);
 }
 
 .potoo-editor-tab:hover {
-  background-color: #e5f6e9;
+  background-color: var(--potoo-panel-bg);
 }
 
 .potoo-editor-tab-selected {
-  background-color: #ffffff;
-  border-top-color: #15945b;
-  color: #174332;
+  background-color: var(--potoo-surface-bg);
+  border-top-color: var(--potoo-accent);
+  color: var(--potoo-text);
   font-weight: 680;
 }
 
 .potoo-tab-modified {
-  color: #15945b;
+  color: var(--potoo-accent);
   font-weight: 800;
 }
 
 .potoo-active-tab {
   min-height: 41px;
-  background-color: #ffffff;
-  border-top: 2px solid #15945b;
-  color: #174332;
+  background-color: var(--potoo-surface-bg);
+  border-top: 2px solid var(--potoo-accent);
+  color: var(--potoo-text);
   font-size: 12px;
   font-weight: 680;
+}
+
+.potoo-editor-tab-actions {
+  padding: 0 6px;
+  border-left: 1px solid var(--potoo-border-subtle);
+}
+
+button.potoo-save-button {
+  min-height: 28px;
+  padding: 0 8px;
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 0;
+  color: var(--potoo-text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  box-shadow: none;
+}
+
+button.potoo-save-button:hover {
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
 }
 
 .potoo-editor-row,
 .potoo-editor,
 .potoo-output-area {
-  background-color: #ffffff;
-  color: #174332;
+  background-color: var(--potoo-surface-bg);
+  color: var(--potoo-text);
 }
 
 .potoo-line-numbers {
-  background-color: #f5fbf6;
-  color: #397553;
+  background-color: var(--potoo-gutter-bg);
+  color: var(--potoo-text-muted);
   font-size: 12px;
 }
 
 textview.potoo-code-editor,
 textview.potoo-output-view {
-  background-color: #ffffff;
-  color: #174332;
+  background-color: var(--potoo-surface-bg);
+  color: var(--potoo-text);
   font-family: "JetBrains Mono", "Cascadia Code", monospace;
   font-size: 13px;
 }
@@ -254,39 +579,70 @@ label.potoo-line-numbers.potoo-font-17 {
 }
 
 .potoo-output-notebook > header {
-  background-color: #eef9f0;
-  border-bottom: 1px solid #b4dfc2;
+  background-color: var(--potoo-panel-bg);
+  border-bottom: 1px solid var(--potoo-border);
+}
+
+.potoo-output-notebook > header > tabs {
+  padding-left: 8px;
 }
 
 .potoo-output-notebook > header > tabs > tab {
-  min-height: 34px;
-  padding: 0 12px;
+  min-height: 38px;
+  padding: 0 14px;
+  margin: 0 1px;
+  background-color: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
   border-radius: 0;
-  color: #397553;
+  color: var(--potoo-text-muted);
   font-size: 12px;
+  font-weight: 500;
+  outline-style: none;
+  outline-width: 0;
+  box-shadow: none;
+}
+
+.potoo-output-notebook > header > tabs > tab:hover {
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text-secondary);
+}
+
+.potoo-output-notebook > header > tabs > tab:focus {
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
+  outline-style: none;
+  outline-width: 0;
+  box-shadow: none;
 }
 
 .potoo-output-notebook > header > tabs > tab:checked {
-  border-bottom: 2px solid #15945b;
-  color: #174332;
-  font-weight: 700;
+  background-color: var(--potoo-surface-bg);
+  border-bottom-color: var(--potoo-accent);
+  color: var(--potoo-text);
+  font-weight: 500;
 }
 
 .potoo-output-status-row {
   min-height: 32px;
-  background-color: #ffffff;
-  border-top: 1px solid #e5f6e9;
+  background-color: var(--potoo-surface-bg);
+  border-top: 1px solid var(--potoo-panel-bg);
 }
 
 .potoo-muted {
-  color: #397553;
+  color: var(--potoo-text-muted);
   font-size: 11px;
 }
 
 .potoo-learning-panel {
-  min-width: 300px;
-  background-color: #eef9f0;
-  border-left: 1px solid #b4dfc2;
+  min-width: 370px;
+  background-color: var(--potoo-window-bg);
+  border-left: 1px solid var(--potoo-border);
+}
+
+.potoo-learning-panel separator {
+  min-height: 1px;
+  background-color: var(--potoo-border);
 }
 
 .potoo-learning-title {
@@ -297,102 +653,209 @@ label.potoo-line-numbers.potoo-font-17 {
 
 .potoo-card {
   padding: 12px;
-  background-color: #ffffff;
-  border: 1px solid #b4dfc2;
+  background-color: var(--potoo-surface-bg);
+  border: 1px solid var(--potoo-border);
   border-radius: 2px;
-  color: #225b42;
+  color: var(--potoo-text-secondary);
   font-size: 12px;
 }
 
 .potoo-experiment-card {
-  border-left: 3px solid #36bf78;
+  border-left: 3px solid var(--potoo-accent);
 }
 
 .potoo-concept-card {
-  background-color: #d4efdc;
-  border-left: 3px solid #45cdb1;
+  background-color: var(--potoo-panel-hover-bg);
+  border-left: 3px solid var(--potoo-accent);
 }
 
 .potoo-statusbar {
-  min-height: 32px;
-  background-color: #e5f6e9;
-  border-top: 1px solid #b4dfc2;
-  color: #397553;
+  min-height: 34px;
+  background-color: var(--potoo-panel-bg);
+  border-top: 1px solid var(--potoo-border);
+  color: var(--potoo-text-muted);
 }
 
 .potoo-status-primary {
-  color: #15945b;
+  color: var(--potoo-accent);
   font-size: 11px;
   font-weight: 700;
 }
 
 .potoo-settings-page {
-  background-color: #eef9f0;
-  color: #174332;
+  background-color: var(--potoo-window-bg);
+  color: var(--potoo-text);
 }
 
 .potoo-settings-title {
-  color: #174332;
+  color: var(--potoo-text);
   font-size: 22px;
   font-weight: 800;
 }
 
-.potoo-settings-description,
+.potoo-settings-description {
+  color: var(--potoo-text-muted);
+  font-size: 13px;
+}
+
 .potoo-settings-row-description {
-  color: #397553;
+  color: var(--potoo-text-muted);
   font-size: 12px;
 }
 
 .potoo-settings-section {
-  padding-top: 8px;
+  padding: 0 14px;
+  background-color: var(--potoo-surface-bg);
+  border: 1px solid var(--potoo-border);
+  border-radius: 0;
 }
 
 .potoo-settings-section-title {
+  padding-top: 12px;
   padding-bottom: 4px;
-  color: #15945b;
+  color: var(--potoo-accent);
   font-size: 12px;
   font-weight: 750;
 }
 
 .potoo-settings-row {
-  min-height: 56px;
-  padding: 12px 0;
-  border-bottom: 1px solid #b4dfc2;
+  min-height: 48px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--potoo-panel-bg);
+}
+
+.potoo-settings-row:last-child {
+  border-bottom: 0;
 }
 
 .potoo-settings-row-title {
-  color: #174332;
+  color: var(--potoo-text);
   font-size: 13px;
   font-weight: 680;
 }
 
 .potoo-settings-picker {
-  min-width: 140px;
+  min-width: 132px;
+  min-height: 34px;
 }
 
 .potoo-dialog-surface {
-  background-color: #eef9f0;
-  color: #174332;
+  background-color: var(--potoo-window-bg);
+  color: var(--potoo-text);
 }
 
 .potoo-dialog-surface entry {
   min-height: 34px;
   padding: 0 8px;
-  background-color: #ffffff;
-  border: 1px solid #b4dfc2;
-  border-radius: 2px;
-  color: #174332;
+  background-color: var(--potoo-surface-bg);
+  border: 1px solid var(--potoo-border);
+  border-radius: 0;
+  color: var(--potoo-text);
+}
+
+.potoo-dialog-surface entry.potoo-project-name-entry:focus {
+  border-color: var(--potoo-border);
+  outline-style: none;
+  box-shadow: inset 0 -2px var(--potoo-accent);
 }
 
 dropdown.potoo-settings-picker > button {
-  background-color: #e5f6e9;
-  border: 1px solid #b4dfc2;
-  border-radius: 2px;
-  color: #174332;
+  min-height: 34px;
+  padding: 0 10px;
+  background-color: var(--potoo-panel-bg);
+  border: 1px solid var(--potoo-border);
+  border-radius: 0;
+  color: var(--potoo-text);
+}
+
+dropdown.potoo-settings-picker popover.background > contents {
+  padding: 4px;
+  background-color: var(--potoo-surface-bg);
+  border: 1px solid var(--potoo-border);
+  border-radius: 0;
+  box-shadow: 0 3px 10px rgba(18, 23, 27, 0.16);
+}
+
+dropdown.potoo-settings-picker popover listview {
+  background-color: transparent;
+}
+
+dropdown.potoo-settings-picker popover listview row {
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: 0;
+  color: var(--potoo-text);
+}
+
+dropdown.potoo-settings-picker popover listview row:hover {
+  background-color: var(--potoo-panel-hover-bg);
+}
+
+dropdown.potoo-settings-picker popover listview row:selected {
+  background-color: var(--potoo-accent-soft-bg);
+  color: var(--potoo-text);
+}
+
+button.potoo-theme-choice {
+  min-width: 76px;
+  min-height: 34px;
+  padding: 0 10px;
+  background-color: var(--potoo-panel-bg);
+  background-image: none;
+  border: 1px solid var(--potoo-border);
+  border-radius: 0;
+  color: var(--potoo-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+button.potoo-theme-choice:hover {
+  background-color: var(--potoo-panel-hover-bg);
+  border-color: var(--potoo-border);
+  color: var(--potoo-text);
+}
+
+button.potoo-theme-choice-selected,
+button.potoo-theme-choice-selected:hover {
+  background-color: var(--potoo-accent-soft-bg);
+  border-color: var(--potoo-accent);
+  color: var(--potoo-accent-text);
+}
+
+button.potoo-theme-choice:focus {
+  background-color: var(--potoo-panel-hover-bg);
+}
+
+button.potoo-theme-choice-selected:focus {
+  background-color: var(--potoo-accent-soft-bg);
+}
+
+switch.potoo-settings-switch {
+  min-width: 44px;
+  min-height: 24px;
+  padding: 2px;
+  background-color: var(--potoo-panel-hover-bg);
+  border: 1px solid var(--potoo-border);
+  border-radius: 0;
+}
+
+switch.potoo-settings-switch:checked {
+  background-color: var(--potoo-accent);
+  border-color: var(--potoo-accent);
+}
+
+switch.potoo-settings-switch slider {
+  min-width: 20px;
+  min-height: 20px;
+  margin: 1px;
+  background-color: var(--potoo-surface-bg);
+  border: 1px solid var(--potoo-border);
+  border-radius: 0;
 }
 
 paned > separator {
-  background-color: #b4dfc2;
+  background-color: var(--potoo-border);
   min-width: 1px;
   min-height: 1px;
 }
@@ -401,8 +864,8 @@ window.potoo-window.potoo-dark .potoo-header,
 window.potoo-window.potoo-dark headerbar.potoo-linux-titlebar,
 window.potoo-window.potoo-dark .potoo-editor-tabbar,
 window.potoo-window.potoo-dark .potoo-output-notebook > header {
-  background-color: #0a0b0a;
-  border-color: #35443a;
+  background-color: var(--potoo-window-bg);
+  border-color: var(--potoo-border);
 }
 
 window.potoo-window.potoo-dark .potoo-brand-name,
@@ -410,109 +873,94 @@ window.potoo-window.potoo-dark .potoo-project-name,
 window.potoo-window.potoo-dark .potoo-file-sidebar .heading,
 window.potoo-window.potoo-dark .potoo-learning-title,
 window.potoo-window.potoo-dark .potoo-learning-panel .heading {
-  color: #ffffff;
-}
-
-window.potoo-window.potoo-dark .potoo-language-picker,
-window.potoo-window.potoo-dark .potoo-settings-button {
-  background-color: #151815;
-  border-color: #35443a;
-  color: #ffffff;
-}
-
-window.potoo-window.potoo-dark .potoo-language-picker button,
-window.potoo-window.potoo-dark .potoo-language-picker > button {
-  color: #ffffff;
-}
-
-window.potoo-window.potoo-dark .potoo-settings-button:hover,
-window.potoo-window.potoo-dark .potoo-language-picker:hover {
-  background-color: #1e241f;
-  border-color: #65d48d;
+  color: var(--potoo-text);
 }
 
 window.potoo-window.potoo-dark .potoo-run-button {
-  background-color: #167545;
-  border-color: #167545;
-  color: #ffffff;
+  background-color: var(--potoo-accent);
+  border-color: var(--potoo-accent);
+  color: var(--potoo-text);
 }
 
 window.potoo-window.potoo-dark .potoo-run-button:hover {
-  background-color: #115d38;
-  border-color: #115d38;
+  background-color: var(--potoo-accent-hover);
+  border-color: var(--potoo-accent-hover);
 }
 
 window.potoo-window.potoo-dark .potoo-file-sidebar,
 window.potoo-window.potoo-dark .potoo-learning-panel {
-  background-color: #151815;
-  border-color: #35443a;
+  background-color: var(--potoo-panel-bg);
+  border-color: var(--potoo-border);
 }
 
-window.potoo-window.potoo-dark .potoo-toolbar-button,
-window.potoo-window.potoo-dark .potoo-sidebar-action {
-  background-color: #151815;
-  border-color: #35443a;
-  color: #ffffff;
-}
-
-window.potoo-window.potoo-dark .potoo-toolbar-button:hover,
-window.potoo-window.potoo-dark .potoo-sidebar-action:hover {
-  background-color: #1e241f;
-  border-color: #65d48d;
+window.potoo-window.potoo-dark .potoo-learning-panel separator {
+  background-color: var(--potoo-border);
 }
 
 window.potoo-window.potoo-dark .potoo-file-row {
-  color: #d7e4db;
+  color: var(--potoo-text-secondary);
 }
 
-window.potoo-window.potoo-dark .potoo-file-row:hover,
+window.potoo-window.potoo-dark .potoo-file-row:hover {
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
+}
+
 window.potoo-window.potoo-dark .potoo-file-row-selected {
-  background-color: #1e241f;
-  border-left-color: #65d48d;
-  color: #ffffff;
+  background-color: var(--potoo-accent-soft-bg);
+  border-left-color: var(--potoo-accent-text);
+  color: var(--potoo-text);
 }
 
 window.potoo-window.potoo-dark .potoo-file-sidebar .navigation-sidebar row:selected {
-  background-color: #1e241f;
-  border-left-color: #65d48d;
-  color: #ffffff;
+  border-left-color: var(--potoo-accent-text);
+  color: var(--potoo-text);
 }
 
 window.potoo-window.potoo-dark .potoo-active-tab {
-  background-color: #151815;
-  border-top-color: #65d48d;
-  color: #ffffff;
+  background-color: var(--potoo-panel-bg);
+  border-top-color: var(--potoo-accent-text);
+  color: var(--potoo-text);
 }
 
 window.potoo-window.potoo-dark .potoo-editor-tab {
-  color: #a6e9b8;
+  color: var(--potoo-text-muted);
 }
 
 window.potoo-window.potoo-dark .potoo-editor-tab:hover {
-  background-color: #1e241f;
+  background-color: var(--potoo-panel-hover-bg);
 }
 
 window.potoo-window.potoo-dark .potoo-editor-tab-selected {
-  background-color: #151815;
-  border-top-color: #65d48d;
-  color: #ffffff;
+  background-color: var(--potoo-panel-bg);
+  border-top-color: var(--potoo-accent-text);
+  color: var(--potoo-text);
 }
 
 window.potoo-window.potoo-dark .potoo-editor-tab-container {
-  border-color: #35443a;
+  border-color: var(--potoo-border);
+}
+
+window.potoo-window.potoo-dark .potoo-close-tab-button-selected {
+  background-color: var(--potoo-panel-bg);
+  border-top-color: var(--potoo-accent-text);
+}
+
+window.potoo-window.potoo-dark .potoo-close-tab-button-selected:hover {
+  background-color: var(--potoo-panel-hover-bg);
 }
 
 window.potoo-window.potoo-dark .potoo-close-tab-button {
-  color: #a6e9b8;
+  color: var(--potoo-text-muted);
 }
 
 window.potoo-window.potoo-dark .potoo-close-tab-button:hover {
-  background-color: #1e241f;
-  color: #ffffff;
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
 }
 
 window.potoo-window.potoo-dark .potoo-tab-modified {
-  color: #65d48d;
+  color: var(--potoo-accent-text);
 }
 
 window.potoo-window.potoo-dark .potoo-editor-row,
@@ -521,93 +969,122 @@ window.potoo-window.potoo-dark .potoo-output-area,
 window.potoo-window.potoo-dark .potoo-output-status-row,
 window.potoo-window.potoo-dark textview.potoo-code-editor,
 window.potoo-window.potoo-dark textview.potoo-output-view {
-  background-color: #0a0b0a;
-  color: #ffffff;
+  background-color: var(--potoo-editor-bg);
+  color: var(--potoo-text);
 }
 
 window.potoo-window.potoo-dark .potoo-line-numbers {
-  background-color: #101411;
-  color: #a6e9b8;
+  background-color: var(--potoo-gutter-bg);
+  color: var(--potoo-text-muted);
 }
 
 window.potoo-window.potoo-dark .potoo-output-notebook > header > tabs > tab {
-  color: #a6e9b8;
+  background-color: transparent;
+  border-color: transparent;
+  color: var(--potoo-text-muted);
+}
+
+window.potoo-window.potoo-dark .potoo-output-notebook > header > tabs > tab:hover,
+window.potoo-window.potoo-dark .potoo-output-notebook > header > tabs > tab:focus {
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
 }
 
 window.potoo-window.potoo-dark .potoo-output-notebook > header > tabs > tab:checked {
-  border-bottom-color: #65d48d;
-  color: #ffffff;
+  background-color: var(--potoo-editor-bg);
+  border-bottom-color: var(--potoo-accent-text);
+  color: var(--potoo-text);
 }
 
 window.potoo-window.potoo-dark .potoo-card {
-  background-color: #151815;
-  border-color: #35443a;
-  color: #d7e4db;
+  background-color: var(--potoo-panel-bg);
+  border-color: var(--potoo-border);
+  color: var(--potoo-text-secondary);
 }
 
 window.potoo-window.potoo-dark .potoo-experiment-card {
-  border-left-color: #65d48d;
+  border-left-color: var(--potoo-accent-text);
 }
 
 window.potoo-window.potoo-dark .potoo-concept-card {
-  background-color: #1e241f;
-  border-left-color: #5fd1b5;
+  background-color: var(--potoo-panel-hover-bg);
+  border-left-color: var(--potoo-accent-text);
 }
 
 window.potoo-window.potoo-dark .potoo-statusbar {
-  background-color: #151815;
-  border-color: #35443a;
-  color: #a6e9b8;
+  background-color: var(--potoo-panel-bg);
+  border-color: var(--potoo-border);
+  color: var(--potoo-text-muted);
 }
 
 window.potoo-window.potoo-dark .potoo-status-primary {
-  color: #65d48d;
+  color: var(--potoo-accent-text);
 }
 
 window.potoo-window.potoo-dark .potoo-muted {
-  color: #a6e9b8;
+  color: var(--potoo-text-muted);
 }
 
 window.potoo-window.potoo-dark .potoo-settings-page {
-  background-color: #0a0b0a;
-  color: #ffffff;
+  background-color: var(--potoo-window-bg);
+  color: var(--potoo-text);
+}
+
+window.potoo-window.potoo-dark .potoo-settings-section {
+  background-color: var(--potoo-panel-bg);
+  border-color: var(--potoo-border);
 }
 
 window.potoo-window.potoo-dark .potoo-dialog-surface {
-  background-color: #0a0b0a;
-  color: #ffffff;
+  background-color: var(--potoo-window-bg);
+  color: var(--potoo-text);
 }
 
 window.potoo-window.potoo-dark .potoo-dialog-surface entry {
-  background-color: #151815;
-  border-color: #35443a;
-  color: #ffffff;
+  background-color: var(--potoo-panel-bg);
+  border-color: var(--potoo-border);
+  color: var(--potoo-text);
 }
 
 window.potoo-window.potoo-dark .potoo-settings-title,
 window.potoo-window.potoo-dark .potoo-settings-row-title {
-  color: #ffffff;
+  color: var(--potoo-text);
 }
 
 window.potoo-window.potoo-dark .potoo-settings-description,
 window.potoo-window.potoo-dark .potoo-settings-row-description {
-  color: #a6e9b8;
+  color: var(--potoo-text-muted);
 }
 
 window.potoo-window.potoo-dark .potoo-settings-section-title {
-  color: #65d48d;
+  color: var(--potoo-accent-text);
 }
 
 window.potoo-window.potoo-dark .potoo-settings-row {
-  border-color: #35443a;
+  border-color: var(--potoo-border-subtle);
 }
 
 window.potoo-window.potoo-dark dropdown.potoo-settings-picker > button {
-  background-color: #151815;
-  border-color: #35443a;
-  color: #ffffff;
+  background-color: var(--potoo-panel-bg);
+  border-color: var(--potoo-border);
+  color: var(--potoo-text);
+}
+
+window.potoo-window.potoo-dark switch.potoo-settings-switch {
+  background-color: var(--potoo-border);
+  border-color: var(--potoo-border);
+}
+
+window.potoo-window.potoo-dark switch.potoo-settings-switch:checked {
+  background-color: var(--potoo-accent);
+  border-color: var(--potoo-accent);
+}
+
+window.potoo-window.potoo-dark switch.potoo-settings-switch slider {
+  background-color: var(--potoo-switch-knob);
+  border-color: var(--potoo-text-muted);
 }
 
 window.potoo-window.potoo-dark paned > separator {
-  background-color: #35443a;
+  background-color: var(--potoo-border);
 }
