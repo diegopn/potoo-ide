@@ -12,7 +12,6 @@ pub(crate) struct StartPageUi {
     pub(crate) portugol_button: gtk::Button,
     pub(crate) visualg_button: gtk::Button,
     pub(crate) open_folder_button: gtk::Button,
-    pub(crate) settings_button: gtk::Button,
 }
 
 pub(crate) fn build_start_page(language: UiLanguage) -> StartPageUi {
@@ -30,8 +29,8 @@ pub(crate) fn build_start_page(language: UiLanguage) -> StartPageUi {
     content.add_css_class("potoo-start-content");
     content.set_halign(gtk::Align::Center);
     content.set_size_request(720, -1);
-    content.set_margin_top(48);
-    content.set_margin_bottom(48);
+    content.set_margin_top(40);
+    content.set_margin_bottom(40);
 
     let intro = gtk::Box::new(gtk::Orientation::Vertical, 8);
     intro.add_css_class("potoo-start-intro");
@@ -67,18 +66,11 @@ pub(crate) fn build_start_page(language: UiLanguage) -> StartPageUi {
     create_heading.set_margin_bottom(8);
     content.append(&create_heading);
 
-    let create_options = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    let create_options = gtk::Box::new(gtk::Orientation::Vertical, 8);
     create_options.add_css_class("potoo-start-create-options");
-    let portugol_button = language_option(
-        "Portugol",
-        tr(language, "Projeto Portugol"),
-        tr(language, "Comece com um arquivo .por"),
-    );
-    let visualg_button = language_option(
-        "VisuAlg",
-        tr(language, "Projeto VisuAlg"),
-        tr(language, "Comece com um arquivo .alg"),
-    );
+    let portugol_button =
+        language_option("Portugol", tr(language, "Criar programa inicial (.por)"));
+    let visualg_button = language_option("VisuAlg", tr(language, "Criar programa inicial (.alg)"));
     create_options.append(&portugol_button);
     create_options.append(&visualg_button);
     content.append(&create_options);
@@ -105,22 +97,10 @@ pub(crate) fn build_start_page(language: UiLanguage) -> StartPageUi {
     folder_content.append(&icon("chevron-right"));
     open_folder_button.set_child(Some(&folder_content));
     open_folder_button.set_tooltip_text(Some(tr(language, "Selecionar uma pasta")));
-    open_folder_button.set_margin_top(10);
     content.append(&open_folder_button);
 
     scroll.set_child(Some(&content));
     page.append(&scroll);
-
-    let footer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    footer.add_css_class("potoo-start-footer");
-    let settings_button = gtk::Button::new();
-    settings_button.add_css_class("potoo-start-settings");
-    let settings_content = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    settings_content.append(&icon("settings"));
-    settings_content.append(&gtk::Label::new(Some(tr(language, "Configurações"))));
-    settings_button.set_child(Some(&settings_content));
-    footer.append(&settings_button);
-    page.append(&footer);
 
     StartPageUi {
         widget: page.upcast(),
@@ -128,11 +108,10 @@ pub(crate) fn build_start_page(language: UiLanguage) -> StartPageUi {
         portugol_button,
         visualg_button,
         open_folder_button,
-        settings_button,
     }
 }
 
-fn language_option(label: &str, title: &str, description: &str) -> gtk::Button {
+fn language_option(language: &str, description: &str) -> gtk::Button {
     let button = gtk::Button::new();
     button.add_css_class("potoo-start-language-option");
     let content = gtk::Box::new(gtk::Orientation::Horizontal, 12);
@@ -140,7 +119,7 @@ fn language_option(label: &str, title: &str, description: &str) -> gtk::Button {
     content.append(&icon("new-document"));
     let text = gtk::Box::new(gtk::Orientation::Vertical, 4);
     text.set_hexpand(true);
-    let title_label = gtk::Label::new(Some(title));
+    let title_label = gtk::Label::new(Some(language));
     title_label.set_xalign(0.0);
     title_label.add_css_class("potoo-start-action-title");
     let description_label = gtk::Label::new(Some(description));
@@ -149,11 +128,9 @@ fn language_option(label: &str, title: &str, description: &str) -> gtk::Button {
     text.append(&title_label);
     text.append(&description_label);
     content.append(&text);
-    let language_label = gtk::Label::new(Some(label));
-    language_label.add_css_class("potoo-start-language-badge");
-    content.append(&language_label);
+    content.append(&icon("chevron-right"));
     button.set_child(Some(&content));
-    button.set_tooltip_text(Some(title));
+    button.set_tooltip_text(Some(language));
     button.set_hexpand(true);
     button
 }
@@ -169,11 +146,16 @@ pub(crate) fn rebuild_recent_items(
     }
 
     if paths.is_empty() {
-        let empty = gtk::Label::new(Some(tr(
+        let empty = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        empty.set_valign(gtk::Align::Center);
+        empty.append(&icon("document"));
+        let empty_label = gtk::Label::new(Some(tr(
             language,
             "Seus programas recentes aparecerão aqui.",
         )));
-        empty.set_xalign(0.0);
+        empty_label.set_xalign(0.0);
+        empty_label.set_hexpand(true);
+        empty.append(&empty_label);
         empty.add_css_class("potoo-start-recent-empty");
         container.append(&empty);
         return;

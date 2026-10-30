@@ -61,6 +61,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
         UiLanguage::Portuguese => return portuguese,
         UiLanguage::English => match portuguese {
             "Meu primeiro programa" => "My first program",
+            "Início" => "Home",
             "Abra um programa" => "Open a program",
             "Continue um exercício recente ou comece um novo." => {
                 "Continue a recent exercise or start a new one."
@@ -72,6 +73,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Projeto VisuAlg" => "VisuAlg project",
             "Comece com um arquivo .por" => "Start with a .por file",
             "Comece com um arquivo .alg" => "Start with a .alg file",
+            "Criar programa inicial (.por)" => "Create a starter program (.por)",
+            "Criar programa inicial (.alg)" => "Create a starter program (.alg)",
             "Selecionar uma pasta" => "Choose a folder",
             "Abra um projeto que não aparece na lista." => "Open a project that is not listed.",
             "Projeto" => "Project",
@@ -315,6 +318,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
         },
         UiLanguage::Spanish => match portuguese {
             "Meu primeiro programa" => "Mi primer programa",
+            "Início" => "Inicio",
             "Abra um programa" => "Abre un programa",
             "Continue um exercício recente ou comece um novo." => {
                 "Continúa un ejercicio reciente o empieza uno nuevo."
@@ -328,6 +332,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Projeto VisuAlg" => "Proyecto VisuAlg",
             "Comece com um arquivo .por" => "Empieza con un archivo .por",
             "Comece com um arquivo .alg" => "Empieza con un archivo .alg",
+            "Criar programa inicial (.por)" => "Crear un programa inicial (.por)",
+            "Criar programa inicial (.alg)" => "Crear un programa inicial (.alg)",
             "Selecionar uma pasta" => "Seleccionar una carpeta",
             "Abra um projeto que não aparece na lista." => {
                 "Abre un proyecto que no aparece en la lista."
@@ -1538,8 +1544,7 @@ impl SimpleComponent for MainWindow {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         root.set_title(Some("Potoo IDE"));
-        root.set_default_size(1440, 900);
-        root.maximize();
+        root.set_default_size(980, 720);
         root.add_css_class("potoo-window");
         let preferences = load_preferences();
         let saved_session = load_session();
@@ -1583,6 +1588,9 @@ impl SimpleComponent for MainWindow {
         };
         let start_page_visible =
             !recovering_session || (restored_root.is_none() && documents.is_empty());
+        if !start_page_visible {
+            root.maximize();
+        }
         let project_files = restored_root
             .as_deref()
             .and_then(|root| scan_project_files(root).ok())
@@ -2016,6 +2024,9 @@ impl SimpleComponent for MainWindow {
         }
 
         if ui.displayed_start_page != self.start_page_visible {
+            if ui.displayed_start_page && !self.start_page_visible {
+                ui.window.maximize();
+            }
             ui.main_stack
                 .set_visible_child_name(if self.start_page_visible {
                     "start"
@@ -2024,7 +2035,7 @@ impl SimpleComponent for MainWindow {
                 });
             ui.run_button.set_visible(!self.start_page_visible);
             ui.project_title.set_text(if self.start_page_visible {
-                tr(self.ui_language, "Abra um programa")
+                tr(self.ui_language, "Início")
             } else {
                 &self.project_name
             });
@@ -2222,7 +2233,7 @@ fn build_window_content(
     let project_title = header.project_title.clone();
     let run_button = header.run_button.clone();
     project_title.set_text(if initial_start_page {
-        tr(ui_language, "Abra um programa")
+        tr(ui_language, "Início")
     } else {
         tr(ui_language, "Meu primeiro programa")
     });
@@ -2549,11 +2560,6 @@ fn build_window_content(
             ui_language,
             sender_for_start_open.clone(),
         );
-    });
-
-    let sender_for_start_settings = sender.clone();
-    start_page.settings_button.connect_clicked(move |_| {
-        sender_for_start_settings.input(MainWindowMsg::OpenSettings);
     });
 
     let sender_for_save = sender.clone();

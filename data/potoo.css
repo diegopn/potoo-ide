@@ -70,15 +70,15 @@ window.potoo-window {
 }
 
 .potoo-start-recent-empty {
-  min-height: 62px;
-  padding: 0 16px;
+  min-height: 72px;
+  padding: 0 18px;
   color: var(--potoo-text-muted);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 button.potoo-start-recent-row {
-  min-height: 68px;
-  padding: 9px 14px;
+  min-height: 64px;
+  padding: 8px 14px;
   background-color: transparent;
   background-image: none;
   border: 0;
@@ -106,8 +106,7 @@ button.potoo-start-recent-row:hover {
   font-size: 12px;
 }
 
-.potoo-start-recent-badge,
-.potoo-start-language-badge {
+.potoo-start-recent-badge {
   padding: 4px 8px;
   background-color: var(--potoo-panel-deep-bg);
   color: var(--potoo-text-secondary);
@@ -116,14 +115,14 @@ button.potoo-start-recent-row:hover {
 }
 
 .potoo-start-create-options {
-  min-height: 86px;
+  min-height: 0;
 }
 
 button.potoo-start-language-option,
 button.potoo-start-open-folder {
-  min-height: 78px;
-  padding: 13px 15px;
-  background-color: var(--potoo-panel-bg);
+  min-height: 62px;
+  padding: 10px 14px;
+  background-color: var(--potoo-surface-bg);
   background-image: none;
   border: 1px solid var(--potoo-border);
   border-radius: 0;
@@ -139,36 +138,12 @@ button.potoo-start-open-folder:hover {
   color: var(--potoo-text);
 }
 
-button.potoo-start-language-option:hover .potoo-start-language-badge {
-  background-color: var(--potoo-accent-soft-bg);
+button.potoo-start-language-option image.potoo-icon {
   color: var(--potoo-accent-text);
 }
 
 button.potoo-start-open-folder {
-  min-height: 66px;
-  background-color: var(--potoo-surface-bg);
-}
-
-.potoo-start-footer {
-  padding: 7px 12px;
-  background-color: var(--potoo-window-bg);
-  border-top: 1px solid var(--potoo-border-subtle);
-}
-
-button.potoo-start-settings {
-  min-height: 32px;
-  padding: 4px 8px;
-  background-color: transparent;
-  background-image: none;
-  border: 0;
-  border-radius: 0;
-  color: var(--potoo-text-muted);
-  box-shadow: none;
-}
-
-button.potoo-start-settings:hover {
-  background-color: var(--potoo-panel-bg);
-  color: var(--potoo-text);
+  margin-top: 12px;
 }
 
 window.potoo-window :focus {
