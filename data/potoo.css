@@ -14,6 +14,8 @@ window.potoo-window {
   --potoo-accent-hover: #0f663b;
   --potoo-accent-soft-bg: #e8f2ec;
   --potoo-accent-text: #147447;
+  --potoo-control-bg: #d7dde3;
+  --potoo-control-hover-bg: #cbd3db;
   --potoo-switch-knob: #ffffff;
   font-family: "Inter Variable", Inter, "Segoe UI", sans-serif;
   background-color: var(--potoo-window-bg);
@@ -56,6 +58,8 @@ window.potoo-window.potoo-dark {
   --potoo-accent-hover: #176c43;
   --potoo-accent-soft-bg: #2f4237;
   --potoo-accent-text: #72cc99;
+  --potoo-control-bg: #3f474f;
+  --potoo-control-hover-bg: #4b535b;
   --potoo-switch-knob: #f1f3f5;
   background-color: var(--potoo-window-bg);
   color: var(--potoo-text);
@@ -178,7 +182,7 @@ headerbar.potoo-linux-titlebar button.titlebutton {
 .potoo-sidebar-settings-button {
   min-height: 34px;
   padding: 0 8px;
-  background-color: transparent;
+  background-color: var(--potoo-control-bg);
   background-image: none;
   border: 0;
   border-radius: 3px;
@@ -189,19 +193,19 @@ headerbar.potoo-linux-titlebar button.titlebutton {
 }
 
 .potoo-sidebar-settings-button:hover {
-  background-color: var(--potoo-panel-hover-bg);
+  background-color: var(--potoo-control-hover-bg);
   color: var(--potoo-text);
 }
 
 .potoo-sidebar-settings-button:focus {
-  background-color: var(--potoo-panel-hover-bg);
+  background-color: var(--potoo-control-hover-bg);
   color: var(--potoo-text);
 }
 
 .potoo-sidebar-create-project {
   min-height: 34px;
   padding: 0 8px;
-  background-color: var(--potoo-accent-soft-bg);
+  background-color: var(--potoo-control-bg);
   background-image: none;
   border: 0;
   border-radius: 2px;
@@ -212,14 +216,14 @@ headerbar.potoo-linux-titlebar button.titlebutton {
 }
 
 .potoo-sidebar-create-project:hover {
-  background-color: var(--potoo-panel-hover-bg);
+  background-color: var(--potoo-control-hover-bg);
   color: var(--potoo-text);
 }
 
 .potoo-project-language-choice {
   min-height: 36px;
   padding: 0 16px;
-  background-color: var(--potoo-panel-bg);
+  background-color: var(--potoo-control-bg);
   background-image: none;
   border: 0;
   border-bottom: 1px solid var(--potoo-border);
@@ -236,7 +240,7 @@ headerbar.potoo-linux-titlebar button.titlebutton {
 }
 
 .potoo-project-language-choice:not(.selected):hover {
-  background-color: var(--potoo-panel-hover-bg);
+  background-color: var(--potoo-control-hover-bg);
 }
 
 .potoo-project-field-label {
@@ -256,22 +260,22 @@ headerbar.potoo-linux-titlebar button.titlebutton {
 .potoo-project-location-button {
   min-height: 36px;
   padding: 0 14px;
-  background-color: transparent;
+  background-color: var(--potoo-control-bg);
   background-image: none;
   border: 0;
   border-radius: 2px;
-  color: var(--potoo-accent-text);
+  color: var(--potoo-text-secondary);
   box-shadow: none;
 }
 
 .potoo-project-location-button:hover {
-  background-color: var(--potoo-panel-hover-bg);
+  background-color: var(--potoo-control-hover-bg);
 }
 
 .potoo-project-cancel-button {
   min-height: 36px;
   padding: 0 16px;
-  background-color: var(--potoo-panel-bg);
+  background-color: var(--potoo-control-bg);
   background-image: none;
   border: 0;
   border-radius: 0;
@@ -282,7 +286,7 @@ headerbar.potoo-linux-titlebar button.titlebutton {
 }
 
 .potoo-project-cancel-button:hover {
-  background-color: var(--potoo-panel-hover-bg);
+  background-color: var(--potoo-control-hover-bg);
   color: var(--potoo-text);
 }
 
@@ -364,11 +368,11 @@ expander-widget.potoo-folder-expander > box > title > expander {
   min-width: 28px;
   min-height: 28px;
   padding: 0;
-  background-color: transparent;
+  background-color: var(--potoo-control-bg);
   background-image: none;
   border: 1px solid transparent;
   border-radius: 0;
-  color: var(--potoo-text-muted);
+  color: var(--potoo-text-secondary);
   box-shadow: none;
 }
 
@@ -376,11 +380,11 @@ menubutton.potoo-sidebar-action > button {
   min-width: 28px;
   min-height: 28px;
   padding: 0;
-  background-color: transparent;
+  background-color: var(--potoo-control-bg);
   background-image: none;
   border: 1px solid transparent;
   border-radius: 0;
-  color: var(--potoo-text-muted);
+  color: var(--potoo-text-secondary);
   box-shadow: none;
 }
 
@@ -407,13 +411,13 @@ menubutton.potoo-sidebar-action > button {
 
 .potoo-sidebar-action:hover,
 .potoo-sidebar-action:checked {
-  background-color: var(--potoo-panel-hover-bg);
+  background-color: var(--potoo-control-hover-bg);
   color: var(--potoo-text);
 }
 
 menubutton.potoo-sidebar-action > button:hover,
 menubutton.potoo-sidebar-action > button:checked {
-  background-color: var(--potoo-panel-hover-bg);
+  background-color: var(--potoo-control-hover-bg);
   color: var(--potoo-text);
 }
 
@@ -537,18 +541,18 @@ menubutton.potoo-sidebar-action > button:checked {
 button.potoo-save-button {
   min-height: 28px;
   padding: 0 8px;
-  background-color: transparent;
+  background-color: var(--potoo-control-bg);
   background-image: none;
   border: 0;
   border-radius: 0;
-  color: var(--potoo-text-muted);
+  color: var(--potoo-text-secondary);
   font-size: 12px;
   font-weight: 500;
   box-shadow: none;
 }
 
 button.potoo-save-button:hover {
-  background-color: var(--potoo-panel-hover-bg);
+  background-color: var(--potoo-control-hover-bg);
   color: var(--potoo-text);
 }
 
@@ -596,11 +600,11 @@ label.potoo-line-numbers.potoo-font-18 {
   min-height: 38px;
   padding: 0 14px;
   margin: 0 1px;
-  background-color: transparent;
+  background-color: var(--potoo-control-bg);
   border: 0;
   border-bottom: 2px solid transparent;
   border-radius: 0;
-  color: var(--potoo-text-muted);
+  color: var(--potoo-text-secondary);
   font-size: 13px;
   font-weight: 500;
   outline-style: none;
@@ -609,12 +613,12 @@ label.potoo-line-numbers.potoo-font-18 {
 }
 
 .potoo-output-notebook > header > tabs > tab:hover {
-  background-color: var(--potoo-panel-hover-bg);
+  background-color: var(--potoo-control-hover-bg);
   color: var(--potoo-text-secondary);
 }
 
 .potoo-output-notebook > header > tabs > tab:focus {
-  background-color: var(--potoo-panel-hover-bg);
+  background-color: var(--potoo-control-hover-bg);
   color: var(--potoo-text);
   outline-style: none;
   outline-width: 0;
@@ -1094,14 +1098,14 @@ window.potoo-window.potoo-dark .potoo-line-numbers {
 }
 
 window.potoo-window.potoo-dark .potoo-output-notebook > header > tabs > tab {
-  background-color: transparent;
+  background-color: var(--potoo-control-bg);
   border-color: transparent;
-  color: var(--potoo-text-muted);
+  color: var(--potoo-text-secondary);
 }
 
 window.potoo-window.potoo-dark .potoo-output-notebook > header > tabs > tab:hover,
 window.potoo-window.potoo-dark .potoo-output-notebook > header > tabs > tab:focus {
-  background-color: var(--potoo-panel-hover-bg);
+  background-color: var(--potoo-control-hover-bg);
   color: var(--potoo-text);
 }
 
