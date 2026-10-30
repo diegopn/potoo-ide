@@ -69,13 +69,6 @@ window.potoo-window {
   background-color: var(--potoo-border-subtle);
 }
 
-.potoo-start-recent-empty {
-  min-height: 72px;
-  padding: 0 18px;
-  color: var(--potoo-text-muted);
-  font-size: 14px;
-}
-
 button.potoo-start-recent-row {
   min-height: 64px;
   padding: 8px 14px;

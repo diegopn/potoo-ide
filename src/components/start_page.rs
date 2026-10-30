@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 pub(crate) struct StartPageUi {
     pub(crate) widget: gtk::Widget,
+    pub(crate) recent_section: gtk::Box,
     pub(crate) recent_list: gtk::Box,
     pub(crate) portugol_button: gtk::Button,
     pub(crate) visualg_button: gtk::Button,
@@ -49,15 +50,19 @@ pub(crate) fn build_start_page(language: UiLanguage) -> StartPageUi {
     intro.append(&description);
     content.append(&intro);
 
+    let recent_section = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    recent_section.set_visible(false);
+
     let recent_heading = gtk::Label::new(Some(tr(language, "Programas recentes")));
     recent_heading.set_xalign(0.0);
     recent_heading.add_css_class("potoo-start-section-title");
     recent_heading.set_margin_bottom(8);
-    content.append(&recent_heading);
+    recent_section.append(&recent_heading);
 
     let recent_list = gtk::Box::new(gtk::Orientation::Vertical, 0);
     recent_list.add_css_class("potoo-start-recent-list");
-    content.append(&recent_list);
+    recent_section.append(&recent_list);
+    content.append(&recent_section);
 
     let create_heading = gtk::Label::new(Some(tr(language, "Comece um novo programa")));
     create_heading.set_xalign(0.0);
@@ -104,6 +109,7 @@ pub(crate) fn build_start_page(language: UiLanguage) -> StartPageUi {
 
     StartPageUi {
         widget: page.upcast(),
+        recent_section,
         recent_list,
         portugol_button,
         visualg_button,
@@ -136,28 +142,19 @@ fn language_option(language: &str, description: &str) -> gtk::Button {
 }
 
 pub(crate) fn rebuild_recent_items(
+    section: &gtk::Box,
     container: &gtk::Box,
     paths: &[PathBuf],
     language: UiLanguage,
     sender: ComponentSender<MainWindow>,
 ) {
+    section.set_visible(!paths.is_empty());
+
     while let Some(child) = container.first_child() {
         container.remove(&child);
     }
 
     if paths.is_empty() {
-        let empty = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-        empty.set_valign(gtk::Align::Center);
-        empty.append(&icon("document"));
-        let empty_label = gtk::Label::new(Some(tr(
-            language,
-            "Seus programas recentes aparecerão aqui.",
-        )));
-        empty_label.set_xalign(0.0);
-        empty_label.set_hexpand(true);
-        empty.append(&empty_label);
-        empty.add_css_class("potoo-start-recent-empty");
-        container.append(&empty);
         return;
     }
 

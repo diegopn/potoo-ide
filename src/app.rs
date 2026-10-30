@@ -67,7 +67,6 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
                 "Continue a recent exercise or start a new one."
             }
             "Programas recentes" => "Recent programs",
-            "Seus programas recentes aparecerão aqui." => "Your recent programs will appear here.",
             "Comece um novo programa" => "Start a new program",
             "Projeto Portugol" => "Portugol project",
             "Projeto VisuAlg" => "VisuAlg project",
@@ -324,9 +323,6 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
                 "Continúa un ejercicio reciente o empieza uno nuevo."
             }
             "Programas recentes" => "Programas recientes",
-            "Seus programas recentes aparecerão aqui." => {
-                "Tus programas recientes aparecerán aquí."
-            }
             "Comece um novo programa" => "Empieza un programa nuevo",
             "Projeto Portugol" => "Proyecto Portugol",
             "Projeto VisuAlg" => "Proyecto VisuAlg",
@@ -1679,6 +1675,7 @@ impl SimpleComponent for MainWindow {
             sender.clone(),
         );
         start_page::rebuild_recent_items(
+            &widgets.start_page.recent_section,
             &widgets.start_page.recent_list,
             &model.recent_paths,
             model.ui_language,
@@ -2052,6 +2049,7 @@ impl SimpleComponent for MainWindow {
 
         if ui.displayed_recent_paths != self.recent_paths {
             start_page::rebuild_recent_items(
+                &ui.start_page.recent_section,
                 &ui.start_page.recent_list,
                 &self.recent_paths,
                 self.ui_language,
