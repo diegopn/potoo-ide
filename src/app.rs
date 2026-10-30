@@ -1678,7 +1678,6 @@ impl SimpleComponent for MainWindow {
             &widgets.start_page.recent_section,
             &widgets.start_page.recent_list,
             &model.recent_paths,
-            model.ui_language,
             sender,
         );
         widgets.displayed_tabs = model
@@ -2052,7 +2051,6 @@ impl SimpleComponent for MainWindow {
                 &ui.start_page.recent_section,
                 &ui.start_page.recent_list,
                 &self.recent_paths,
-                self.ui_language,
                 sender.clone(),
             );
             ui.displayed_recent_paths.clone_from(&self.recent_paths);

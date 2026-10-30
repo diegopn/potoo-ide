@@ -1,6 +1,6 @@
 use crate::{
     app::{MainWindow, MainWindowMsg, UiLanguage, tr},
-    components::{content_panel::Language, icon},
+    components::icon,
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -149,7 +149,6 @@ pub(crate) fn rebuild_recent_items(
     section: &gtk::Box,
     container: &gtk::Box,
     paths: &[PathBuf],
-    language: UiLanguage,
     sender: ComponentSender<MainWindow>,
 ) {
     section.set_visible(!paths.is_empty());
@@ -173,6 +172,7 @@ pub(crate) fn rebuild_recent_items(
         button.add_css_class("potoo-start-recent-row");
         let content = gtk::Box::new(gtk::Orientation::Horizontal, 12);
         content.set_hexpand(true);
+        content.set_valign(gtk::Align::Center);
         content.append(&icon(if path.is_dir() { "folder" } else { "document" }));
 
         let detail = gtk::Box::new(gtk::Orientation::Vertical, 3);
@@ -190,14 +190,6 @@ pub(crate) fn rebuild_recent_items(
         detail.append(&location);
         content.append(&detail);
 
-        let kind = if path.is_dir() {
-            tr(language, "Pasta")
-        } else {
-            Language::from_path(path).map(Language::label).unwrap_or("")
-        };
-        let badge = gtk::Label::new(Some(kind));
-        badge.add_css_class("potoo-start-recent-badge");
-        content.append(&badge);
         content.append(&icon("chevron-right"));
         button.set_child(Some(&content));
         button.set_tooltip_text(Some(&path.display().to_string()));

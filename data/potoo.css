@@ -99,14 +99,6 @@ button.potoo-start-recent-row:hover {
   font-size: 12px;
 }
 
-.potoo-start-recent-badge {
-  padding: 4px 8px;
-  background-color: var(--potoo-panel-deep-bg);
-  color: var(--potoo-text-secondary);
-  font-size: 12px;
-  font-weight: 560;
-}
-
 .potoo-start-create-options {
   min-height: 0;
 }
