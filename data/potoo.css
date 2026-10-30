@@ -146,7 +146,28 @@ headerbar.potoo-linux-titlebar button.titlebutton {
   min-width: 28px;
   min-height: 28px;
   margin: 3px;
+  padding: 0;
+  background-color: var(--potoo-panel-bg);
+  background-image: none;
+  border: 0;
   border-radius: 0;
+  color: var(--potoo-text-muted);
+  box-shadow: none;
+}
+
+headerbar.potoo-linux-titlebar button.titlebutton:hover {
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
+}
+
+headerbar.potoo-linux-titlebar button.titlebutton.close {
+  background-color: #f5e7e7;
+  color: #9a4242;
+}
+
+headerbar.potoo-linux-titlebar button.titlebutton.close:hover {
+  background-color: #efdada;
+  color: #823535;
 }
 
 .potoo-brand-name {
@@ -163,8 +184,10 @@ headerbar.potoo-linux-titlebar button.titlebutton {
 }
 
 .potoo-run-button {
+  height: 34px;
   min-height: 34px;
-  padding: 0 11px;
+  max-height: 34px;
+  padding: 0 14px;
   background-color: var(--potoo-accent);
   background-image: none;
   border: 1px solid var(--potoo-accent);
@@ -830,6 +853,20 @@ button.potoo-dialog-close:hover {
   color: var(--potoo-accent-text);
 }
 
+headerbar.potoo-settings-titlebar button.potoo-settings-back {
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 7px;
+  color: var(--potoo-text-secondary);
+  font-size: 13px;
+}
+
+button.potoo-settings-back image.potoo-icon {
+  min-width: 14px;
+  min-height: 14px;
+  color: var(--potoo-text-secondary);
+}
+
 .potoo-settings-title {
   color: var(--potoo-text);
   font-size: 15px;
@@ -1054,13 +1091,37 @@ button.potoo-about-link {
   box-shadow: inset 0 -2px var(--potoo-accent);
 }
 
-dropdown.potoo-settings-picker > button {
+window.potoo-window dropdown.potoo-settings-picker,
+window.potoo-window dropdown.potoo-settings-picker button,
+window.potoo-window dropdown.potoo-settings-picker button label,
+window.potoo-window dropdown.potoo-settings-picker button image {
+  color: var(--potoo-text);
+}
+
+window.potoo-window dropdown.potoo-settings-picker button {
   min-height: 34px;
   padding: 0 10px;
   background-color: var(--potoo-panel-bg);
+  background-image: none;
   border: 1px solid var(--potoo-border);
   border-radius: 0;
   color: var(--potoo-text);
+  box-shadow: none;
+}
+
+window.potoo-window dropdown.potoo-settings-picker button:hover {
+  background-color: var(--potoo-control-hover-bg);
+  border-color: var(--potoo-border);
+  color: var(--potoo-text);
+}
+
+window.potoo-window dropdown.potoo-settings-picker button:active,
+window.potoo-window dropdown.potoo-settings-picker button:checked,
+window.potoo-window dropdown.potoo-settings-picker button:focus {
+  background-color: var(--potoo-panel-bg);
+  border-color: var(--potoo-border);
+  color: var(--potoo-text);
+  box-shadow: none;
 }
 
 dropdown.potoo-settings-picker popover.background > contents {
@@ -1125,36 +1186,42 @@ button.potoo-theme-choice-selected:focus {
   background-color: var(--potoo-accent-soft-bg);
 }
 
-switch.potoo-settings-switch {
+window.potoo-window switch.potoo-settings-switch {
   min-width: 38px;
   min-height: 22px;
   padding: 2px;
   background-color: var(--potoo-panel-hover-bg);
+  background-image: none;
   border: 1px solid var(--potoo-border);
   border-radius: 0;
+  color: var(--potoo-text);
+  box-shadow: none;
 }
 
-switch.potoo-settings-switch:checked {
+window.potoo-window switch.potoo-settings-switch:checked {
   background-color: var(--potoo-accent);
   border-color: var(--potoo-accent);
 }
 
-switch.potoo-settings-switch slider {
+window.potoo-window switch.potoo-settings-switch slider {
   min-width: 16px;
   min-height: 16px;
   margin: 1px;
   background-color: var(--potoo-surface-bg);
+  background-image: none;
   border: 1px solid var(--potoo-border);
   border-radius: 0;
+  color: var(--potoo-text);
+  box-shadow: none;
 }
 
 paned > separator {
   background-color: var(--potoo-border);
   background-image: none;
   border: 0;
-  margin: -4px;
-  min-width: 9px;
-  min-height: 9px;
+  margin: 0;
+  min-width: 1px;
+  min-height: 1px;
   padding: 0;
 }
 
@@ -1162,6 +1229,16 @@ window.potoo-window.potoo-dark .potoo-header,
 window.potoo-window.potoo-dark headerbar.potoo-linux-titlebar {
   background-color: var(--potoo-window-bg);
   border-color: var(--potoo-border);
+}
+
+window.potoo-window.potoo-dark headerbar.potoo-linux-titlebar button.titlebutton.close {
+  background-color: #4b3030;
+  color: #e9abab;
+}
+
+window.potoo-window.potoo-dark headerbar.potoo-linux-titlebar button.titlebutton.close:hover {
+  background-color: #5b3939;
+  color: #ffd0d0;
 }
 
 window.potoo-window.potoo-dark .potoo-brand-name,

@@ -36,7 +36,7 @@ pub(crate) fn build_header(
 
     let run_button = gtk::Button::new();
     run_button.add_css_class("potoo-run-button");
-    let run_content = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    let run_content = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let run_icon = icon("play");
     run_icon.set_pixel_size(14);
     run_content.append(&run_icon);
