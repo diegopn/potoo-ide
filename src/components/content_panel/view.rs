@@ -102,6 +102,7 @@ pub(crate) fn build_learning_panel(language: UiLanguage) -> gtk::Widget {
     let line_title = gtk::Label::new(Some(tr(language, "Linha 7 · decisão")));
     line_title.set_xalign(0.0);
     line_title.add_css_class("heading");
+    line_title.add_css_class("potoo-learning-line-title");
     content.append(&line_title);
 
     let explanation = gtk::Label::new(Some(tr(

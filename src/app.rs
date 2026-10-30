@@ -570,7 +570,7 @@ impl Default for Preferences {
     fn default() -> Self {
         Self {
             theme: ThemePreference::System,
-            font_size: 13,
+            font_size: 14,
             line_numbers_visible: true,
             word_wrap: false,
             indent_width: 4,
@@ -745,8 +745,13 @@ fn load_preferences() -> Preferences {
         font_size: key_file
             .integer("editor", "font-size")
             .ok()
-            .filter(|size| matches!(size, 13 | 15 | 17))
-            .map(|size| size as u32)
+            .map(|size| match size {
+                13 => 14,
+                15 => 16,
+                17 => 18,
+                14 | 16 | 18 => size as u32,
+                _ => defaults.font_size,
+            })
             .unwrap_or(defaults.font_size),
         line_numbers_visible: key_file
             .boolean("editor", "line-numbers")
@@ -2253,7 +2258,7 @@ fn build_settings_window(
     page.append(&appearance);
 
     let editor = settings_section(tr(language, "Editor"));
-    let font_size_picker = gtk::DropDown::from_strings(&["13 px", "15 px", "17 px"]);
+    let font_size_picker = gtk::DropDown::from_strings(&["14 px", "16 px", "18 px"]);
     font_size_picker.add_css_class("potoo-settings-picker");
     font_size_picker.set_selected(font_size_index(preferences.font_size));
     editor.append(&settings_row(
@@ -2491,9 +2496,9 @@ fn build_settings_window(
     let sender_for_font_size = sender.clone();
     font_size_picker.connect_selected_notify(move |picker| {
         let font_size = match picker.selected() {
-            1 => 15,
-            2 => 17,
-            _ => 13,
+            1 => 16,
+            2 => 18,
+            _ => 14,
         };
         sender_for_font_size.input(MainWindowMsg::FontSizeSelected(font_size));
     });
@@ -2587,8 +2592,8 @@ fn settings_row<W: IsA<gtk::Widget>>(title: &str, description: &str, control: &W
 
 fn font_size_index(font_size: u32) -> u32 {
     match font_size {
-        15 => 1,
-        17 => 2,
+        16 => 1,
+        18 => 2,
         _ => 0,
     }
 }

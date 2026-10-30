@@ -23,7 +23,7 @@ window.potoo-window {
   background-color: var(--potoo-surface-bg);
   color: var(--potoo-text);
   font-family: Inter, "Segoe UI", sans-serif;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 window.potoo-window :focus {
@@ -134,14 +134,14 @@ headerbar.potoo-linux-titlebar button.titlebutton {
 
 .potoo-brand-name {
   color: var(--potoo-text);
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 850;
   letter-spacing: -0.35px;
 }
 
 .potoo-project-name {
   color: var(--potoo-text);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
 }
 
@@ -153,7 +153,7 @@ headerbar.potoo-linux-titlebar button.titlebutton {
   border: 1px solid var(--potoo-accent);
   border-radius: 0;
   color: var(--potoo-surface-bg);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 780;
   box-shadow: none;
 }
@@ -183,7 +183,7 @@ headerbar.potoo-linux-titlebar button.titlebutton {
   border: 0;
   border-radius: 3px;
   color: var(--potoo-text-secondary);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   box-shadow: none;
 }
@@ -206,7 +206,7 @@ headerbar.potoo-linux-titlebar button.titlebutton {
   border: 0;
   border-radius: 2px;
   color: var(--potoo-accent-text);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 560;
   box-shadow: none;
 }
@@ -241,7 +241,7 @@ headerbar.potoo-linux-titlebar button.titlebutton {
 
 .potoo-project-field-label {
   color: var(--potoo-text-secondary);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 650;
 }
 
@@ -250,7 +250,7 @@ headerbar.potoo-linux-titlebar button.titlebutton {
   padding: 0 8px;
   background-color: var(--potoo-panel-bg);
   color: var(--potoo-text-secondary);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .potoo-project-location-button {
@@ -276,7 +276,7 @@ headerbar.potoo-linux-titlebar button.titlebutton {
   border: 0;
   border-radius: 0;
   color: var(--potoo-text-secondary);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   box-shadow: none;
 }
@@ -288,7 +288,7 @@ headerbar.potoo-linux-titlebar button.titlebutton {
 
 .potoo-project-error {
   color: #b42318;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 window.potoo-window.potoo-dark .potoo-project-error {
@@ -386,7 +386,7 @@ menubutton.potoo-sidebar-action > button {
 }
 
 .potoo-project-row label {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 620;
 }
 
@@ -396,7 +396,7 @@ menubutton.potoo-sidebar-action > button {
 
 .potoo-sidebar-empty-title {
   color: var(--potoo-text-secondary);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 620;
 }
 
@@ -537,7 +537,7 @@ button.potoo-save-button {
   border: 0;
   border-radius: 0;
   color: var(--potoo-text-muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   box-shadow: none;
 }
@@ -557,7 +557,7 @@ button.potoo-save-button:hover {
 .potoo-line-numbers {
   background-color: var(--potoo-gutter-bg);
   color: var(--potoo-text-muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 textview.potoo-code-editor,
@@ -565,17 +565,17 @@ textview.potoo-output-view {
   background-color: var(--potoo-surface-bg);
   color: var(--potoo-text);
   font-family: "JetBrains Mono", "Cascadia Code", monospace;
-  font-size: 13px;
+  font-size: 14px;
 }
 
-textview.potoo-code-editor.potoo-font-15,
-label.potoo-line-numbers.potoo-font-15 {
-  font-size: 15px;
+textview.potoo-code-editor.potoo-font-16,
+label.potoo-line-numbers.potoo-font-16 {
+  font-size: 16px;
 }
 
-textview.potoo-code-editor.potoo-font-17,
-label.potoo-line-numbers.potoo-font-17 {
-  font-size: 17px;
+textview.potoo-code-editor.potoo-font-18,
+label.potoo-line-numbers.potoo-font-18 {
+  font-size: 18px;
 }
 
 .potoo-output-notebook > header {
@@ -596,7 +596,7 @@ label.potoo-line-numbers.potoo-font-17 {
   border-bottom: 2px solid transparent;
   border-radius: 0;
   color: var(--potoo-text-muted);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   outline-style: none;
   outline-width: 0;
@@ -631,7 +631,7 @@ label.potoo-line-numbers.potoo-font-17 {
 
 .potoo-muted {
   color: var(--potoo-text-muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .potoo-learning-panel {
@@ -651,13 +651,17 @@ label.potoo-line-numbers.potoo-font-17 {
   letter-spacing: -0.25px;
 }
 
+.potoo-learning-panel label.potoo-learning-line-title {
+  font-size: 13px;
+}
+
 .potoo-card {
   padding: 12px;
   background-color: var(--potoo-surface-bg);
   border: 1px solid var(--potoo-border);
   border-radius: 2px;
   color: var(--potoo-text-secondary);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .potoo-experiment-card {
@@ -678,7 +682,7 @@ label.potoo-line-numbers.potoo-font-17 {
 
 .potoo-status-primary {
   color: var(--potoo-accent);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -692,6 +696,7 @@ label.potoo-line-numbers.potoo-font-17 {
 .potoo-about-page {
   background-color: var(--potoo-window-bg);
   color: var(--potoo-text);
+  font-size: 14px;
 }
 
 .potoo-settings-navigation {
@@ -709,7 +714,7 @@ label.potoo-line-numbers.potoo-font-17 {
   border: 0;
   border-radius: 0;
   color: var(--potoo-text-secondary);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 550;
   box-shadow: none;
 }
@@ -721,18 +726,18 @@ label.potoo-line-numbers.potoo-font-17 {
 
 .potoo-settings-title {
   color: var(--potoo-text);
-  font-size: 22px;
+  font-size: 23px;
   font-weight: 800;
 }
 
 .potoo-settings-description {
   color: var(--potoo-text-muted);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .potoo-settings-row-description {
   color: var(--potoo-text-muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .potoo-settings-section {
@@ -746,7 +751,7 @@ label.potoo-line-numbers.potoo-font-17 {
   padding-top: 12px;
   padding-bottom: 4px;
   color: var(--potoo-accent);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 750;
 }
 
@@ -762,7 +767,7 @@ label.potoo-line-numbers.potoo-font-17 {
 
 .potoo-settings-row-title {
   color: var(--potoo-text);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 680;
 }
 
@@ -792,13 +797,13 @@ label.potoo-line-numbers.potoo-font-17 {
 
 .potoo-about-title {
   color: var(--potoo-text);
-  font-size: 24px;
+  font-size: 25px;
   font-weight: 780;
 }
 
 .potoo-about-creator {
   color: var(--potoo-text-secondary);
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .potoo-about-version {
@@ -806,7 +811,7 @@ label.potoo-line-numbers.potoo-font-17 {
   padding: 4px 10px;
   background-color: var(--potoo-accent-soft-bg);
   color: var(--potoo-accent-text);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 650;
 }
 
@@ -823,7 +828,7 @@ label.potoo-line-numbers.potoo-font-17 {
   border: 0;
   border-radius: 0;
   color: var(--potoo-text);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 500;
   text-decoration: none;
   box-shadow: none;
@@ -846,6 +851,7 @@ label.potoo-line-numbers.potoo-font-17 {
 .potoo-dialog-surface {
   background-color: var(--potoo-window-bg);
   color: var(--potoo-text);
+  font-size: 14px;
 }
 
 .potoo-dialog-surface entry {
@@ -909,7 +915,7 @@ button.potoo-theme-choice {
   border: 1px solid var(--potoo-border);
   border-radius: 0;
   color: var(--potoo-text-secondary);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   box-shadow: none;
 }
