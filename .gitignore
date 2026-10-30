@@ -3,5 +3,6 @@
 /.flatpak-build/
 /.flatpak-builder/
 /docs/
+/AGENTS.md
 *.swp
 *~

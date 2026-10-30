@@ -112,6 +112,7 @@ pub(crate) fn build_learning_panel(language: UiLanguage) -> gtk::Widget {
     explanation.set_xalign(0.0);
     explanation.set_wrap(true);
     explanation.set_selectable(true);
+    explanation.add_css_class("potoo-learning-description");
     content.append(&explanation);
     content.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
 

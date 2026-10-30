@@ -33,6 +33,9 @@ pub(crate) struct SidebarUi {
     pub(crate) open_popover: gtk::Popover,
     pub(crate) open_project_button: gtk::Button,
     pub(crate) open_file_button: gtk::Button,
+    pub(crate) empty_state: gtk::Widget,
+    pub(crate) empty_open_project_button: gtk::Button,
+    pub(crate) empty_open_file_button: gtk::Button,
     pub(crate) settings_button: gtk::Button,
     pub(crate) expanded_folders: ExpandedFolders,
 }
@@ -91,10 +94,7 @@ pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
     let open_popover = gtk::Popover::new();
     open_popover.add_css_class("potoo-sidebar-popover");
     let open_menu_content = gtk::Box::new(gtk::Orientation::Vertical, 2);
-    open_menu_content.set_margin_top(4);
-    open_menu_content.set_margin_bottom(4);
-    open_menu_content.set_margin_start(4);
-    open_menu_content.set_margin_end(4);
+    open_menu_content.set_size_request(172, -1);
     let open_project_button = icon_label_button(
         "folder-open",
         tr(language, "Abrir pasta"),
@@ -144,7 +144,9 @@ pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
     sidebar.append(&project);
 
     let file_list = gtk::Box::new(gtk::Orientation::Vertical, 2);
-    file_list.append(&empty_project_state(language));
+    let (empty_state, empty_open_project_button, empty_open_file_button) =
+        empty_project_state(language);
+    file_list.append(&empty_state);
     let file_scroll = gtk::ScrolledWindow::builder()
         .vexpand(true)
         .hscrollbar_policy(gtk::PolicyType::Never)
@@ -176,6 +178,9 @@ pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
         open_popover,
         open_project_button,
         open_file_button,
+        empty_state,
+        empty_open_project_button,
+        empty_open_file_button,
         settings_button,
         expanded_folders: Rc::new(RefCell::new(HashSet::new())),
     }
@@ -187,6 +192,7 @@ pub(crate) fn rebuild_file_list(
     active_path: Option<&PathBuf>,
     project_open: bool,
     project_root: Option<&std::path::Path>,
+    empty_state: &gtk::Widget,
     language: UiLanguage,
     expanded_folders: &Rc<RefCell<HashSet<PathBuf>>>,
     sender: ComponentSender<MainWindow>,
@@ -206,7 +212,7 @@ pub(crate) fn rebuild_file_list(
             empty_label.set_margin_top(12);
             file_list.append(&empty_label);
         } else {
-            file_list.append(&empty_project_state(language));
+            file_list.append(empty_state);
         }
         return;
     }
@@ -331,7 +337,7 @@ pub(crate) fn rebuild_file_list(
     }
 }
 
-fn empty_project_state(language: UiLanguage) -> gtk::Widget {
+fn empty_project_state(language: UiLanguage) -> (gtk::Widget, gtk::Button, gtk::Button) {
     let state = gtk::Box::new(gtk::Orientation::Vertical, 4);
     state.add_css_class("potoo-sidebar-empty-state");
     state.set_margin_start(14);
@@ -351,5 +357,22 @@ fn empty_project_state(language: UiLanguage) -> gtk::Widget {
     description.set_wrap(true);
     description.add_css_class("potoo-muted");
     state.append(&description);
-    state.upcast()
+
+    let open_project_button = icon_label_button(
+        "folder-open",
+        tr(language, "Abrir pasta"),
+        tr(language, "Abrir pasta de projeto"),
+        "potoo-sidebar-empty-action",
+    );
+    open_project_button.set_margin_top(6);
+    let open_file_button = icon_label_button(
+        "open-document",
+        tr(language, "Abrir arquivo"),
+        tr(language, "Abrir arquivo de código"),
+        "potoo-sidebar-empty-action",
+    );
+    state.append(&open_project_button);
+    state.append(&open_file_button);
+
+    (state.upcast(), open_project_button, open_file_button)
 }
