@@ -159,11 +159,33 @@ pub(crate) fn build_learning_panel(language: UiLanguage) -> gtk::Widget {
     panel.upcast()
 }
 
-pub(crate) fn build_output_panel(language: UiLanguage) -> (gtk::Notebook, gtk::TextBuffer) {
-    let notebook = gtk::Notebook::new();
-    notebook.add_css_class("potoo-output-notebook");
-    notebook.set_tab_pos(gtk::PositionType::Top);
-    notebook.set_vexpand(true);
+pub(crate) fn build_output_panel(
+    language: UiLanguage,
+) -> (gtk::Box, gtk::TextBuffer, gtk::Button, gtk::TextView) {
+    let panel = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    panel.add_css_class("potoo-output-panel");
+    panel.set_vexpand(true);
+
+    let tabs = gtk::Box::new(gtk::Orientation::Horizontal, 2);
+    tabs.add_css_class("potoo-output-tabs");
+    let output_tab = gtk::Button::with_label(tr(language, "Saída"));
+    let problems_tab = gtk::Button::with_label(tr(language, "Problemas"));
+    let debugger_tab = gtk::Button::with_label(tr(language, "Depurador"));
+    let tab_buttons = [
+        output_tab.clone(),
+        problems_tab.clone(),
+        debugger_tab.clone(),
+    ];
+    output_tab.add_css_class("potoo-output-tab-selected");
+    for button in &tab_buttons {
+        button.add_css_class("potoo-output-tab");
+        tabs.append(button);
+    }
+
+    let stack = gtk::Stack::new();
+    stack.add_css_class("potoo-output-stack");
+    stack.set_vexpand(true);
+    stack.set_transition_type(gtk::StackTransitionType::None);
 
     let output = gtk::TextView::builder()
         .editable(false)
@@ -176,53 +198,63 @@ pub(crate) fn build_output_panel(language: UiLanguage) -> (gtk::Notebook, gtk::T
         .bottom_margin(12)
         .build();
     output.add_css_class("potoo-output-view");
+    output.add_css_class("potoo-output-placeholder-text");
     let output_buffer = output.buffer();
     output_buffer.set_text(tr(language, "A saída aparecerá aqui após a execução."));
     let output_scroll = gtk::ScrolledWindow::builder()
         .vexpand(true)
         .child(&output)
         .build();
-    notebook.append_page(
-        &output_scroll,
-        Some(&gtk::Label::new(Some(tr(language, "Saída")))),
-    );
+    stack.add_named(&output_scroll, Some("output"));
 
     let problems = empty_tool_page(
         tr(language, "Nenhum problema detectado"),
-        tr(language, "Os erros de sintaxe e execução aparecerão aqui."),
+        tr(language, "Erros de sintaxe e execução aparecerão aqui."),
     );
-    notebook.append_page(
-        &problems,
-        Some(&gtk::Label::new(Some(tr(language, "Problemas")))),
-    );
+    stack.add_named(&problems, Some("problems"));
 
     let debugger = empty_tool_page(
-        tr(language, "Depurador"),
+        tr(language, "Depurador pronto"),
         tr(
             language,
-            "Acompanhe a execução linha por linha e os valores das variáveis.",
+            "Execute o programa passo a passo para acompanhar as variáveis.",
         ),
     );
-    notebook.append_page(
-        &debugger,
-        Some(&gtk::Label::new(Some(tr(language, "Depurador")))),
-    );
-    (notebook, output_buffer)
+    stack.add_named(&debugger, Some("debugger"));
+    stack.set_visible_child_name("output");
+
+    for (button, child_name) in tab_buttons.iter().zip(["output", "problems", "debugger"]) {
+        let button_for_switch = button.clone();
+        let stack_for_switch = stack.clone();
+        let buttons_for_selection = tab_buttons.clone();
+        button.connect_clicked(move |_| {
+            for candidate in &buttons_for_selection {
+                candidate.remove_css_class("potoo-output-tab-selected");
+            }
+            button_for_switch.add_css_class("potoo-output-tab-selected");
+            stack_for_switch.set_visible_child_name(child_name);
+        });
+    }
+
+    panel.append(&tabs);
+    panel.append(&stack);
+    (panel, output_buffer, output_tab, output)
 }
 
 fn empty_tool_page(title: &str, description: &str) -> gtk::Widget {
-    let page = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    page.set_margin_start(16);
-    page.set_margin_end(16);
-    page.set_margin_top(16);
-    page.set_margin_bottom(16);
+    let page = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    page.add_css_class("potoo-output-body");
+    page.set_margin_start(14);
+    page.set_margin_end(14);
+    page.set_margin_top(12);
+    page.set_margin_bottom(12);
     let title_label = gtk::Label::new(Some(title));
     title_label.set_xalign(0.0);
-    title_label.add_css_class("heading");
+    title_label.add_css_class("potoo-output-problem-title");
     let description_label = gtk::Label::new(Some(description));
     description_label.set_xalign(0.0);
     description_label.set_wrap(true);
-    description_label.add_css_class("dim-label");
+    description_label.add_css_class("potoo-output-placeholder");
     page.append(&title_label);
     page.append(&description_label);
     page.upcast()

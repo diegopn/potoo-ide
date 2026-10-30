@@ -108,6 +108,13 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Criar dentro de" => "Create inside",
             "Pasta do projeto" => "Project folder",
             "A pasta selecionada não está disponível." => "The selected folder is unavailable.",
+            "Erros de sintaxe e execução aparecerão aqui." => {
+                "Syntax and runtime errors will appear here."
+            }
+            "Depurador pronto" => "Debugger ready",
+            "Execute o programa passo a passo para acompanhar as variáveis." => {
+                "Step through the program to follow its variables."
+            }
             "Escolher pasta" => "Choose folder",
             "Escolha a pasta de destino" => "Choose a destination folder",
             "Selecione uma pasta local para criar o projeto." => {
@@ -332,6 +339,13 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Pasta do projeto" => "Carpeta del proyecto",
             "A pasta selecionada não está disponível." => {
                 "La carpeta seleccionada no está disponible."
+            }
+            "Erros de sintaxe e execução aparecerão aqui." => {
+                "Los errores de sintaxis y ejecución aparecerán aquí."
+            }
+            "Depurador pronto" => "Depurador listo",
+            "Execute o programa passo a passo para acompanhar as variáveis." => {
+                "Ejecuta el programa paso a paso para seguir sus variables."
             }
             "Escolher pasta" => "Elegir carpeta",
             "Escolha a pasta de destino" => "Elige una carpeta de destino",
@@ -1313,6 +1327,7 @@ pub struct MainUi {
     line_numbers: gtk::Label,
     line_numbers_separator: gtk::Separator,
     output_buffer: gtk::TextBuffer,
+    output_view: gtk::TextView,
     output_status: gtk::Label,
     displayed_language: Option<Language>,
     displayed_active_document_id: Option<u64>,
@@ -1839,6 +1854,13 @@ impl SimpleComponent for MainWindow {
 
         if ui.displayed_output_text != self.output_text {
             ui.output_buffer.set_text(&self.output_text);
+            if self.output_text == self.text("A saída aparecerá aqui após a execução.") {
+                ui.output_view
+                    .add_css_class("potoo-output-placeholder-text");
+            } else {
+                ui.output_view
+                    .remove_css_class("potoo-output-placeholder-text");
+            }
             ui.displayed_output_text.clone_from(&self.output_text);
         }
         if ui.displayed_output_status != self.output_status {
@@ -1981,7 +2003,8 @@ fn build_window_content(
     editor.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
     editor.append(&editor_row);
 
-    let (output_notebook, output_buffer) = content_panel::build_output_panel(ui_language);
+    let (output_panel, output_buffer, output_tab_output, output_view) =
+        content_panel::build_output_panel(ui_language);
     let output_status = gtk::Label::new(Some(tr(ui_language, "Pronto para executar")));
     output_status.set_xalign(0.0);
     output_status.add_css_class("potoo-muted");
@@ -1992,7 +2015,7 @@ fn build_window_content(
 
     let output_area = gtk::Box::new(gtk::Orientation::Vertical, 0);
     output_area.add_css_class("potoo-output-area");
-    output_area.append(&output_notebook);
+    output_area.append(&output_panel);
     output_area.append(&output_status_row);
 
     let editor_output = gtk::Paned::new(gtk::Orientation::Vertical);
@@ -2164,9 +2187,9 @@ fn build_window_content(
     });
 
     let sender_for_run = sender.clone();
-    let output_notebook_for_run = output_notebook.clone();
+    let output_tab_for_run = output_tab_output.clone();
     run_button.connect_clicked(move |_| {
-        output_notebook_for_run.set_current_page(Some(0));
+        output_tab_for_run.emit_clicked();
         sender_for_run.input(MainWindowMsg::Run);
     });
 
@@ -2243,6 +2266,7 @@ fn build_window_content(
         line_numbers,
         line_numbers_separator,
         output_buffer,
+        output_view,
         output_status,
         displayed_language: Some(Language::Portugol),
         displayed_active_document_id: Some(0),
@@ -2311,17 +2335,17 @@ fn build_settings_window(
     let window_for_titlebar_close = window.clone();
     close_button.connect_clicked(move |_| window_for_titlebar_close.close());
 
-    let page = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    let page = gtk::Box::new(gtk::Orientation::Vertical, 0);
     page.add_css_class("potoo-settings-page");
     page.set_margin_start(22);
     page.set_margin_end(22);
-    page.set_margin_top(16);
-    page.set_margin_bottom(16);
+    page.set_margin_top(18);
+    page.set_margin_bottom(20);
 
     let description = gtk::Label::new(Some(tr(language, "Personalize a aparência e o editor.")));
     description.set_xalign(0.0);
     description.add_css_class("potoo-settings-description");
-    description.set_margin_bottom(2);
+    description.set_margin_bottom(14);
     page.append(&description);
 
     let appearance = settings_section(tr(language, "Aparência"));
@@ -2334,7 +2358,7 @@ fn build_settings_window(
         button.add_css_class("potoo-theme-choice");
     }
     select_theme_button(&theme_buttons, preferences.theme.selected_index());
-    let theme_options = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    let theme_options = gtk::Box::new(gtk::Orientation::Horizontal, 3);
     theme_options.add_css_class("potoo-theme-options");
     theme_options.set_homogeneous(true);
     for button in &theme_buttons {
@@ -2348,6 +2372,7 @@ fn build_settings_window(
     page.append(&appearance);
 
     let editor = settings_section(tr(language, "Editor"));
+    editor.add_css_class("potoo-settings-section-separated");
     let font_size_picker = gtk::DropDown::from_strings(&["14 px", "15 px", "16 px", "18 px"]);
     font_size_picker.add_css_class("potoo-settings-picker");
     font_size_picker.set_selected(font_size_index(preferences.font_size));
@@ -2388,6 +2413,7 @@ fn build_settings_window(
     page.append(&editor);
 
     let interface = settings_section(tr(language, "Interface"));
+    interface.add_css_class("potoo-settings-section-separated");
     let ui_language_picker = gtk::DropDown::from_strings(&["Português", "English", "Español"]);
     ui_language_picker.add_css_class("potoo-settings-picker");
     ui_language_picker.set_selected(preferences.ui_language.selected_index());
@@ -2402,6 +2428,7 @@ fn build_settings_window(
     page.append(&interface);
 
     let about_section = settings_section(tr(language, "Sobre"));
+    about_section.add_css_class("potoo-settings-section-separated");
     let about_button = gtk::Button::new();
     about_button.add_css_class("potoo-settings-about-entry");
     about_button.set_hexpand(true);
@@ -2438,13 +2465,13 @@ fn build_settings_window(
     about_page.set_hexpand(true);
     about_page.set_vexpand(true);
 
-    let about_content = gtk::Box::new(gtk::Orientation::Vertical, 16);
+    let about_content = gtk::Box::new(gtk::Orientation::Vertical, 0);
     about_content.add_css_class("potoo-about-content");
     about_content.set_halign(gtk::Align::Center);
     about_content.set_valign(gtk::Align::Center);
     about_content.set_size_request(500, -1);
 
-    let identity = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    let identity = gtk::Box::new(gtk::Orientation::Vertical, 6);
     identity.add_css_class("potoo-about-identity");
     identity.set_halign(gtk::Align::Center);
     let logo = header::app_icon();
@@ -2655,11 +2682,11 @@ fn select_theme_button(buttons: &[gtk::Button; 3], selected_index: u32) {
 }
 
 fn settings_row<W: IsA<gtk::Widget>>(title: &str, description: &str, control: &W) -> gtk::Box {
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 16);
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 18);
     row.add_css_class("potoo-settings-row");
     control.set_valign(gtk::Align::Center);
 
-    let labels = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    let labels = gtk::Box::new(gtk::Orientation::Vertical, 2);
     labels.set_hexpand(true);
     let title_label = gtk::Label::new(Some(title));
     title_label.set_xalign(0.0);
@@ -2757,7 +2784,7 @@ fn show_new_project_dialog(
 ) {
     let dialog = gtk::Window::new();
     dialog.set_title(Some(tr(ui_language, "Criar projeto")));
-    dialog.set_default_size(680, 420);
+    dialog.set_default_size(680, 450);
     dialog.set_resizable(false);
     dialog.set_transient_for(Some(parent));
     dialog.set_modal(true);
@@ -2768,12 +2795,15 @@ fn show_new_project_dialog(
     }
     set_dialog_titlebar(&dialog, ui_language, "Criar projeto");
 
-    let content = gtk::Box::new(gtk::Orientation::Vertical, 12);
-    content.add_css_class("potoo-dialog-surface");
+    let dialog_content = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    dialog_content.add_css_class("potoo-dialog-surface");
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    content.add_css_class("potoo-dialog-body");
+    content.set_vexpand(true);
     content.set_margin_start(22);
     content.set_margin_end(22);
-    content.set_margin_top(18);
-    content.set_margin_bottom(16);
+    content.set_margin_top(20);
+    content.set_margin_bottom(20);
 
     let description = gtk::Label::new(Some(tr(
         ui_language,
@@ -2781,10 +2811,13 @@ fn show_new_project_dialog(
     )));
     description.set_xalign(0.0);
     description.set_wrap(true);
-    description.add_css_class("potoo-settings-description");
+    description.add_css_class("potoo-dialog-intro");
+    description.set_margin_bottom(18);
     content.append(&description);
 
-    let name_field = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    let name_field = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    name_field.add_css_class("potoo-dialog-field");
+    name_field.set_margin_bottom(16);
     let name_label = gtk::Label::new(Some(tr(ui_language, "Nome do projeto")));
     name_label.set_xalign(0.0);
     name_label.add_css_class("potoo-project-field-label");
@@ -2796,11 +2829,14 @@ fn show_new_project_dialog(
     name_field.append(&name);
     content.append(&name_field);
 
-    let language_field = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    let language_field = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    language_field.add_css_class("potoo-dialog-field");
+    language_field.set_margin_bottom(16);
     let language_label = gtk::Label::new(Some(tr(ui_language, "Linguagem inicial")));
     language_label.set_xalign(0.0);
     language_label.add_css_class("potoo-project-field-label");
     let language_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    language_row.set_margin_top(1);
     let portugol_button =
         language_option_button("Portugol", tr(ui_language, "Arquivo inicial .por"));
     let visualg_button = language_option_button("VisuAlg", tr(ui_language, "Arquivo inicial .alg"));
@@ -2834,13 +2870,15 @@ fn show_new_project_dialog(
         selected_language_for_visualg.set(Language::Visualg);
     });
 
-    let location_field = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    let location_field = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    location_field.add_css_class("potoo-dialog-field");
     let location_label = gtk::Label::new(Some(tr(ui_language, "Local do projeto")));
     location_label.set_xalign(0.0);
     location_label.add_css_class("potoo-project-field-label");
     let initial_folder = project_default_directory();
     let selected_folder = Rc::new(RefCell::new(initial_folder.clone()));
     let location_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    location_row.set_margin_top(1);
     let location = gtk::Label::new(Some(&initial_folder.display().to_string()));
     location.set_xalign(0.0);
     location.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
@@ -2866,16 +2904,20 @@ fn show_new_project_dialog(
 
     let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     actions.add_css_class("potoo-project-actions");
-    actions.set_halign(gtk::Align::End);
-    actions.set_margin_top(2);
+    actions.add_css_class("potoo-dialog-actions");
+    actions.set_hexpand(true);
+    let actions_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    actions_spacer.set_hexpand(true);
     let cancel_button = gtk::Button::with_label(tr(ui_language, "Cancelar"));
     cancel_button.add_css_class("potoo-project-cancel-button");
     let create_button = gtk::Button::with_label(tr(ui_language, "Criar projeto"));
     create_button.add_css_class("potoo-run-button");
+    actions.append(&actions_spacer);
     actions.append(&cancel_button);
     actions.append(&create_button);
-    content.append(&actions);
-    dialog.set_child(Some(&content));
+    dialog_content.append(&content);
+    dialog_content.append(&actions);
+    dialog.set_child(Some(&dialog_content));
 
     let dialog_for_cancel = dialog.clone();
     cancel_button.connect_clicked(move |_| dialog_for_cancel.close());
@@ -3029,7 +3071,7 @@ fn show_new_file_dialog(
 ) {
     let dialog = gtk::Window::new();
     dialog.set_title(Some(tr(ui_language, "Novo arquivo")));
-    dialog.set_default_size(520, 420);
+    dialog.set_default_size(680, 450);
     dialog.set_resizable(false);
     dialog.set_transient_for(Some(parent));
     dialog.set_modal(true);
@@ -3040,23 +3082,30 @@ fn show_new_file_dialog(
     }
     set_dialog_titlebar(&dialog, ui_language, "Novo arquivo");
 
-    let content = gtk::Box::new(gtk::Orientation::Vertical, 12);
-    content.add_css_class("potoo-dialog-surface");
+    let dialog_content = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    dialog_content.add_css_class("potoo-dialog-surface");
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    content.add_css_class("potoo-dialog-body");
+    content.set_vexpand(true);
     content.set_margin_start(22);
     content.set_margin_end(22);
     content.set_margin_top(20);
-    content.set_margin_bottom(18);
+    content.set_margin_bottom(20);
     let description = gtk::Label::new(Some(tr(
         ui_language,
         "Crie um arquivo dentro do projeto atual.",
     )));
     description.set_xalign(0.0);
-    description.add_css_class("potoo-settings-description");
+    description.add_css_class("potoo-dialog-intro");
+    description.set_margin_bottom(18);
     content.append(&description);
+
+    let name_field = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    name_field.add_css_class("potoo-dialog-field");
+    name_field.set_margin_bottom(16);
     let name_label = gtk::Label::new(Some(tr(ui_language, "Nome do arquivo")));
     name_label.set_xalign(0.0);
     name_label.add_css_class("potoo-project-field-label");
-    content.append(&name_label);
     let name = gtk::Entry::new();
     name.set_placeholder_text(Some(tr(
         ui_language,
@@ -3064,12 +3113,18 @@ fn show_new_file_dialog(
     )));
     name.set_text(tr(ui_language, "novo-arquivo"));
     name.add_css_class("potoo-project-name-entry");
-    content.append(&name);
+    name_field.append(&name_label);
+    name_field.append(&name);
+    content.append(&name_field);
+
+    let language_field = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    language_field.add_css_class("potoo-dialog-field");
+    language_field.set_margin_bottom(16);
     let language_label = gtk::Label::new(Some(tr(ui_language, "Linguagem")));
     language_label.set_xalign(0.0);
     language_label.add_css_class("potoo-project-field-label");
-    content.append(&language_label);
     let language_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    language_row.set_margin_top(1);
     let portugol_button = language_option_button("Portugol", ".por");
     let visualg_button = language_option_button("VisuAlg", ".alg");
     for button in [&portugol_button, &visualg_button] {
@@ -3082,7 +3137,9 @@ fn show_new_file_dialog(
     }
     language_row.append(&portugol_button);
     language_row.append(&visualg_button);
-    content.append(&language_row);
+    language_field.append(&language_label);
+    language_field.append(&language_row);
+    content.append(&language_field);
     let selected_language = Rc::new(Cell::new(default_language));
     let visualg_for_portugol = visualg_button.clone();
     let selected_for_portugol = selected_language.clone();
@@ -3099,6 +3156,8 @@ fn show_new_file_dialog(
         selected_for_visualg.set(Language::Visualg);
     });
 
+    let folder_field = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    folder_field.add_css_class("potoo-dialog-field");
     let folder_label = gtk::Label::new(Some(tr(ui_language, "Pasta")));
     folder_label.set_xalign(0.0);
     folder_label.add_css_class("potoo-project-field-label");
@@ -3109,19 +3168,26 @@ fn show_new_file_dialog(
     let folder_picker = gtk::DropDown::from_strings(&folder_names);
     folder_picker.add_css_class("potoo-settings-picker");
     folder_picker.set_hexpand(true);
-    content.append(&folder_label);
-    content.append(&folder_picker);
+    folder_picker.set_margin_top(1);
+    folder_field.append(&folder_label);
+    folder_field.append(&folder_picker);
+    content.append(&folder_field);
 
     let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    actions.set_halign(gtk::Align::End);
+    actions.add_css_class("potoo-dialog-actions");
+    actions.set_hexpand(true);
+    let actions_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    actions_spacer.set_hexpand(true);
     let cancel_button = gtk::Button::with_label(tr(ui_language, "Cancelar"));
     cancel_button.add_css_class("potoo-project-cancel-button");
     let create_button = gtk::Button::with_label(tr(ui_language, "Criar arquivo"));
     create_button.add_css_class("potoo-run-button");
+    actions.append(&actions_spacer);
     actions.append(&cancel_button);
     actions.append(&create_button);
-    content.append(&actions);
-    dialog.set_child(Some(&content));
+    dialog_content.append(&content);
+    dialog_content.append(&actions);
+    dialog.set_child(Some(&dialog_content));
 
     let dialog_for_cancel = dialog.clone();
     cancel_button.connect_clicked(move |_| dialog_for_cancel.close());
@@ -3154,7 +3220,7 @@ fn show_new_folder_dialog(
 ) {
     let dialog = gtk::Window::new();
     dialog.set_title(Some(tr(ui_language, "Nova pasta")));
-    dialog.set_default_size(460, 300);
+    dialog.set_default_size(520, 340);
     dialog.set_resizable(false);
     dialog.set_transient_for(Some(parent));
     dialog.set_modal(true);
@@ -3165,35 +3231,45 @@ fn show_new_folder_dialog(
     }
     set_dialog_titlebar(&dialog, ui_language, "Nova pasta");
 
-    let content = gtk::Box::new(gtk::Orientation::Vertical, 12);
-    content.add_css_class("potoo-dialog-surface");
+    let dialog_content = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    dialog_content.add_css_class("potoo-dialog-surface");
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    content.add_css_class("potoo-dialog-body");
+    content.set_vexpand(true);
     content.set_margin_start(22);
     content.set_margin_end(22);
     content.set_margin_top(20);
-    content.set_margin_bottom(18);
+    content.set_margin_bottom(20);
     let description = gtk::Label::new(Some(tr(
         ui_language,
         "Organize seus programas em uma pasta do projeto.",
     )));
     description.set_xalign(0.0);
-    description.add_css_class("potoo-settings-description");
+    description.add_css_class("potoo-dialog-intro");
+    description.set_margin_bottom(18);
     content.append(&description);
+
+    let name_field = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    name_field.add_css_class("potoo-dialog-field");
+    name_field.set_margin_bottom(16);
     let name_label = gtk::Label::new(Some(tr(ui_language, "Nome da pasta")));
     name_label.set_xalign(0.0);
     name_label.add_css_class("potoo-project-field-label");
-    content.append(&name_label);
     let name = gtk::Entry::new();
     name.set_placeholder_text(Some(tr(
         ui_language,
         "Nome da pasta, por exemplo: exercicios",
     )));
     name.add_css_class("potoo-project-name-entry");
-    content.append(&name);
+    name_field.append(&name_label);
+    name_field.append(&name);
+    content.append(&name_field);
 
+    let parent_field = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    parent_field.add_css_class("potoo-dialog-field");
     let parent_label = gtk::Label::new(Some(tr(ui_language, "Criar dentro de")));
     parent_label.set_xalign(0.0);
     parent_label.add_css_class("potoo-project-field-label");
-    content.append(&parent_label);
     let folder_names = folder_options
         .iter()
         .map(|(name, _)| name.as_str())
@@ -3201,18 +3277,26 @@ fn show_new_folder_dialog(
     let folder_picker = gtk::DropDown::from_strings(&folder_names);
     folder_picker.add_css_class("potoo-settings-picker");
     folder_picker.set_hexpand(true);
-    content.append(&folder_picker);
+    folder_picker.set_margin_top(1);
+    parent_field.append(&parent_label);
+    parent_field.append(&folder_picker);
+    content.append(&parent_field);
 
     let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    actions.set_halign(gtk::Align::End);
+    actions.add_css_class("potoo-dialog-actions");
+    actions.set_hexpand(true);
+    let actions_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    actions_spacer.set_hexpand(true);
     let cancel_button = gtk::Button::with_label(tr(ui_language, "Cancelar"));
     cancel_button.add_css_class("potoo-project-cancel-button");
     let create_button = gtk::Button::with_label(tr(ui_language, "Criar pasta"));
     create_button.add_css_class("potoo-run-button");
+    actions.append(&actions_spacer);
     actions.append(&cancel_button);
     actions.append(&create_button);
-    content.append(&actions);
-    dialog.set_child(Some(&content));
+    dialog_content.append(&content);
+    dialog_content.append(&actions);
+    dialog.set_child(Some(&dialog_content));
 
     let dialog_for_cancel = dialog.clone();
     cancel_button.connect_clicked(move |_| dialog_for_cancel.close());
