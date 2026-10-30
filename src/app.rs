@@ -71,6 +71,21 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Salvar arquivo" => "Save file",
             "Salvar" => "Save",
             "Configurações" => "Settings",
+            "Sobre" => "About",
+            "Sobre o Potoo IDE" => "About Potoo IDE",
+            "Versão e links do projeto" => "Project version and links",
+            "← Configurações" => "← Settings",
+            "Criado por Diego Pereira do Nascimento" => {
+                "Created by Diego Pereira do Nascimento"
+            }
+            "Versão" => "Version",
+            "Relatar um problema" => "Report an issue",
+            "Repositório do projeto" => "Project repository",
+            "Site do projeto" => "Project website",
+            "Ajuda" => "Help",
+            "Doar" => "Donate",
+            "Site do criador do projeto" => "Project creator's website",
+            "Contato do criador" => "Contact the creator",
             "Executar" => "Run",
             "Arquivos" => "Files",
             "Criar arquivo" => "Create file",
@@ -272,6 +287,21 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Salvar arquivo" => "Guardar archivo",
             "Salvar" => "Guardar",
             "Configurações" => "Configuración",
+            "Sobre" => "Acerca de",
+            "Sobre o Potoo IDE" => "Acerca de Potoo IDE",
+            "Versão e links do projeto" => "Versión y enlaces del proyecto",
+            "← Configurações" => "← Configuración",
+            "Criado por Diego Pereira do Nascimento" => {
+                "Creado por Diego Pereira do Nascimento"
+            }
+            "Versão" => "Versión",
+            "Relatar um problema" => "Informar de un problema",
+            "Repositório do projeto" => "Repositorio del proyecto",
+            "Site do projeto" => "Sitio del proyecto",
+            "Ajuda" => "Ayuda",
+            "Doar" => "Donar",
+            "Site do criador do projeto" => "Sitio del creador del proyecto",
+            "Contato do criador" => "Contactar al creador",
             "Executar" => "Ejecutar",
             "Arquivos" => "Archivos",
             "Criar arquivo" => "Crear archivo",
@@ -2275,6 +2305,25 @@ fn build_settings_window(
         &ui_language_picker,
     ));
     page.append(&interface);
+
+    let about_section = settings_section(tr(language, "Sobre"));
+    let about_button = gtk::Button::new();
+    about_button.add_css_class("potoo-settings-about-entry");
+    about_button.set_hexpand(true);
+    let about_button_content = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    let about_button_title = gtk::Label::new(Some(tr(language, "Sobre o Potoo IDE")));
+    about_button_title.set_xalign(0.0);
+    about_button_title.add_css_class("potoo-settings-row-title");
+    let about_button_description =
+        gtk::Label::new(Some(tr(language, "Versão e links do projeto")));
+    about_button_description.set_xalign(0.0);
+    about_button_description.add_css_class("potoo-settings-row-description");
+    about_button_content.append(&about_button_title);
+    about_button_content.append(&about_button_description);
+    about_button.set_child(Some(&about_button_content));
+    about_section.append(&about_button);
+    page.append(&about_section);
+
     let scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
         .vscrollbar_policy(gtk::PolicyType::Automatic)
@@ -2282,7 +2331,149 @@ fn build_settings_window(
         .vexpand(true)
         .child(&page)
         .build();
-    window.set_child(Some(&scroll));
+
+    let about_page = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    about_page.add_css_class("potoo-about-page");
+    about_page.set_hexpand(true);
+    about_page.set_vexpand(true);
+
+    let about_content = gtk::Box::new(gtk::Orientation::Vertical, 16);
+    about_content.add_css_class("potoo-about-content");
+    about_content.set_halign(gtk::Align::Center);
+    about_content.set_valign(gtk::Align::Center);
+    about_content.set_size_request(420, -1);
+
+    let identity = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    identity.add_css_class("potoo-about-identity");
+    identity.set_halign(gtk::Align::Center);
+    let logo = header::app_icon();
+    logo.set_pixel_size(88);
+    logo.add_css_class("potoo-about-logo");
+    let app_name = gtk::Label::new(Some("Potoo IDE"));
+    app_name.add_css_class("potoo-about-title");
+    let creator = gtk::Label::new(Some(tr(
+        language,
+        "Criado por Diego Pereira do Nascimento",
+    )));
+    creator.add_css_class("potoo-about-creator");
+    creator.set_wrap(true);
+    creator.set_justify(gtk::Justification::Center);
+    let version = gtk::Label::new(Some(&format!(
+        "{} {}",
+        tr(language, "Versão"),
+        env!("CARGO_PKG_VERSION")
+    )));
+    version.add_css_class("potoo-about-version");
+    identity.append(&logo);
+    identity.append(&app_name);
+    identity.append(&creator);
+    identity.append(&version);
+    about_content.append(&identity);
+
+    let about_links = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    about_links.add_css_class("potoo-about-links");
+    let link_items = [
+        (
+            tr(language, "Relatar um problema"),
+            "https://github.com/diegopn/potoo-ide/issues",
+        ),
+        (
+            tr(language, "Repositório do projeto"),
+            "https://github.com/diegopn/potoo-ide",
+        ),
+        (
+            tr(language, "Site do projeto"),
+            "https://diegopn.github.io/potoo-site/",
+        ),
+        (
+            tr(language, "Ajuda"),
+            "https://diegopn.github.io/potoo-site/manual/",
+        ),
+        (
+            tr(language, "Doar"),
+            "https://github.com/sponsors/diegopn",
+        ),
+        (
+            tr(language, "Site do criador do projeto"),
+            "https://diegopn.github.io/",
+        ),
+        (
+            tr(language, "Contato do criador"),
+            "https://diegopn.github.io/#contato",
+        ),
+    ];
+    for (index, (label, uri)) in link_items.iter().enumerate() {
+        let link = gtk::LinkButton::with_label(uri, label);
+        link.add_css_class("potoo-about-link");
+        link.set_hexpand(true);
+        link.set_halign(gtk::Align::Fill);
+        link.set_tooltip_text(Some(uri));
+        let link_content = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        link_content.set_hexpand(true);
+        let link_label = gtk::Label::new(Some(label));
+        link_label.set_xalign(0.0);
+        link_label.set_hexpand(true);
+        link_content.append(&link_label);
+        let external_icon = icon("open-external");
+        external_icon.set_pixel_size(14);
+        link_content.append(&external_icon);
+        link.set_child(Some(&link_content));
+        about_links.append(&link);
+        if index < link_items.len() - 1 {
+            let separator = gtk::Separator::new(gtk::Orientation::Horizontal);
+            separator.add_css_class("potoo-about-link-separator");
+            about_links.append(&separator);
+        }
+    }
+    about_content.append(&about_links);
+    about_page.append(&about_content);
+
+    let about_scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vscrollbar_policy(gtk::PolicyType::Automatic)
+        .hexpand(true)
+        .vexpand(true)
+        .child(&about_page)
+        .build();
+
+    let stack = gtk::Stack::new();
+    stack.add_css_class("potoo-settings-stack");
+    stack.set_hexpand(true);
+    stack.set_vexpand(true);
+    stack.add_named(&scroll, Some("preferences"));
+    stack.add_named(&about_scroll, Some("about"));
+    stack.set_visible_child_name("preferences");
+
+    let navigation = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    navigation.add_css_class("potoo-settings-navigation");
+    navigation.set_visible(false);
+    let back_button = gtk::Button::with_label(tr(language, "← Configurações"));
+    back_button.add_css_class("potoo-settings-back");
+    navigation.append(&back_button);
+
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    content.add_css_class("potoo-settings-root");
+    content.append(&navigation);
+    content.append(&stack);
+    window.set_child(Some(&content));
+
+    let stack_for_about = stack.clone();
+    let navigation_for_about = navigation.clone();
+    let window_for_about = window.clone();
+    about_button.connect_clicked(move |_| {
+        stack_for_about.set_visible_child_name("about");
+        navigation_for_about.set_visible(true);
+        window_for_about.set_title(Some(tr(language, "Sobre o Potoo IDE")));
+    });
+
+    let stack_for_back = stack.clone();
+    let navigation_for_back = navigation.clone();
+    let window_for_back = window.clone();
+    back_button.connect_clicked(move |_| {
+        stack_for_back.set_visible_child_name("preferences");
+        navigation_for_back.set_visible(false);
+        window_for_back.set_title(Some(tr(language, "Configurações")));
+    });
 
     let sender_for_theme = sender.clone();
     for (index, button) in theme_buttons.iter().enumerate() {
@@ -2331,7 +2522,13 @@ fn build_settings_window(
         ));
     });
 
+    let stack_for_close = stack.clone();
+    let navigation_for_close = navigation.clone();
+    let window_for_close = window.clone();
     window.connect_close_request(move |_| {
+        stack_for_close.set_visible_child_name("preferences");
+        navigation_for_close.set_visible(false);
+        window_for_close.set_title(Some(tr(language, "Configurações")));
         sender.input(MainWindowMsg::CloseSettings);
         gtk::glib::Propagation::Stop
     });

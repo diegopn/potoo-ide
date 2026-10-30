@@ -3,7 +3,7 @@ use crate::components::icon;
 use gtk::prelude::*;
 use std::path::Path;
 
-fn app_icon() -> gtk::Image {
+pub(crate) fn app_icon() -> gtk::Image {
     let development_icon = "data/icons/hicolor/scalable/apps/io.github.diegopn.potooide.svg";
     let image = if Path::new(development_icon).exists() {
         gtk::Image::from_file(development_icon)

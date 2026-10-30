@@ -687,6 +687,38 @@ label.potoo-line-numbers.potoo-font-17 {
   color: var(--potoo-text);
 }
 
+.potoo-settings-root,
+.potoo-settings-stack,
+.potoo-about-page {
+  background-color: var(--potoo-window-bg);
+  color: var(--potoo-text);
+}
+
+.potoo-settings-navigation {
+  min-height: 42px;
+  padding: 0 10px;
+  background-color: var(--potoo-window-bg);
+  border-bottom: 1px solid var(--potoo-border);
+}
+
+.potoo-settings-back {
+  min-height: 32px;
+  padding: 0 8px;
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 0;
+  color: var(--potoo-text-secondary);
+  font-size: 13px;
+  font-weight: 550;
+  box-shadow: none;
+}
+
+.potoo-settings-back:hover {
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
+}
+
 .potoo-settings-title {
   color: var(--potoo-text);
   font-size: 22px;
@@ -732,6 +764,78 @@ label.potoo-line-numbers.potoo-font-17 {
   color: var(--potoo-text);
   font-size: 13px;
   font-weight: 680;
+}
+
+.potoo-settings-about-entry {
+  min-height: 50px;
+  padding: 8px 0;
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 0;
+  color: var(--potoo-text);
+  text-align: left;
+  box-shadow: none;
+}
+
+.potoo-settings-about-entry:hover {
+  background-color: var(--potoo-panel-hover-bg);
+}
+
+.potoo-about-content {
+  padding: 28px 0;
+}
+
+.potoo-about-identity {
+  margin-bottom: 8px;
+}
+
+.potoo-about-title {
+  color: var(--potoo-text);
+  font-size: 24px;
+  font-weight: 780;
+}
+
+.potoo-about-creator {
+  color: var(--potoo-text-secondary);
+  font-size: 14px;
+}
+
+.potoo-about-version {
+  margin-top: 2px;
+  padding: 4px 10px;
+  background-color: var(--potoo-accent-soft-bg);
+  color: var(--potoo-accent-text);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.potoo-about-links {
+  background-color: var(--potoo-panel-bg);
+  border: 1px solid var(--potoo-border);
+}
+
+.potoo-about-link {
+  min-height: 42px;
+  padding: 0 12px;
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 0;
+  color: var(--potoo-text);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  box-shadow: none;
+}
+
+.potoo-about-link:hover {
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
+}
+
+.potoo-about-link-separator {
+  background-color: var(--potoo-border-subtle);
 }
 
 .potoo-settings-picker {
