@@ -248,14 +248,14 @@ pub(crate) fn make_syntax_tags(buffer: &gtk::TextBuffer) -> SyntaxTags {
 
 pub(crate) fn set_syntax_palette(tags: &SyntaxTags, dark: bool) {
     tags.keyword
-        .set_property("foreground", if dark { "#72cc99" } else { "#147a49" });
+        .set_property("foreground", if dark { "#80d2a2" } else { "#147a49" });
     tags.string
         .set_property("foreground", if dark { "#d6aa72" } else { "#8a5a23" });
     tags.number
         .set_property("foreground", if dark { "#b5a0eb" } else { "#6c57a3" });
     tags.current_line.set_property(
         "paragraph-background",
-        if dark { "#2f4237" } else { "#e8f2ec" },
+        if dark { "#2d4937" } else { "#e4f1e9" },
     );
 }
 

@@ -1,21 +1,21 @@
 window.potoo-window {
-  --potoo-window-bg: #f4f5f6;
-  --potoo-panel-bg: #eef0f2;
-  --potoo-panel-hover-bg: #e5e8eb;
+  --potoo-window-bg: #f3f5f2;
+  --potoo-panel-bg: #e9edea;
+  --potoo-panel-hover-bg: #dce3de;
   --potoo-surface-bg: #ffffff;
   --potoo-editor-bg: #ffffff;
-  --potoo-gutter-bg: #f7f8f9;
-  --potoo-border: #d2d7dc;
-  --potoo-border-subtle: #e3e6e9;
+  --potoo-gutter-bg: #f6f8f6;
+  --potoo-border: #cbd4ce;
+  --potoo-border-subtle: #e0e6e2;
   --potoo-text: #111111;
-  --potoo-text-secondary: #4b5563;
-  --potoo-text-muted: #626c75;
+  --potoo-text-secondary: #46534b;
+  --potoo-text-muted: #5f6e65;
   --potoo-accent: #147a49;
   --potoo-accent-hover: #0f663b;
-  --potoo-accent-soft-bg: #e8f2ec;
-  --potoo-accent-text: #147447;
-  --potoo-control-bg: #d7dde3;
-  --potoo-control-hover-bg: #cbd3db;
+  --potoo-accent-soft-bg: #e4f1e9;
+  --potoo-accent-text: #126b40;
+  --potoo-control-bg: #d8e1db;
+  --potoo-control-hover-bg: #cbd8cf;
   --potoo-switch-knob: #ffffff;
   font-family: "Inter Variable", Inter, "Segoe UI", sans-serif;
   background-color: var(--potoo-window-bg);
@@ -43,24 +43,24 @@ image.potoo-icon {
 }
 
 window.potoo-window.potoo-dark {
-  --potoo-window-bg: #2a2f34;
-  --potoo-panel-bg: #32383e;
-  --potoo-panel-hover-bg: #3d444b;
-  --potoo-surface-bg: #32383e;
-  --potoo-editor-bg: #252a2f;
-  --potoo-gutter-bg: #2b3035;
-  --potoo-border: #4a5259;
-  --potoo-border-subtle: #3c4248;
+  --potoo-window-bg: #242a26;
+  --potoo-panel-bg: #2c342f;
+  --potoo-panel-hover-bg: #38423b;
+  --potoo-surface-bg: #2c342f;
+  --potoo-editor-bg: #202622;
+  --potoo-gutter-bg: #252d28;
+  --potoo-border: #434d46;
+  --potoo-border-subtle: #353e38;
   --potoo-text: #ffffff;
-  --potoo-text-secondary: #d1d5db;
-  --potoo-text-muted: #aab2b9;
+  --potoo-text-secondary: #d6ded8;
+  --potoo-text-muted: #aab5ad;
   --potoo-accent: #1e7548;
-  --potoo-accent-hover: #176c43;
-  --potoo-accent-soft-bg: #2f4237;
-  --potoo-accent-text: #72cc99;
-  --potoo-control-bg: #3f474f;
-  --potoo-control-hover-bg: #4b535b;
-  --potoo-switch-knob: #f1f3f5;
+  --potoo-accent-hover: #23814f;
+  --potoo-accent-soft-bg: #2d4937;
+  --potoo-accent-text: #80d2a2;
+  --potoo-control-bg: #374039;
+  --potoo-control-hover-bg: #444e46;
+  --potoo-switch-knob: #f2f5f2;
   background-color: var(--potoo-window-bg);
   color: var(--potoo-text);
 }
@@ -680,7 +680,7 @@ label.potoo-line-numbers.potoo-font-18 {
 }
 
 .potoo-concept-card {
-  background-color: var(--potoo-panel-hover-bg);
+  background-color: var(--potoo-accent-soft-bg);
   border-left: 3px solid var(--potoo-accent);
 }
 
@@ -1128,7 +1128,7 @@ window.potoo-window.potoo-dark .potoo-experiment-card {
 }
 
 window.potoo-window.potoo-dark .potoo-concept-card {
-  background-color: var(--potoo-panel-hover-bg);
+  background-color: var(--potoo-accent-soft-bg);
   border-left-color: var(--potoo-accent-text);
 }
 
