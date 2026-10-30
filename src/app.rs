@@ -2519,6 +2519,7 @@ fn build_window_content(
             &window_for_new_project,
             ui_language,
             default_new_language_for_project.get(),
+            true,
             dark_theme_for_project.get(),
             sender_for_new_project.clone(),
         );
@@ -2532,6 +2533,7 @@ fn build_window_content(
             &window_for_start_portugol,
             ui_language,
             Language::Portugol,
+            false,
             dark_for_start_portugol.get(),
             sender_for_start_portugol.clone(),
         );
@@ -2545,6 +2547,7 @@ fn build_window_content(
             &window_for_start_visualg,
             ui_language,
             Language::Visualg,
+            false,
             dark_for_start_visualg.get(),
             sender_for_start_visualg.clone(),
         );
@@ -3225,12 +3228,13 @@ fn show_new_project_dialog(
     parent: &gtk::ApplicationWindow,
     ui_language: UiLanguage,
     default_language: Language,
+    show_language_selector: bool,
     initial_dark: bool,
     sender: ComponentSender<MainWindow>,
 ) {
     let dialog = gtk::Window::new();
     dialog.set_title(Some(tr(ui_language, "Criar projeto")));
-    dialog.set_default_size(680, 450);
+    dialog.set_default_size(680, if show_language_selector { 450 } else { 360 });
     dialog.set_resizable(false);
     dialog.set_transient_for(Some(parent));
     dialog.set_modal(true);
@@ -3278,6 +3282,7 @@ fn show_new_project_dialog(
     let language_field = gtk::Box::new(gtk::Orientation::Vertical, 6);
     language_field.add_css_class("potoo-dialog-field");
     language_field.set_margin_bottom(16);
+    language_field.set_visible(show_language_selector);
     let language_label = gtk::Label::new(Some(tr(
         ui_language,
         "Selecione a pseudolinguagem do projeto",
