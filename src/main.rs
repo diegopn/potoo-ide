@@ -3,7 +3,10 @@ mod components;
 
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::{ffi::c_void, path::PathBuf};
+use std::{
+    ffi::c_void,
+    path::{Path, PathBuf},
+};
 
 #[cfg(target_os = "linux")]
 #[link(name = "fontconfig")]
@@ -158,27 +161,28 @@ fn register_app_icons() {
     };
 
     let icon_theme = gtk::IconTheme::for_display(&display);
-    let mut icon_paths = vec![
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("data/icons/hicolor/symbolic/actions"),
-    ];
-    if let Ok(executable) = std::env::current_exe()
-        && let Some(directory) = executable.parent()
-    {
-        icon_paths.extend([
-            directory.join("data/icons/hicolor/symbolic/actions"),
-            directory.join("icons/hicolor/symbolic/actions"),
-            directory.join("share/icons/hicolor/symbolic/actions"),
-            directory.join("../share/icons/hicolor/symbolic/actions"),
-            directory.join("../Resources/icons/hicolor/symbolic/actions"),
-        ]);
-    }
-
-    for path in icon_paths {
+    let executable_directory = std::env::current_exe()
+        .ok()
+        .and_then(|executable| executable.parent().map(Path::to_path_buf));
+    for path in app_icon_search_paths(executable_directory.as_deref()) {
         if path.is_dir() {
             icon_theme.add_search_path(&path);
         }
     }
+}
+
+fn app_icon_search_paths(executable_directory: Option<&Path>) -> Vec<PathBuf> {
+    let mut paths = vec![PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("data/icons")];
+    if let Some(directory) = executable_directory {
+        paths.extend([
+            directory.join("data/icons"),
+            directory.join("icons"),
+            directory.join("share/icons"),
+            directory.join("../share/icons"),
+            directory.join("../Resources/icons"),
+        ]);
+    }
+    paths
 }
 
 fn main() {
@@ -202,4 +206,25 @@ fn main() {
     });
 
     RelmApp::from_app(application).run::<app::MainWindow>(());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn app_icon_search_paths_point_to_icon_theme_roots() {
+        let paths = app_icon_search_paths(None);
+        for icon in [
+            "potoo-window-minimize-symbolic.svg",
+            "potoo-window-maximize-symbolic.svg",
+            "potoo-window-restore-symbolic.svg",
+            "potoo-close-symbolic.svg",
+        ] {
+            assert!(paths.iter().any(|path| {
+                path.join(format!("hicolor/symbolic/actions/{icon}"))
+                    .is_file()
+            }));
+        }
+    }
 }
