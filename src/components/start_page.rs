@@ -177,6 +177,7 @@ pub(crate) fn rebuild_recent_items(
     section: &gtk::Box,
     container: &gtk::Box,
     paths: &[PathBuf],
+    language: UiLanguage,
     sender: ComponentSender<MainWindow>,
 ) {
     section.set_visible(!paths.is_empty());
@@ -196,8 +197,14 @@ pub(crate) fn rebuild_recent_items(
             container.append(&separator);
         }
 
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        row.add_css_class("potoo-start-recent-row");
+        row.set_hexpand(true);
+
         let button = gtk::Button::new();
-        button.add_css_class("potoo-start-recent-row");
+        button.add_css_class("potoo-start-recent-open");
+        button.set_halign(gtk::Align::Fill);
+        button.set_hexpand(true);
         let content = gtk::Box::new(gtk::Orientation::Horizontal, 12);
         content.set_hexpand(true);
         content.set_valign(gtk::Align::Center);
@@ -227,7 +234,23 @@ pub(crate) fn rebuild_recent_items(
         button.connect_clicked(move |_| {
             sender_for_recent.input(MainWindowMsg::RecentSelected(selected_path.clone()));
         });
-        container.append(&button);
+        row.append(&button);
+
+        let remove_button = gtk::Button::new();
+        remove_button.add_css_class("potoo-start-recent-remove");
+        remove_button.set_valign(gtk::Align::Center);
+        let remove_icon = icon("close");
+        remove_icon.set_pixel_size(13);
+        remove_button.set_child(Some(&remove_icon));
+        remove_button.set_tooltip_text(Some(tr(language, "Remover dos recentes")));
+
+        let path_to_remove = path.clone();
+        let sender_for_remove = sender.clone();
+        remove_button.connect_clicked(move |_| {
+            sender_for_remove.input(MainWindowMsg::RecentRemoved(path_to_remove.clone()));
+        });
+        row.append(&remove_button);
+        container.append(&row);
     }
 }
 

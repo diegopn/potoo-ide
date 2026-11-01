@@ -106,6 +106,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
                 "Pick up where you left off or start turning your ideas into algorithms."
             }
             "Programas recentes" => "Recent programs",
+            "Remover dos recentes" => "Remove from recent list",
             "Comece um novo programa" => "Start a new program",
             "Projeto Portugol" => "Portugol project",
             "Projeto VisuAlg" => "VisuAlg project",
@@ -365,6 +366,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
                 "Continúa donde lo dejaste o empieza a convertir tus ideas en algoritmos."
             }
             "Programas recentes" => "Programas recientes",
+            "Remover dos recentes" => "Quitar de recientes",
             "Comece um novo programa" => "Empieza un programa nuevo",
             "Projeto Portugol" => "Proyecto Portugol",
             "Projeto VisuAlg" => "Proyecto VisuAlg",
@@ -689,6 +691,7 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Vamos programar?",
     "Continue de onde parou ou comece a transformar suas ideias em algoritmos.",
     "Programas recentes",
+    "Remover dos recentes",
     "Comece um novo programa",
     "Projeto Portugol",
     "Projeto VisuAlg",
@@ -974,6 +977,7 @@ pub(crate) enum MainWindowMsg {
     InterfaceLanguageSelected(UiLanguage),
     ProjectSelected(PathBuf),
     RecentSelected(PathBuf),
+    RecentRemoved(PathBuf),
     ProjectSwitchDecision(bool),
     CreateProject(PathBuf, String, Language),
     CreateFile(String, Language, PathBuf),
@@ -1962,6 +1966,7 @@ impl SimpleComponent for MainWindow {
             &widgets.start_page.recent_section,
             &widgets.start_page.recent_list,
             &model.recent_paths,
+            model.ui_language,
             sender,
         );
         widgets.displayed_tabs = model
@@ -2047,6 +2052,7 @@ impl SimpleComponent for MainWindow {
                         .to_string();
                 }
             }
+            MainWindowMsg::RecentRemoved(path) => self.forget_recent(&path),
             MainWindowMsg::ProjectSwitchDecision(discard_changes) => {
                 if discard_changes {
                     if let Some(path) = self.pending_project.take() {
@@ -2256,6 +2262,7 @@ impl SimpleComponent for MainWindow {
                 &ui.start_page.recent_section,
                 &ui.start_page.recent_list,
                 &self.recent_paths,
+                self.ui_language,
                 sender.clone(),
             );
             ui.displayed_recent_paths.clone_from(&self.recent_paths);
@@ -2431,6 +2438,7 @@ impl SimpleComponent for MainWindow {
                 &ui.start_page.recent_section,
                 &ui.start_page.recent_list,
                 &self.recent_paths,
+                self.ui_language,
                 sender.clone(),
             );
             ui.displayed_recent_paths.clone_from(&self.recent_paths);
