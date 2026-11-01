@@ -157,11 +157,13 @@ fn update_maximize_button(
     language: UiLanguage,
 ) {
     let maximized = window.is_maximized();
-    button.set_child(Some(&icon(if maximized {
+    let maximize_icon = icon(if maximized {
         "window-restore"
     } else {
         "window-maximize"
-    })));
+    });
+    maximize_icon.set_pixel_size(18);
+    button.set_child(Some(&maximize_icon));
     button.set_tooltip_text(Some(tr(
         language,
         if maximized { "Restaurar" } else { "Maximizar" },
