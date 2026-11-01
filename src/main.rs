@@ -222,7 +222,7 @@ mod tests {
             "potoo-close-symbolic.svg",
         ] {
             assert!(paths.iter().any(|path| {
-                path.join(format!("hicolor/symbolic/actions/{icon}"))
+                path.join(format!("hicolor/scalable/actions/{icon}"))
                     .is_file()
             }));
         }
