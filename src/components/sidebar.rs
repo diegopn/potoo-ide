@@ -28,6 +28,7 @@ pub(crate) struct SidebarUi {
     pub(crate) file_list: gtk::Box,
     pub(crate) new_file_button: gtk::MenuButton,
     pub(crate) new_program_button: gtk::Button,
+    pub(crate) open_file_menu_button: gtk::Button,
     pub(crate) new_folder_button: gtk::Button,
     pub(crate) new_item_popover: gtk::Popover,
     pub(crate) open_popover: gtk::Popover,
@@ -80,6 +81,12 @@ pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
         tr(language, "Criar um arquivo Portugol ou VisuAlg"),
         "potoo-sidebar-menu-item",
     );
+    let open_file_menu_button = icon_label_button(
+        "open-document",
+        tr(language, "Abrir arquivo"),
+        tr(language, "Abrir arquivo de código"),
+        "potoo-sidebar-menu-item",
+    );
     let new_folder_button = icon_label_button(
         "new-folder",
         tr(language, "Nova pasta"),
@@ -87,6 +94,7 @@ pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
         "potoo-sidebar-menu-item",
     );
     new_item_menu.append(&new_program_button);
+    new_item_menu.append(&open_file_menu_button);
     new_item_menu.append(&new_folder_button);
     new_item_popover.set_child(Some(&new_item_menu));
     new_file_button.set_popover(Some(&new_item_popover));
@@ -173,6 +181,7 @@ pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
         file_list,
         new_file_button,
         new_program_button,
+        open_file_menu_button,
         new_folder_button,
         new_item_popover,
         open_popover,

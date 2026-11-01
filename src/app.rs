@@ -126,6 +126,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Abrir pasta" => "Open folder",
             "Abrir pasta de projeto" => "Open project folder",
+            "Abrir projeto" => "Open project",
             "Abrir arquivo" => "Open file",
             "Abrir projeto ou programa" => "Open project or program",
             "Nenhum projeto aberto" => "No project open",
@@ -388,6 +389,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Abrir pasta" => "Abrir carpeta",
             "Abrir pasta de projeto" => "Abrir carpeta del proyecto",
+            "Abrir projeto" => "Abrir proyecto",
             "Abrir arquivo" => "Abrir archivo",
             "Abrir projeto ou programa" => "Abrir proyecto o programa",
             "Nenhum projeto aberto" => "No hay ningún proyecto abierto",
@@ -707,6 +709,7 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "O arquivo ou a pasta recente não está mais disponível.",
     "Abrir pasta",
     "Abrir pasta de projeto",
+    "Abrir projeto",
     "Abrir arquivo",
     "Abrir projeto ou programa",
     "Nenhum projeto aberto",
@@ -2648,6 +2651,7 @@ fn build_window_content(
     let empty_open_project_button = file_sidebar.empty_open_project_button;
     let empty_open_file_button = file_sidebar.empty_open_file_button;
     let new_program_button = file_sidebar.new_program_button;
+    let open_file_menu_button = file_sidebar.open_file_menu_button;
     let new_folder_button = file_sidebar.new_folder_button;
     let new_item_popover = file_sidebar.new_item_popover;
     let open_project_button = file_sidebar.open_project_button;
@@ -2870,6 +2874,7 @@ fn build_window_content(
             &window_for_open_project,
             language_for_open_project.get(),
             sender_for_open_project.clone(),
+            None,
         );
     });
 
@@ -2894,6 +2899,7 @@ fn build_window_content(
             &window_for_empty_open_project,
             language_for_empty_open_project.get(),
             sender_for_empty_open_project.clone(),
+            None,
         );
     });
 
@@ -2962,6 +2968,7 @@ fn build_window_content(
             &window_for_start_open,
             language_for_start_open.get(),
             sender_for_start_open.clone(),
+            None,
         );
     });
 
@@ -3000,6 +3007,19 @@ fn build_window_content(
             project_directory_options(&project_root, language_for_new_file.get()),
             dark_theme_for_new_file.get(),
             sender_for_new_file.clone(),
+        );
+    });
+
+    let sender_for_open_file_menu = sender.clone();
+    let window_for_open_file_menu = window.clone();
+    let language_for_open_file_menu = ui_language_state.clone();
+    let popover_for_open_file_menu = new_item_popover.clone();
+    open_file_menu_button.connect_clicked(move |_| {
+        popover_for_open_file_menu.popdown();
+        show_open_file_dialog(
+            &window_for_open_file_menu,
+            language_for_open_file_menu.get(),
+            sender_for_open_file_menu.clone(),
         );
     });
 
@@ -3588,9 +3608,10 @@ fn set_font_size(widget: &impl IsA<gtk::Widget>, old_size: u32, new_size: u32) {
 }
 
 fn show_open_project_dialog(
-    parent: &gtk::ApplicationWindow,
+    parent: &impl IsA<gtk::Window>,
     language: UiLanguage,
     sender: ComponentSender<MainWindow>,
+    close_parent_on_success: Option<gtk::Window>,
 ) {
     let dialog = gtk::FileDialog::new();
     dialog.set_title(tr(language, "Abrir pasta de projeto"));
@@ -3600,7 +3621,12 @@ fn show_open_project_dialog(
         None::<&gtk::gio::Cancellable>,
         move |result| match result {
             Ok(folder) => match folder.path() {
-                Some(path) => sender.input(MainWindowMsg::ProjectSelected(path)),
+                Some(path) => {
+                    if let Some(window) = close_parent_on_success {
+                        window.close();
+                    }
+                    sender.input(MainWindowMsg::ProjectSelected(path));
+                }
                 None => sender.input(MainWindowMsg::FileOperationFailed(
                     tr(language, "Selecione uma pasta local para abrir.").to_string(),
                 )),
@@ -3783,12 +3809,21 @@ fn show_new_project_dialog(
     actions.add_css_class("potoo-project-actions");
     actions.add_css_class("potoo-dialog-actions");
     actions.set_hexpand(true);
+    let open_project_button = gtk::Button::new();
+    open_project_button.add_css_class("potoo-project-open-button");
+    open_project_button.set_tooltip_text(Some(tr(ui_language, "Abrir projeto")));
+    let open_project_content = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    open_project_content.append(&icon("folder-open"));
+    let open_project_label = gtk::Label::new(Some(tr(ui_language, "Abrir projeto")));
+    open_project_content.append(&open_project_label);
+    open_project_button.set_child(Some(&open_project_content));
     let actions_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     actions_spacer.set_hexpand(true);
     let cancel_button = gtk::Button::with_label(tr(ui_language, "Cancelar"));
     cancel_button.add_css_class("potoo-project-cancel-button");
     let create_button = gtk::Button::with_label(tr(ui_language, "Criar projeto"));
     create_button.add_css_class("potoo-run-button");
+    actions.append(&open_project_button);
     actions.append(&actions_spacer);
     actions.append(&cancel_button);
     actions.append(&create_button);
@@ -3798,6 +3833,18 @@ fn show_new_project_dialog(
 
     let dialog_for_cancel = dialog.clone();
     cancel_button.connect_clicked(move |_| dialog_for_cancel.close());
+
+    let dialog_for_open_project = dialog.clone();
+    let dialog_to_close_after_open = dialog.clone();
+    let sender_for_open_project = sender.clone();
+    open_project_button.connect_clicked(move |_| {
+        show_open_project_dialog(
+            &dialog_for_open_project,
+            ui_language,
+            sender_for_open_project.clone(),
+            Some(dialog_to_close_after_open.clone()),
+        );
+    });
 
     let dialog_for_picker = dialog.clone();
     let selected_folder_for_picker = selected_folder.clone();

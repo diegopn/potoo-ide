@@ -497,6 +497,28 @@ button.potoo-project-language-choice {
   color: var(--potoo-text);
 }
 
+.potoo-project-open-button {
+  min-height: 36px;
+  padding: 0 14px;
+  background-color: var(--potoo-control-bg);
+  background-image: none;
+  border: 0;
+  border-radius: 0;
+  color: var(--potoo-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.potoo-project-open-button:hover {
+  background-color: var(--potoo-control-hover-bg);
+  color: var(--potoo-text);
+}
+
+.potoo-project-open-button image {
+  color: var(--potoo-text-secondary);
+}
+
 .potoo-project-actions .potoo-run-button {
   min-height: 36px;
   padding: 0 16px;
@@ -1314,7 +1336,8 @@ button.potoo-about-link:hover image.potoo-icon {
 }
 
 .potoo-dialog-actions .potoo-run-button,
-.potoo-dialog-actions .potoo-project-cancel-button {
+.potoo-dialog-actions .potoo-project-cancel-button,
+.potoo-dialog-actions .potoo-project-open-button {
   min-height: 36px;
 }
 
