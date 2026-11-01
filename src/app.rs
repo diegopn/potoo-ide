@@ -115,6 +115,9 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Criar programa inicial (.alg)" => "Create a starter program (.alg)",
             "Selecionar uma pasta" => "Choose a folder",
             "Abra um projeto que não aparece na lista." => "Open a project that is not listed.",
+            "Abra um arquivo .por ou .alg diretamente no editor." => {
+                "Open a .por or .alg file directly in the editor."
+            }
             "Projeto" => "Project",
             "Abrir um programa recente" => "Open a recent program",
             "O arquivo ou a pasta recente não está mais disponível." => {
@@ -372,6 +375,9 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Selecionar uma pasta" => "Seleccionar una carpeta",
             "Abra um projeto que não aparece na lista." => {
                 "Abre un proyecto que no aparece en la lista."
+            }
+            "Abra um arquivo .por ou .alg diretamente no editor." => {
+                "Abre un archivo .por o .alg directamente en el editor."
             }
             "Projeto" => "Proyecto",
             "Abrir um programa recente" => "Abrir un programa reciente",
@@ -692,6 +698,7 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Criar programa inicial (.alg)",
     "Selecionar uma pasta",
     "Abra um projeto que não aparece na lista.",
+    "Abra um arquivo .por ou .alg diretamente no editor.",
     "Projeto",
     "Abrir um programa recente",
     "O arquivo ou a pasta recente não está mais disponível.",
@@ -2947,6 +2954,17 @@ fn build_window_content(
             &window_for_start_open,
             language_for_start_open.get(),
             sender_for_start_open.clone(),
+        );
+    });
+
+    let sender_for_start_open_file = sender.clone();
+    let window_for_start_open_file = window.clone();
+    let language_for_start_open_file = ui_language_state.clone();
+    start_page.open_file_button.connect_clicked(move |_| {
+        show_open_file_dialog(
+            &window_for_start_open_file,
+            language_for_start_open_file.get(),
+            sender_for_start_open_file.clone(),
         );
     });
 

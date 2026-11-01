@@ -104,7 +104,8 @@ button.potoo-start-recent-row:hover {
 }
 
 button.potoo-start-language-option,
-button.potoo-start-open-folder {
+button.potoo-start-open-folder,
+button.potoo-start-open-file {
   min-height: 48px;
   padding: 6px 14px;
   background-color: var(--potoo-surface-bg);
@@ -117,7 +118,8 @@ button.potoo-start-open-folder {
 }
 
 button.potoo-start-language-option:hover,
-button.potoo-start-open-folder:hover {
+button.potoo-start-open-folder:hover,
+button.potoo-start-open-file:hover {
   background-color: var(--potoo-panel-hover-bg);
   border-color: var(--potoo-border);
   color: var(--potoo-text);
@@ -125,10 +127,6 @@ button.potoo-start-open-folder:hover {
 
 button.potoo-start-language-option image.potoo-icon {
   color: var(--potoo-accent-text);
-}
-
-button.potoo-start-open-folder {
-  margin-top: 12px;
 }
 
 window.potoo-window :focus {

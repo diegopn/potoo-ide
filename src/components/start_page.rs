@@ -13,6 +13,7 @@ pub(crate) struct StartPageUi {
     pub(crate) portugol_button: gtk::Button,
     pub(crate) visualg_button: gtk::Button,
     pub(crate) open_folder_button: gtk::Button,
+    pub(crate) open_file_button: gtk::Button,
 }
 
 pub(crate) fn build_start_page(language: UiLanguage) -> StartPageUi {
@@ -80,31 +81,25 @@ pub(crate) fn build_start_page(language: UiLanguage) -> StartPageUi {
     create_options.append(&visualg_button);
     content.append(&create_options);
 
-    let open_folder_button = gtk::Button::new();
-    open_folder_button.add_css_class("potoo-start-open-folder");
-    let folder_content = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-    folder_content.set_hexpand(true);
-    folder_content.set_valign(gtk::Align::Center);
-    folder_content.append(&icon("folder-open"));
-    let folder_text = gtk::Box::new(gtk::Orientation::Vertical, 3);
-    folder_text.set_hexpand(true);
-    folder_text.set_valign(gtk::Align::Center);
-    let folder_title = gtk::Label::new(Some(tr(language, "Selecionar uma pasta")));
-    folder_title.set_xalign(0.0);
-    folder_title.add_css_class("potoo-start-action-title");
-    let folder_description = gtk::Label::new(Some(tr(
+    let open_actions = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    open_actions.set_margin_top(12);
+    let open_folder_button = open_option(
         language,
+        "folder-open",
+        "Selecionar uma pasta",
         "Abra um projeto que não aparece na lista.",
-    )));
-    folder_description.set_xalign(0.0);
-    folder_description.add_css_class("potoo-start-action-description");
-    folder_text.append(&folder_title);
-    folder_text.append(&folder_description);
-    folder_content.append(&folder_text);
-    folder_content.append(&icon("chevron-right"));
-    open_folder_button.set_child(Some(&folder_content));
-    open_folder_button.set_tooltip_text(Some(tr(language, "Selecionar uma pasta")));
-    content.append(&open_folder_button);
+        "potoo-start-open-folder",
+    );
+    let open_file_button = open_option(
+        language,
+        "open-document",
+        "Abrir arquivo",
+        "Abra um arquivo .por ou .alg diretamente no editor.",
+        "potoo-start-open-file",
+    );
+    open_actions.append(&open_folder_button);
+    open_actions.append(&open_file_button);
+    content.append(&open_actions);
 
     scroll.set_child(Some(&content));
     page.append(&scroll);
@@ -116,7 +111,40 @@ pub(crate) fn build_start_page(language: UiLanguage) -> StartPageUi {
         portugol_button,
         visualg_button,
         open_folder_button,
+        open_file_button,
     }
+}
+
+fn open_option(
+    language: UiLanguage,
+    icon_name: &'static str,
+    title: &'static str,
+    description: &'static str,
+    css_class: &'static str,
+) -> gtk::Button {
+    let button = gtk::Button::new();
+    button.add_css_class(css_class);
+    let content = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+    content.set_hexpand(true);
+    content.set_valign(gtk::Align::Center);
+    content.append(&icon(icon_name));
+    let text = gtk::Box::new(gtk::Orientation::Vertical, 3);
+    text.set_hexpand(true);
+    text.set_valign(gtk::Align::Center);
+    let title_label = gtk::Label::new(Some(tr(language, title)));
+    title_label.set_xalign(0.0);
+    title_label.add_css_class("potoo-start-action-title");
+    let description_label = gtk::Label::new(Some(tr(language, description)));
+    description_label.set_xalign(0.0);
+    description_label.add_css_class("potoo-start-action-description");
+    text.append(&title_label);
+    text.append(&description_label);
+    content.append(&text);
+    content.append(&icon("chevron-right"));
+    button.set_child(Some(&content));
+    button.set_tooltip_text(Some(tr(language, title)));
+    button.set_hexpand(true);
+    button
 }
 
 fn language_option(language: &str, description: &str) -> gtk::Button {
