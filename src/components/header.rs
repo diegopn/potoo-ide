@@ -1,7 +1,7 @@
 use crate::app::{UiLanguage, tr};
 use crate::components::icon;
 use gtk::prelude::*;
-use std::path::Path;
+use std::{cell::Cell, path::Path, rc::Rc};
 
 pub(crate) fn app_icon() -> gtk::Image {
     let development_icon = "data/icons/hicolor/scalable/apps/io.github.diegopn.potooide.svg";
@@ -16,11 +16,16 @@ pub(crate) fn app_icon() -> gtk::Image {
 
 pub(crate) struct HeaderUi {
     pub(crate) widget: Option<gtk::Widget>,
+    pub(crate) language_root: gtk::Widget,
     pub(crate) project_title: gtk::Label,
     pub(crate) run_button: gtk::Button,
 }
 
-pub(crate) fn build_header(window: &gtk::ApplicationWindow, language: UiLanguage) -> HeaderUi {
+pub(crate) fn build_header(
+    window: &gtk::ApplicationWindow,
+    language_state: Rc<Cell<UiLanguage>>,
+) -> HeaderUi {
+    let language = language_state.get();
     let brand = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     brand.append(&app_icon());
     let brand_label = gtk::Label::new(Some("Potoo IDE"));
@@ -75,9 +80,10 @@ pub(crate) fn build_header(window: &gtk::ApplicationWindow, language: UiLanguage
             }
         });
         let maximize_button_weak = maximize_button.downgrade();
+        let language_for_maximize = language_state.clone();
         window.connect_notify_local(Some("maximized"), move |window, _| {
             if let Some(button) = maximize_button_weak.upgrade() {
-                update_maximize_button(&button, window, language);
+                update_maximize_button(&button, window, language_for_maximize.get());
             }
         });
         window_controls.append(&maximize_button);
@@ -94,7 +100,7 @@ pub(crate) fn build_header(window: &gtk::ApplicationWindow, language: UiLanguage
     header_actions.set_margin_end(8);
 
     #[cfg(target_os = "linux")]
-    let widget = {
+    let (widget, language_root) = {
         let titlebar = gtk::HeaderBar::new();
         titlebar.add_css_class("potoo-linux-titlebar");
         titlebar.set_show_title_buttons(false);
@@ -102,11 +108,11 @@ pub(crate) fn build_header(window: &gtk::ApplicationWindow, language: UiLanguage
         titlebar.set_title_widget(Some(&project_title));
         titlebar.pack_end(&header_actions);
         window.set_titlebar(Some(&titlebar));
-        None
+        (None, titlebar.upcast::<gtk::Widget>())
     };
 
     #[cfg(not(target_os = "linux"))]
-    let widget = {
+    let (widget, language_root) = {
         let header = gtk::CenterBox::new();
         header.add_css_class("potoo-header");
         header.set_margin_start(14);
@@ -114,11 +120,13 @@ pub(crate) fn build_header(window: &gtk::ApplicationWindow, language: UiLanguage
         header.set_start_widget(Some(&brand));
         header.set_center_widget(Some(&project_title));
         header.set_end_widget(Some(&header_actions));
-        Some(header.upcast::<gtk::Widget>())
+        let language_root = header.clone().upcast::<gtk::Widget>();
+        (Some(language_root.clone()), language_root)
     };
 
     HeaderUi {
         widget,
+        language_root,
         project_title,
         run_button,
     }

@@ -31,12 +31,51 @@ impl UiLanguage {
         }
     }
 
-    fn from_key(key: &str) -> Self {
+    fn from_key(key: &str) -> Option<Self> {
         match key {
-            "en" => Self::English,
-            "es" => Self::Spanish,
-            _ => Self::Portuguese,
+            "pt" | "pt-BR" => Some(Self::Portuguese),
+            "en" => Some(Self::English),
+            "es" => Some(Self::Spanish),
+            _ => None,
         }
+    }
+
+    fn from_locale_name(locale: &str) -> Option<Self> {
+        let language = locale
+            .split(['_', '-', '.', '@'])
+            .next()?
+            .to_ascii_lowercase();
+        match language.as_str() {
+            "pt" => Some(Self::Portuguese),
+            "en" => Some(Self::English),
+            "es" => Some(Self::Spanish),
+            _ => None,
+        }
+    }
+
+    fn from_language_names<I, S>(names: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        names
+            .into_iter()
+            .find_map(|name| Self::from_locale_name(name.as_ref()))
+            .unwrap_or(Self::English)
+    }
+
+    fn from_preference<I, S>(saved: Option<&str>, system_languages: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        saved
+            .and_then(Self::from_key)
+            .unwrap_or_else(|| Self::from_language_names(system_languages))
+    }
+
+    fn from_system() -> Self {
+        Self::from_language_names(gtk::glib::language_names())
     }
 
     fn selected_index(self) -> u32 {
@@ -211,9 +250,10 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Quebra automática" => "Word wrap",
             "Ajusta linhas longas à largura do editor." => "Wrap long lines to fit the editor.",
             "Idioma da interface" => "Interface language",
-            "O idioma escolhido será aplicado ao reabrir o Potoo." => {
-                "The selected language will apply the next time you open Potoo."
+            "As alterações de idioma são aplicadas imediatamente." => {
+                "Language changes take effect immediately."
             }
+            "Idioma da interface atualizado." => "Interface language updated.",
             "Recuo" => "Indentation",
             "Espaços por nível de recuo." => "Spaces inserted for each indentation level.",
             "2 espaços" => "2 spaces",
@@ -287,9 +327,6 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "A execução real usa o interpretador da linguagem selecionada" => {
                 "Running code uses the selected language interpreter"
             }
-            "O idioma será aplicado ao reabrir o Potoo." => {
-                "The language change will apply when you reopen Potoo."
-            }
             "Não foi possível salvar as configurações" => "Could not save settings",
             "Não foi possível salvar a sessão" => "Could not save session",
             "Use um nome simples, sem pastas ou caracteres especiais." => {
@@ -315,9 +352,6 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Salvar arquivo (⌘S)" => "Save file (⌘S)",
             "Salvar arquivo (Ctrl+S)" => "Save file (Ctrl+S)",
-            "Salvar código com a extensão .por ou .alg." => {
-                "Save code with the .por or .alg extension."
-            }
             _ => portuguese,
         },
         UiLanguage::Spanish => match portuguese {
@@ -486,9 +520,10 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
                 "Ajusta las líneas largas al ancho del editor."
             }
             "Idioma da interface" => "Idioma de la interfaz",
-            "O idioma escolhido será aplicado ao reabrir o Potoo." => {
-                "El idioma elegido se aplicará la próxima vez que abras Potoo."
+            "As alterações de idioma são aplicadas imediatamente." => {
+                "Los cambios de idioma se aplican de inmediato."
             }
+            "Idioma da interface atualizado." => "Idioma de la interfaz actualizado.",
             "Recuo" => "Sangría",
             "Espaços por nível de recuo." => "Espacios insertados por cada nivel de sangría.",
             "2 espaços" => "2 espacios",
@@ -566,9 +601,6 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "A execução real usa o interpretador da linguagem selecionada" => {
                 "La ejecución usa el intérprete del lenguaje seleccionado"
             }
-            "O idioma será aplicado ao reabrir o Potoo." => {
-                "El cambio de idioma se aplicará al volver a abrir Potoo."
-            }
             "Não foi possível salvar as configurações" => "No se pudo guardar la configuración",
             "Não foi possível salvar a sessão" => "No se pudo guardar la sesión",
             "Use um nome simples, sem pastas ou caracteres especiais." => {
@@ -598,9 +630,6 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Salvar arquivo (⌘S)" => "Guardar archivo (⌘S)",
             "Salvar arquivo (Ctrl+S)" => "Guardar archivo (Ctrl+S)",
-            "Salvar código com a extensão .por ou .alg." => {
-                "Guarda el código con la extensión .por o .alg."
-            }
             _ => portuguese,
         },
     };
@@ -648,6 +677,235 @@ impl ThemePreference {
     }
 }
 
+const UI_TRANSLATION_KEYS: &[&str] = &[
+    "Meu primeiro programa",
+    "Início",
+    "Vamos programar?",
+    "Continue de onde parou ou comece a transformar suas ideias em algoritmos.",
+    "Programas recentes",
+    "Comece um novo programa",
+    "Projeto Portugol",
+    "Projeto VisuAlg",
+    "Comece com um arquivo .por",
+    "Comece com um arquivo .alg",
+    "Criar programa inicial (.por)",
+    "Criar programa inicial (.alg)",
+    "Selecionar uma pasta",
+    "Abra um projeto que não aparece na lista.",
+    "Projeto",
+    "Abrir um programa recente",
+    "O arquivo ou a pasta recente não está mais disponível.",
+    "Abrir pasta",
+    "Abrir pasta de projeto",
+    "Abrir arquivo",
+    "Abrir projeto ou programa",
+    "Nenhum projeto aberto",
+    "Abra uma pasta ou um programa para começar.",
+    "Salvar arquivo",
+    "Salvar",
+    "Configurações",
+    "Fechar",
+    "Sobre",
+    "Sobre o Potoo IDE",
+    "Código do projeto",
+    "Versão e links do projeto",
+    "← Configurações",
+    "Criado por Diego Pereira do Nascimento",
+    "Versão",
+    "Relatar um problema",
+    "Repositório do projeto",
+    "Site do projeto",
+    "Ajuda",
+    "Doar",
+    "Contato",
+    "Site do criador do projeto",
+    "Contato do criador",
+    "Executar",
+    "Minimizar",
+    "Maximizar",
+    "Restaurar",
+    "Arquivos",
+    "Criar arquivo",
+    "Criar item no projeto",
+    "Novo projeto",
+    "Criar projeto",
+    "Criar um projeto Portugol ou VisuAlg",
+    "Selecione a pseudolinguagem do projeto",
+    "Arquivo inicial .por",
+    "Arquivo inicial .alg",
+    "Crie uma pasta para reunir seus programas e exercícios.",
+    "Nome do projeto",
+    "Por exemplo: Meu primeiro projeto",
+    "Meu projeto",
+    "Local do projeto",
+    "Pasta",
+    "Criar dentro de",
+    "Pasta do projeto",
+    "A pasta selecionada não está disponível.",
+    "Erros de sintaxe e execução aparecerão aqui.",
+    "Depurador pronto",
+    "Execute o programa passo a passo para acompanhar as variáveis.",
+    "Escolher pasta",
+    "Escolha a pasta de destino",
+    "Selecione uma pasta local para criar o projeto.",
+    "Não foi possível escolher a pasta do projeto",
+    "Digite um nome válido para o projeto.",
+    "Já existe um projeto com esse nome.",
+    "Não foi possível criar o projeto",
+    "Projeto criado",
+    "Novo arquivo",
+    "Criar um arquivo Portugol ou VisuAlg",
+    "Nova pasta",
+    "Criar uma pasta no projeto",
+    "Criar pasta",
+    "Organize seus programas em uma pasta do projeto.",
+    "Nome da pasta",
+    "Nome da pasta, por exemplo: exercicios",
+    "Pasta criada",
+    "Já existe uma pasta com esse nome.",
+    "Digite um nome válido para a pasta.",
+    "Não foi possível criar a pasta",
+    "Abra uma pasta de projeto antes de criar itens.",
+    "Aprenda enquanto programa",
+    "Linha 7 · decisão",
+    "Uma condição verifica se uma expressão é verdadeira antes de executar um bloco.",
+    "Experimente",
+    "Troque o valor 18 por 16 e execute de novo. O resultado muda?",
+    "Conceito: condição",
+    "Uma comparação como idade >= 18 resulta em verdadeiro ou falso.",
+    "Saída",
+    "Problemas",
+    "Depurador",
+    "Interface",
+    "Espaços",
+    "Linha",
+    "Coluna",
+    "A saída aparecerá aqui após a execução.",
+    "Pronto para executar",
+    "Alterações da sessão anterior recuperadas.",
+    "Personalize a aparência e o editor.",
+    "Aparência",
+    "Sistema",
+    "Seguir o sistema",
+    "Claro",
+    "Escuro",
+    "Tema",
+    "Escolha como o Potoo aparece nesta tela.",
+    "Editor",
+    "Tamanho da fonte",
+    "Ajuste a leitura do código.",
+    "Numeração de linhas",
+    "Mostra o número de cada linha do código.",
+    "Quebra automática",
+    "Ajusta linhas longas à largura do editor.",
+    "Idioma da interface",
+    "As alterações de idioma são aplicadas imediatamente.",
+    "Idioma da interface atualizado.",
+    "Recuo",
+    "Espaços por nível de recuo.",
+    "2 espaços",
+    "4 espaços",
+    "Esta pasta não contém arquivos visíveis.",
+    "Nenhum programa .por ou .alg nesta pasta. Os demais arquivos aparecem na lista.",
+    "Fechar arquivo",
+    "Escolha um nome e a linguagem do novo arquivo.",
+    "Crie um arquivo dentro do projeto atual.",
+    "Nome do arquivo",
+    "Nome do arquivo, por exemplo: exercicio-1",
+    "Linguagem",
+    "Cancelar",
+    "Alterações não salvas",
+    "Descartar e abrir",
+    "Este arquivo tem alterações não salvas",
+    "O arquivo aberto tem alterações que ainda não foram salvas. O que você gostaria de fazer?",
+    "Salve o arquivo antes de fechar ou descarte as alterações para continuar.",
+    "Continuar editando",
+    "Descartar alterações",
+    "Salvar e fechar",
+    "Há alterações não salvas",
+    "Descartar e sair",
+    "Salve os arquivos abertos antes de trocar de pasta ou descarte as alterações para continuar.",
+    "Salve os arquivos antes de sair ou descarte as alterações para fechar o Potoo IDE.",
+    "Nenhum problema detectado",
+    "Acompanhe a execução linha por linha e os valores das variáveis.",
+    "Arquivo aberto",
+    "Arquivo salvo",
+    "Pasta aberta. Crie um arquivo .por ou .alg para começar.",
+    "Novo arquivo criado",
+    "Já existe um arquivo com esse nome.",
+    "Não foi possível abrir o arquivo",
+    "Não foi possível abrir a pasta",
+    "Não foi possível salvar o arquivo",
+    "Não foi possível criar o arquivo",
+    "O editor abre apenas arquivos .por ou .alg.",
+    "Abra uma pasta de projeto antes de criar arquivos.",
+    "Crie ou abra um arquivo antes de salvar.",
+    "A execução real depende da integração com o interpretador oficial selecionado.",
+    "Interpretador ainda não conectado nesta prévia",
+    "A execução real usa o interpretador da linguagem selecionada",
+    "Não foi possível salvar as configurações",
+    "Não foi possível salvar a sessão",
+    "Use um nome simples, sem pastas ou caracteres especiais.",
+    "Use a extensão .por ou .alg.",
+    "Salve o código com a extensão .por ou .alg.",
+    "Selecione uma pasta local para abrir.",
+    "Selecione um arquivo local.",
+    "Escolha um caminho local para salvar o arquivo.",
+    "Não foi possível abrir a janela de salvamento",
+    "Abrir arquivo de código",
+    "Portugol e VisuAlg (*.por, *.alg)",
+    "Não foi possível abrir o arquivo de código",
+    "novo-arquivo",
+    "caminho de configuração inválido",
+    "Não foi possível ler a sessão anterior. Os arquivos originais continuam intactos.",
+    "Salvar arquivo (⌘S)",
+    "Salvar arquivo (Ctrl+S)",
+    "light",
+    "dark",
+];
+
+fn translate_known_text(from: UiLanguage, to: UiLanguage, text: &str) -> Option<String> {
+    UI_TRANSLATION_KEYS
+        .iter()
+        .find_map(|key| (tr(from, key) == text).then(|| tr(to, key).to_string()))
+}
+
+fn translate_widget_tree(widget: &gtk::Widget, from: UiLanguage, to: UiLanguage) {
+    if let Some(label) = widget.downcast_ref::<gtk::Label>() {
+        if let Some(translated) = translate_known_text(from, to, label.text().as_str()) {
+            label.set_text(&translated);
+        }
+    }
+
+    if let Some(tooltip) = widget.tooltip_text() {
+        if let Some(translated) = translate_known_text(from, to, tooltip.as_str()) {
+            widget.set_tooltip_text(Some(&translated));
+        }
+    }
+
+    if let Some(entry) = widget.downcast_ref::<gtk::Entry>() {
+        if let Some(placeholder) = entry.placeholder_text() {
+            if let Some(translated) = translate_known_text(from, to, placeholder.as_str()) {
+                entry.set_placeholder_text(Some(&translated));
+            }
+        }
+    }
+
+    if let Some(window) = widget.downcast_ref::<gtk::Window>() {
+        if let Some(title) = window.title() {
+            if let Some(translated) = translate_known_text(from, to, title.as_str()) {
+                window.set_title(Some(&translated));
+            }
+        }
+    }
+
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        child = current.next_sibling();
+        translate_widget_tree(&current, from, to);
+    }
+}
+
 fn system_theme_is_dark() -> bool {
     gtk::Settings::default().is_some_and(|settings| {
         settings.property::<gtk::InterfaceColorScheme>("gtk-interface-color-scheme")
@@ -683,7 +941,7 @@ impl Default for Preferences {
             word_wrap: false,
             indent_width: 4,
             default_language: Language::Portugol,
-            ui_language: UiLanguage::Portuguese,
+            ui_language: UiLanguage::from_system(),
         }
     }
 }
@@ -964,10 +1222,10 @@ fn load_preferences() -> Preferences {
             .string("editor", "default-language")
             .map(|value| Language::from_key(&value))
             .unwrap_or(defaults.default_language),
-        ui_language: key_file
-            .string("interface", "language")
-            .map(|value| UiLanguage::from_key(&value))
-            .unwrap_or(defaults.ui_language),
+        ui_language: UiLanguage::from_preference(
+            key_file.string("interface", "language").ok().as_deref(),
+            gtk::glib::language_names(),
+        ),
     }
 }
 
@@ -1486,8 +1744,10 @@ struct SettingsUi {
 pub struct MainUi {
     window: gtk::ApplicationWindow,
     content: gtk::Box,
+    header_root: gtk::Widget,
     main_stack: gtk::Stack,
     dark_theme: Rc<Cell<bool>>,
+    ui_language_state: Rc<Cell<UiLanguage>>,
     default_new_language: Rc<Cell<Language>>,
     project_root_for_new_items: Rc<RefCell<Option<PathBuf>>>,
     settings: SettingsUi,
@@ -1533,6 +1793,7 @@ pub struct MainUi {
     displayed_line_numbers_visible: bool,
     displayed_word_wrap: bool,
     displayed_indent_width: u32,
+    displayed_ui_language: UiLanguage,
     displayed_preferred_ui_language: UiLanguage,
     displayed_settings_visible: bool,
     displayed_output_text: String,
@@ -1740,11 +2001,19 @@ impl SimpleComponent for MainWindow {
         );
         match message {
             MainWindowMsg::InterfaceLanguageSelected(language) => {
-                self.preferred_ui_language = language;
-                self.save_preferences();
-                self.output_status = self
-                    .text("O idioma será aplicado ao reabrir o Potoo.")
-                    .to_string();
+                if self.ui_language != language {
+                    let previous_language = self.ui_language;
+                    self.output_text =
+                        translate_known_text(previous_language, language, &self.output_text)
+                            .unwrap_or_else(|| self.output_text.clone());
+                    self.output_status =
+                        translate_known_text(previous_language, language, &self.output_status)
+                            .unwrap_or_else(|| self.output_status.clone());
+                    self.ui_language = language;
+                    self.preferred_ui_language = language;
+                    self.output_status = self.text("Idioma da interface atualizado.").to_string();
+                    self.save_preferences();
+                }
             }
             MainWindowMsg::ProjectSelected(path) => {
                 if self.documents.iter().any(SourceDocument::is_dirty) {
@@ -1941,6 +2210,94 @@ impl SimpleComponent for MainWindow {
 
     fn update_view(&self, widgets: &mut Self::Widgets, sender: ComponentSender<Self>) {
         let ui = widgets;
+        if ui.displayed_ui_language != self.ui_language {
+            let previous_language = ui.displayed_ui_language;
+            ui.ui_language_state.set(self.ui_language);
+            translate_widget_tree(&ui.header_root, previous_language, self.ui_language);
+            let content_root = ui.content.clone().upcast::<gtk::Widget>();
+            translate_widget_tree(&content_root, previous_language, self.ui_language);
+            let settings_root = ui.settings.window.clone().upcast::<gtk::Widget>();
+            translate_widget_tree(&settings_root, previous_language, self.ui_language);
+
+            let indent_width_index = ui.settings.indent_width_picker.selected();
+            let indent_width_options = gtk::StringList::new(&[
+                tr(self.ui_language, "2 espaços"),
+                tr(self.ui_language, "4 espaços"),
+            ]);
+            ui.settings
+                .indent_width_picker
+                .set_model(Some(&indent_width_options));
+            ui.settings
+                .indent_width_picker
+                .set_selected(indent_width_index);
+
+            ui.status_details.set_text(&format!(
+                "UTF-8  ·  {}: {}",
+                tr(self.ui_language, "Espaços"),
+                self.indent_width
+            ));
+            ui.project_title.set_text(if self.start_page_visible {
+                tr(self.ui_language, "Início")
+            } else {
+                &self.project_name
+            });
+            if self.project_root.is_some() {
+                ui.project_label.set_text(&self.project_name);
+            }
+
+            start_page::rebuild_recent_items(
+                &ui.start_page.recent_section,
+                &ui.start_page.recent_list,
+                &self.recent_paths,
+                sender.clone(),
+            );
+            ui.displayed_recent_paths.clone_from(&self.recent_paths);
+
+            let active_path = self
+                .active_document()
+                .and_then(|document| document.path.as_ref());
+            sidebar::rebuild_file_list(
+                &ui.file_list,
+                &self.project_files,
+                active_path,
+                self.project_root.is_some(),
+                self.project_root.as_deref(),
+                &ui.empty_state,
+                self.ui_language,
+                &ui.expanded_folders,
+                sender.clone(),
+            );
+            ui.displayed_project_files = self
+                .project_files
+                .iter()
+                .map(|file| (file.path.clone(), active_path == Some(&file.path)))
+                .collect();
+            ui.displayed_project_open = self.project_root.is_some();
+            ui.project_row.set_visible(ui.displayed_project_open);
+            ui.new_file_button.set_sensitive(ui.displayed_project_open);
+
+            content_panel::rebuild_editor_tabs(
+                &ui.editor_tabs,
+                &self.documents,
+                self.active_document_id,
+                self.ui_language,
+                sender.clone(),
+            );
+            ui.displayed_tabs = self
+                .documents
+                .iter()
+                .map(|document| {
+                    (
+                        document.id,
+                        document.name.clone(),
+                        document.is_dirty(),
+                        Some(document.id) == self.active_document_id,
+                    )
+                })
+                .collect();
+
+            ui.displayed_ui_language = self.ui_language;
+        }
         ui.project_root_for_new_items
             .replace(self.project_root.clone());
 
@@ -2229,6 +2586,7 @@ fn build_window_content(
     initial_dark: bool,
 ) -> MainUi {
     let ui_language = preferences.ui_language;
+    let ui_language_state = Rc::new(Cell::new(ui_language));
     let close_authorized = Rc::new(Cell::new(false));
     let close_authorized_for_window = close_authorized.clone();
     let sender_for_close = sender.clone();
@@ -2241,7 +2599,8 @@ fn build_window_content(
         }
     });
 
-    let header = header::build_header(&window, ui_language);
+    let header = header::build_header(&window, ui_language_state.clone());
+    let header_root = header.language_root.clone();
     let project_title = header.project_title.clone();
     let run_button = header.run_button.clone();
     project_title.set_text(if initial_start_page {
@@ -2254,7 +2613,13 @@ fn build_window_content(
     let start_page = start_page::build_start_page(ui_language);
 
     let dark_theme = Rc::new(Cell::new(initial_dark));
-    let settings = build_settings_window(&window, sender.clone(), preferences, initial_dark);
+    let settings = build_settings_window(
+        &window,
+        sender.clone(),
+        preferences,
+        initial_dark,
+        ui_language_state.clone(),
+    );
 
     let file_sidebar = sidebar::build_file_sidebar(ui_language);
     let expanded_folders = file_sidebar.expanded_folders.clone();
@@ -2483,11 +2848,12 @@ fn build_window_content(
     let sender_for_open_project = sender.clone();
     let window_for_open_project = window.clone();
     let open_popover_for_project = open_popover.clone();
+    let language_for_open_project = ui_language_state.clone();
     open_project_button.connect_clicked(move |_| {
         open_popover_for_project.popdown();
         show_open_project_dialog(
             &window_for_open_project,
-            ui_language,
+            language_for_open_project.get(),
             sender_for_open_project.clone(),
         );
     });
@@ -2495,31 +2861,34 @@ fn build_window_content(
     let sender_for_open_file = sender.clone();
     let window_for_open_file = window.clone();
     let open_popover_for_file = open_popover.clone();
+    let language_for_open_file = ui_language_state.clone();
     open_file_button.connect_clicked(move |_| {
         open_popover_for_file.popdown();
         show_open_file_dialog(
             &window_for_open_file,
-            ui_language,
+            language_for_open_file.get(),
             sender_for_open_file.clone(),
         );
     });
 
     let sender_for_empty_open_project = sender.clone();
     let window_for_empty_open_project = window.clone();
+    let language_for_empty_open_project = ui_language_state.clone();
     empty_open_project_button.connect_clicked(move |_| {
         show_open_project_dialog(
             &window_for_empty_open_project,
-            ui_language,
+            language_for_empty_open_project.get(),
             sender_for_empty_open_project.clone(),
         );
     });
 
     let sender_for_empty_open_file = sender.clone();
     let window_for_empty_open_file = window.clone();
+    let language_for_empty_open_file = ui_language_state.clone();
     empty_open_file_button.connect_clicked(move |_| {
         show_open_file_dialog(
             &window_for_empty_open_file,
-            ui_language,
+            language_for_empty_open_file.get(),
             sender_for_empty_open_file.clone(),
         );
     });
@@ -2528,10 +2897,11 @@ fn build_window_content(
     let window_for_new_project = window.clone();
     let default_new_language_for_project = default_new_language.clone();
     let dark_theme_for_project = dark_theme.clone();
+    let language_for_new_project = ui_language_state.clone();
     new_project_button.connect_clicked(move |_| {
         show_new_project_dialog(
             &window_for_new_project,
-            ui_language,
+            language_for_new_project.get(),
             default_new_language_for_project.get(),
             true,
             dark_theme_for_project.get(),
@@ -2542,10 +2912,11 @@ fn build_window_content(
     let sender_for_start_portugol = sender.clone();
     let window_for_start_portugol = window.clone();
     let dark_for_start_portugol = dark_theme.clone();
+    let language_for_start_portugol = ui_language_state.clone();
     start_page.portugol_button.connect_clicked(move |_| {
         show_new_project_dialog(
             &window_for_start_portugol,
-            ui_language,
+            language_for_start_portugol.get(),
             Language::Portugol,
             false,
             dark_for_start_portugol.get(),
@@ -2556,10 +2927,11 @@ fn build_window_content(
     let sender_for_start_visualg = sender.clone();
     let window_for_start_visualg = window.clone();
     let dark_for_start_visualg = dark_theme.clone();
+    let language_for_start_visualg = ui_language_state.clone();
     start_page.visualg_button.connect_clicked(move |_| {
         show_new_project_dialog(
             &window_for_start_visualg,
-            ui_language,
+            language_for_start_visualg.get(),
             Language::Visualg,
             false,
             dark_for_start_visualg.get(),
@@ -2569,10 +2941,11 @@ fn build_window_content(
 
     let sender_for_start_open = sender.clone();
     let window_for_start_open = window.clone();
+    let language_for_start_open = ui_language_state.clone();
     start_page.open_folder_button.connect_clicked(move |_| {
         show_open_project_dialog(
             &window_for_start_open,
-            ui_language,
+            language_for_start_open.get(),
             sender_for_start_open.clone(),
         );
     });
@@ -2587,6 +2960,7 @@ fn build_window_content(
     let default_new_language_for_new_file = default_new_language.clone();
     let project_root_for_new_file = project_root_for_new_items.clone();
     let dark_theme_for_new_file = dark_theme.clone();
+    let language_for_new_file = ui_language_state.clone();
     let popover_for_new_file = new_item_popover.clone();
     new_program_button.connect_clicked(move |_| {
         popover_for_new_file.popdown();
@@ -2596,8 +2970,8 @@ fn build_window_content(
         show_new_file_dialog(
             &window_for_new_file,
             default_new_language_for_new_file.get(),
-            ui_language,
-            project_directory_options(&project_root, ui_language),
+            language_for_new_file.get(),
+            project_directory_options(&project_root, language_for_new_file.get()),
             dark_theme_for_new_file.get(),
             sender_for_new_file.clone(),
         );
@@ -2607,6 +2981,7 @@ fn build_window_content(
     let window_for_new_folder = window.clone();
     let project_root_for_new_folder = project_root_for_new_items.clone();
     let dark_theme_for_new_folder = dark_theme.clone();
+    let language_for_new_folder = ui_language_state.clone();
     let popover_for_new_folder = new_item_popover.clone();
     new_folder_button.connect_clicked(move |_| {
         popover_for_new_folder.popdown();
@@ -2615,8 +2990,8 @@ fn build_window_content(
         };
         show_new_folder_dialog(
             &window_for_new_folder,
-            ui_language,
-            project_directory_options(&project_root, ui_language),
+            language_for_new_folder.get(),
+            project_directory_options(&project_root, language_for_new_folder.get()),
             dark_theme_for_new_folder.get(),
             sender_for_new_folder.clone(),
         );
@@ -2648,6 +3023,7 @@ fn build_window_content(
     let key_controller = gtk::EventControllerKey::new();
     let sender_for_shortcuts = sender;
     let window_for_shortcuts = window.clone();
+    let language_for_shortcuts = ui_language_state.clone();
     key_controller.connect_key_pressed(move |_, key, _, modifiers| {
         let primary_modifier = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK)
             || (cfg!(target_os = "macos") && modifiers.contains(gtk::gdk::ModifierType::META_MASK));
@@ -2660,7 +3036,7 @@ fn build_window_content(
         } else if key == gtk::gdk::Key::o && primary_modifier {
             show_open_file_dialog(
                 &window_for_shortcuts,
-                ui_language,
+                language_for_shortcuts.get(),
                 sender_for_shortcuts.clone(),
             );
             gtk::glib::Propagation::Stop
@@ -2693,8 +3069,10 @@ fn build_window_content(
     MainUi {
         window,
         content: content_root,
+        header_root,
         main_stack,
         dark_theme,
+        ui_language_state,
         default_new_language,
         project_root_for_new_items,
         settings,
@@ -2740,6 +3118,7 @@ fn build_window_content(
         displayed_line_numbers_visible: preferences.line_numbers_visible,
         displayed_word_wrap: preferences.word_wrap,
         displayed_indent_width: preferences.indent_width,
+        displayed_ui_language: preferences.ui_language,
         displayed_preferred_ui_language: preferences.ui_language,
         displayed_settings_visible: false,
         displayed_output_text: tr(ui_language, "A saída aparecerá aqui após a execução.")
@@ -2753,6 +3132,7 @@ fn build_settings_window(
     sender: ComponentSender<MainWindow>,
     preferences: Preferences,
     initial_dark: bool,
+    ui_language_state: Rc<Cell<UiLanguage>>,
 ) -> SettingsUi {
     let language = preferences.ui_language;
     let window = gtk::Window::new();
@@ -2877,7 +3257,7 @@ fn build_settings_window(
         tr(language, "Idioma da interface"),
         tr(
             language,
-            "O idioma escolhido será aplicado ao reabrir o Potoo.",
+            "As alterações de idioma são aplicadas imediatamente.",
         ),
         &ui_language_picker,
     ));
@@ -3030,24 +3410,26 @@ fn build_settings_window(
     let window_for_about = window.clone();
     let title_for_about = title_label.clone();
     let back_for_about = back_button.clone();
+    let language_for_about = ui_language_state.clone();
     about_button.connect_clicked(move |_| {
         stack_for_about.set_visible_child_name("about");
         window_for_about.set_default_size(740, 560);
         back_for_about.set_visible(true);
-        title_for_about.set_text(tr(language, "Sobre o Potoo IDE"));
-        window_for_about.set_title(Some(tr(language, "Sobre o Potoo IDE")));
+        title_for_about.set_text(tr(language_for_about.get(), "Sobre o Potoo IDE"));
+        window_for_about.set_title(Some(tr(language_for_about.get(), "Sobre o Potoo IDE")));
     });
 
     let stack_for_back = stack.clone();
     let window_for_back = window.clone();
     let title_for_back = title_label.clone();
     let back_for_back = back_button.clone();
+    let language_for_back = ui_language_state.clone();
     back_button.connect_clicked(move |_| {
         stack_for_back.set_visible_child_name("preferences");
         window_for_back.set_default_size(740, 685);
         back_for_back.set_visible(false);
-        title_for_back.set_text(tr(language, "Configurações"));
-        window_for_back.set_title(Some(tr(language, "Configurações")));
+        title_for_back.set_text(tr(language_for_back.get(), "Configurações"));
+        window_for_back.set_title(Some(tr(language_for_back.get(), "Configurações")));
     });
 
     let sender_for_theme = sender.clone();
@@ -3102,12 +3484,13 @@ fn build_settings_window(
     let title_for_close = title_label.clone();
     let back_for_close = back_button.clone();
     let window_for_close = window.clone();
+    let language_for_close = ui_language_state.clone();
     window.connect_close_request(move |_| {
         stack_for_close.set_visible_child_name("preferences");
         window_for_close.set_default_size(740, 685);
         back_for_close.set_visible(false);
-        title_for_close.set_text(tr(language, "Configurações"));
-        window_for_close.set_title(Some(tr(language, "Configurações")));
+        title_for_close.set_text(tr(language_for_close.get(), "Configurações"));
+        window_for_close.set_title(Some(tr(language_for_close.get(), "Configurações")));
         sender.input(MainWindowMsg::CloseSettings);
         gtk::glib::Propagation::Stop
     });
@@ -4177,4 +4560,81 @@ fn scan_source_directory(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod ui_language_tests {
+    use super::{UI_TRANSLATION_KEYS, UiLanguage, tr, translate_known_text};
+
+    #[test]
+    fn detects_supported_system_locales() {
+        assert_eq!(
+            UiLanguage::from_locale_name("pt_BR.UTF-8"),
+            Some(UiLanguage::Portuguese)
+        );
+        assert_eq!(
+            UiLanguage::from_locale_name("es-MX"),
+            Some(UiLanguage::Spanish)
+        );
+        assert_eq!(
+            UiLanguage::from_locale_name("en_GB"),
+            Some(UiLanguage::English)
+        );
+        assert_eq!(UiLanguage::from_locale_name("fr_FR"), None);
+    }
+
+    #[test]
+    fn uses_first_supported_system_language_or_english() {
+        assert_eq!(
+            UiLanguage::from_language_names(["fr_FR", "es_MX", "pt_BR"]),
+            UiLanguage::Spanish
+        );
+        assert_eq!(
+            UiLanguage::from_language_names(["fr_FR", "C"]),
+            UiLanguage::English
+        );
+    }
+
+    #[test]
+    fn saved_language_preference_takes_precedence_over_system_language() {
+        assert_eq!(
+            UiLanguage::from_preference(Some("en"), ["pt_BR"]),
+            UiLanguage::English
+        );
+        assert_eq!(
+            UiLanguage::from_preference(Some("pt-BR"), ["en_US"]),
+            UiLanguage::Portuguese
+        );
+        assert_eq!(
+            UiLanguage::from_preference(None, ["es_ES"]),
+            UiLanguage::Spanish
+        );
+        assert_eq!(
+            UiLanguage::from_preference(Some("invalid"), ["fr_FR"]),
+            UiLanguage::English
+        );
+    }
+
+    #[test]
+    fn translates_existing_interface_copy_between_supported_languages() {
+        for key in UI_TRANSLATION_KEYS {
+            for from in [
+                UiLanguage::Portuguese,
+                UiLanguage::English,
+                UiLanguage::Spanish,
+            ] {
+                for to in [
+                    UiLanguage::Portuguese,
+                    UiLanguage::English,
+                    UiLanguage::Spanish,
+                ] {
+                    assert_eq!(
+                        translate_known_text(from, to, tr(from, key)),
+                        Some(tr(to, key).to_string()),
+                        "failed translating {key:?} from {from:?} to {to:?}"
+                    );
+                }
+            }
+        }
+    }
 }
