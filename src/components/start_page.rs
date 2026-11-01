@@ -225,7 +225,6 @@ pub(crate) fn rebuild_recent_items(
         detail.append(&location);
         content.append(&detail);
 
-        content.append(&icon("chevron-right"));
         button.set_child(Some(&content));
         button.set_tooltip_text(Some(&path.display().to_string()));
 
@@ -250,6 +249,19 @@ pub(crate) fn rebuild_recent_items(
             sender_for_remove.input(MainWindowMsg::RecentRemoved(path_to_remove.clone()));
         });
         row.append(&remove_button);
+
+        let open_action_button = gtk::Button::new();
+        open_action_button.add_css_class("potoo-start-recent-open-action");
+        open_action_button.set_valign(gtk::Align::Center);
+        open_action_button.set_child(Some(&icon("chevron-right")));
+        open_action_button.set_tooltip_text(Some(tr(language, "Abrir um programa recente")));
+
+        let selected_path = path.clone();
+        let sender_for_open_action = sender.clone();
+        open_action_button.connect_clicked(move |_| {
+            sender_for_open_action.input(MainWindowMsg::RecentSelected(selected_path.clone()));
+        });
+        row.append(&open_action_button);
         container.append(&row);
     }
 }

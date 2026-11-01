@@ -108,6 +108,24 @@ button.potoo-start-recent-remove:hover {
   color: var(--potoo-text);
 }
 
+button.potoo-start-recent-open-action {
+  min-width: 32px;
+  min-height: 32px;
+  margin: 0 8px 0 0;
+  padding: 0;
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 0;
+  color: var(--potoo-text-muted);
+  box-shadow: none;
+}
+
+button.potoo-start-recent-open-action:hover {
+  background-color: var(--potoo-control-hover-bg);
+  color: var(--potoo-text);
+}
+
 .potoo-start-recent-name,
 .potoo-start-action-title {
   color: var(--potoo-text);
