@@ -912,7 +912,8 @@ pub(crate) fn build_output_panel(
         .child(&variables_view)
         .build();
     variables_scroll.add_css_class("potoo-debugger-output");
-    variables_scroll.set_size_request(-1, 96);
+    variables_scroll.set_min_content_height(96);
+    variables_scroll.set_max_content_height(96);
     variables_scroll.set_propagate_natural_height(false);
     variables_scroll.set_hscrollbar_policy(gtk::PolicyType::Never);
     variables_scroll.set_vscrollbar_policy(gtk::PolicyType::Automatic);
