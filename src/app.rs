@@ -479,6 +479,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Continuar" => "Continue",
             "Avançar um passo" => "Step",
             "Parar" => "Stop",
+            "Parar depuração" => "Stop debugging",
             "Aguardando depuração" => "Waiting for debugging",
             "A explicação da linha pausada aparecerá aqui." => {
                 "The explanation for the paused line will appear here."
@@ -1024,6 +1025,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Continuar" => "Continuar",
             "Avançar um passo" => "Avanzar un paso",
             "Parar" => "Detener",
+            "Parar depuração" => "Detener depuración",
             "Aguardando depuração" => "Esperando depuración",
             "A explicação da linha pausada aparecerá aqui." => {
                 "La explicación de la línea pausada aparecerá aquí."
@@ -1455,6 +1457,7 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Executar o programa atual",
     "Executando o programa…",
     "Execução concluída.",
+    "Parar depuração",
     "O programa terminou com um erro.",
     "Digite um valor e pressione Enter",
     "O interpretador foi encerrado antes de concluir o programa.",
@@ -4257,6 +4260,7 @@ impl SimpleComponent for MainWindow {
                 && self.active_execution_id.is_some()
                 && self.debugger_snapshot.is_some(),
         );
+        ui.debugger_stop.set_visible(self.debugging_active);
         ui.debugger_stop
             .set_sensitive(self.debugging_active && self.active_execution_id.is_some());
         if ui.displayed_debugger_snapshot != self.debugger_snapshot {

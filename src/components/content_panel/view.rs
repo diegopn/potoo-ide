@@ -825,11 +825,13 @@ pub(crate) fn build_output_panel(
     start_content.append(&gtk::Label::new(Some(tr(language, "Iniciar depuração"))));
     debugger_start.set_child(Some(&start_content));
     debugger_start.set_tooltip_text(Some(tr(language, "Iniciar depuração")));
-    debugger_start.add_css_class("potoo-run-button");
+    debugger_start.add_css_class("potoo-debugger-start");
     debugger_start.set_hexpand(true);
 
     let controls = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    controls.set_halign(gtk::Align::Start);
+    controls.set_halign(gtk::Align::Fill);
+    controls.set_hexpand(true);
+    controls.set_homogeneous(true);
     let debugger_continue = gtk::Button::new();
     debugger_continue.set_child(Some(&icon("play")));
     debugger_continue.set_tooltip_text(Some(tr(language, "Continuar")));
@@ -843,16 +845,25 @@ pub(crate) fn build_output_panel(
         "Avançar um passo",
     ))]);
     let debugger_stop = gtk::Button::new();
-    debugger_stop.set_child(Some(&icon("stop")));
-    debugger_stop.set_tooltip_text(Some(tr(language, "Parar")));
-    debugger_stop.update_property(&[gtk::accessible::Property::Label(tr(language, "Parar"))]);
-    for button in [&debugger_continue, &debugger_step, &debugger_stop] {
+    let stop_content = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    stop_content.set_halign(gtk::Align::Center);
+    stop_content.append(&icon("stop"));
+    stop_content.append(&gtk::Label::new(Some(tr(language, "Parar depuração"))));
+    debugger_stop.set_child(Some(&stop_content));
+    debugger_stop.set_tooltip_text(Some(tr(language, "Parar depuração")));
+    debugger_stop.update_property(&[gtk::accessible::Property::Label(tr(
+        language,
+        "Parar depuração",
+    ))]);
+    debugger_stop.add_css_class("potoo-debugger-stop");
+    debugger_stop.set_hexpand(true);
+    debugger_stop.set_visible(false);
+    for button in [&debugger_continue, &debugger_step] {
         button.add_css_class("potoo-debugger-action");
-        button.add_css_class("potoo-debugger-icon-action");
+        button.set_hexpand(true);
     }
     controls.append(&debugger_continue);
     controls.append(&debugger_step);
-    controls.append(&debugger_stop);
     let sender_for_start = sender.clone();
     debugger_start.connect_clicked(move |_| {
         sender_for_start.input(MainWindowMsg::StartDebug);
@@ -869,6 +880,7 @@ pub(crate) fn build_output_panel(
     debugger.append(&debugger_controls);
     let debugger_position = gtk::Label::new(Some(tr(language, "Aguardando depuração")));
     debugger_position.set_xalign(0.0);
+    debugger_position.set_margin_top(4);
     debugger_position.add_css_class("potoo-debugger-position");
     debugger.append(&debugger_position);
     let debugger_variables = gtk::TextBuffer::new(None);
@@ -899,6 +911,7 @@ pub(crate) fn build_output_panel(
     debugger.append(&variables_scroll);
     let debugger_learning = build_debugger_learning(language);
     debugger.append(&debugger_learning.analysis_stack);
+    debugger.append(&debugger_stop);
     stack.set_visible_child_name("output");
 
     for (button, child_name) in tab_buttons.iter().zip(["output", "problems"]) {

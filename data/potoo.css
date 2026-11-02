@@ -1001,17 +1001,20 @@ button.potoo-output-tab-selected:focus {
   color: var(--potoo-text-secondary);
 }
 
+button.potoo-debugger-start,
 button.potoo-debugger-action {
-  min-height: 34px;
-  padding: 4px;
-  background-color: transparent;
+  min-height: 36px;
+  padding: 4px 10px;
+  background-color: var(--potoo-control-bg);
   background-image: none;
-  border: 1px solid transparent;
+  border: 1px solid var(--potoo-border);
   border-radius: 0;
-  color: var(--potoo-text-muted);
+  color: var(--potoo-text-secondary);
   box-shadow: none;
 }
 
+button.potoo-debugger-start:hover,
+button.potoo-debugger-start:focus-visible,
 button.potoo-debugger-action:hover,
 button.potoo-debugger-action:focus-visible {
   background-color: var(--potoo-control-hover-bg);
@@ -1019,12 +1022,34 @@ button.potoo-debugger-action:focus-visible {
   color: var(--potoo-text);
 }
 
-button.potoo-debugger-icon-action {
+button.potoo-debugger-start:disabled,
+button.potoo-debugger-action:disabled {
+  color: var(--potoo-text-muted);
+  opacity: 0.55;
+}
+
+button.potoo-debugger-action {
   min-width: 36px;
 }
 
-button.potoo-debugger-action:disabled {
-  color: var(--potoo-text-muted);
+button.potoo-debugger-stop {
+  min-height: 36px;
+  padding: 4px 10px;
+  background-color: var(--potoo-learning-problem-bg);
+  background-image: none;
+  border: 1px solid var(--potoo-learning-problem-border);
+  border-radius: 0;
+  color: var(--potoo-learning-problem-text);
+  box-shadow: none;
+}
+
+button.potoo-debugger-stop:hover,
+button.potoo-debugger-stop:focus-visible {
+  background-color: var(--potoo-learning-problem-border);
+  color: var(--potoo-text);
+}
+
+button.potoo-debugger-stop:disabled {
   opacity: 0.55;
 }
 
@@ -1043,6 +1068,11 @@ textview.potoo-debugger-variables {
 
 .potoo-debugger-analysis {
   color: var(--potoo-text-secondary);
+}
+
+.potoo-debugger-analysis .potoo-concept-card,
+window.potoo-window.potoo-dark .potoo-debugger-analysis .potoo-concept-card {
+  background-color: transparent;
 }
 
 .potoo-debugger-analysis separator {
