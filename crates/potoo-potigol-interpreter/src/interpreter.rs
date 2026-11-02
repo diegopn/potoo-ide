@@ -1960,7 +1960,10 @@ impl<'a> Interpreter<'a> {
                 values.reverse();
                 self.collection_value_like(&receiver, values)
             }
-            "ordene" => self.sort_values(values, None, span).map(Value::List),
+            "ordene" => {
+                let sorted = self.sort_values(values, None, span)?;
+                self.collection_value_like(&receiver, sorted)
+            }
             "junte" => {
                 let text = values.iter().map(Value::display).collect::<String>();
                 self.check_string_size(text.len(), span)?;
