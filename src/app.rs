@@ -4821,6 +4821,7 @@ fn build_window_content(
     content_panel::update_line_numbers(&code_buffer, &line_numbers);
 
     let line_number_gutter = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    line_number_gutter.add_css_class("potoo-line-number-gutter");
     line_number_gutter.append(&line_numbers);
     let line_numbers_separator = gtk::Separator::new(gtk::Orientation::Vertical);
     line_numbers_separator.add_css_class("potoo-gutter-separator");
