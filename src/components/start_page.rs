@@ -12,6 +12,7 @@ pub(crate) struct StartPageUi {
     pub(crate) recent_list: gtk::Box,
     pub(crate) portugol_button: gtk::Button,
     pub(crate) visualg_button: gtk::Button,
+    pub(crate) potigol_button: gtk::Button,
     pub(crate) open_folder_button: gtk::Button,
     pub(crate) open_file_button: gtk::Button,
 }
@@ -77,8 +78,10 @@ pub(crate) fn build_start_page(language: UiLanguage) -> StartPageUi {
     let portugol_button =
         language_option("Portugol", tr(language, "Criar programa inicial (.por)"));
     let visualg_button = language_option("VisuAlg", tr(language, "Criar programa inicial (.alg)"));
+    let potigol_button = language_option("Potigol", tr(language, "Criar programa inicial (.poti)"));
     create_options.append(&portugol_button);
     create_options.append(&visualg_button);
+    create_options.append(&potigol_button);
     content.append(&create_options);
 
     let open_actions = gtk::Box::new(gtk::Orientation::Vertical, 8);
@@ -94,7 +97,7 @@ pub(crate) fn build_start_page(language: UiLanguage) -> StartPageUi {
         language,
         "open-document",
         "Abrir arquivo",
-        "Abra um arquivo .por ou .alg diretamente no editor.",
+        "Abra um arquivo .por, .alg ou .poti diretamente no editor.",
         "potoo-start-open-file",
     );
     open_actions.append(&open_folder_button);
@@ -110,6 +113,7 @@ pub(crate) fn build_start_page(language: UiLanguage) -> StartPageUi {
         recent_list,
         portugol_button,
         visualg_button,
+        potigol_button,
         open_folder_button,
         open_file_button,
     }

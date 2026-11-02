@@ -185,10 +185,11 @@ where
         .lines()
         .nth(one_based_line.saturating_sub(1))
         .unwrap_or("");
-    let line = line
-        .split_once("//")
-        .map_or(line, |(before, _)| before)
-        .trim();
+    let line = match language {
+        Language::Potigol => line.split_once('#').map_or(line, |(before, _)| before),
+        _ => line.split_once("//").map_or(line, |(before, _)| before),
+    }
+    .trim();
     let (facts, column, mut problems) = match language {
         Language::Portugol => {
             match portugol::analyze_source_line_cancellable(source, one_based_line, &is_cancelled) {
@@ -240,6 +241,7 @@ where
                 }
             }
         }
+        Language::Potigol => (None, 1, Vec::new()),
     };
     if is_cancelled() {
         return None;
@@ -616,6 +618,7 @@ fn declared_array_bounds(
                     );
                 }
             }
+            Language::Potigol => continue,
         }
     }
     Some(arrays)

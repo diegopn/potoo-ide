@@ -120,14 +120,16 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Comece um novo programa" => "Start a new program",
             "Projeto Portugol" => "Portugol project",
             "Projeto VisuAlg" => "VisuAlg project",
+            "Projeto Potigol" => "Potigol project",
             "Comece com um arquivo .por" => "Start with a .por file",
             "Comece com um arquivo .alg" => "Start with a .alg file",
             "Criar programa inicial (.por)" => "Create a starter program (.por)",
             "Criar programa inicial (.alg)" => "Create a starter program (.alg)",
+            "Criar programa inicial (.poti)" => "Create a starter program (.poti)",
             "Selecionar uma pasta" => "Choose a folder",
             "Abra um projeto que não aparece na lista." => "Open a project that is not listed.",
-            "Abra um arquivo .por ou .alg diretamente no editor." => {
-                "Open a .por or .alg file directly in the editor."
+            "Abra um arquivo .por, .alg ou .poti diretamente no editor." => {
+                "Open a .por, .alg, or .poti file directly in the editor."
             }
             "Projeto" => "Project",
             "Abrir um programa recente" => "Open a recent program",
@@ -177,10 +179,13 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Criar item no projeto" => "Create project item",
             "Novo projeto" => "New project",
             "Criar projeto" => "Create project",
-            "Criar um projeto Portugol ou VisuAlg" => "Create a Portugol or VisuAlg project",
+            "Criar um projeto Portugol, VisuAlg ou Potigol" => {
+                "Create a Portugol, VisuAlg, or Potigol project"
+            }
             "Selecione a pseudolinguagem do projeto" => "Select the project's pseudolanguage",
             "Arquivo inicial .por" => "Initial .por file",
             "Arquivo inicial .alg" => "Initial .alg file",
+            "Arquivo inicial .poti" => "Initial .poti file",
             "Crie uma pasta para reunir seus programas e exercícios." => {
                 "Create a folder to keep your programs and exercises together."
             }
@@ -208,7 +213,9 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Não foi possível criar o projeto" => "Could not create the project",
             "Projeto criado" => "Project created",
             "Novo arquivo" => "New file",
-            "Criar um arquivo Portugol ou VisuAlg" => "Create a Portugol or VisuAlg file",
+            "Criar um arquivo Portugol, VisuAlg ou Potigol" => {
+                "Create a Portugol, VisuAlg, or Potigol file"
+            }
             "Nova pasta" => "New folder",
             "Criar uma pasta no projeto" => "Create a folder in the project",
             "Criar pasta" => "Create folder",
@@ -529,8 +536,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Esta pasta não contém arquivos visíveis." => {
                 "This folder contains no visible files."
             }
-            "Nenhum programa .por ou .alg nesta pasta. Os demais arquivos aparecem na lista." => {
-                "No .por or .alg programs in this folder. Other files appear in the list."
+            "Nenhum programa .por, .alg ou .poti nesta pasta. Os demais arquivos aparecem na lista." => {
+                "No .por, .alg, or .poti programs in this folder. Other files appear in the list."
             }
             "Fechar arquivo" => "Close file",
             "Escolha um nome e a linguagem do novo arquivo." => {
@@ -567,8 +574,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Arquivo aberto" => "File opened",
             "Arquivo salvo" => "File saved",
-            "Pasta aberta. Crie um arquivo .por ou .alg para começar." => {
-                "Folder opened. Create a .por or .alg file to get started."
+            "Pasta aberta. Crie um arquivo .por, .alg ou .poti para começar." => {
+                "Folder opened. Create a .por, .alg, or .poti file to get started."
             }
             "Novo arquivo criado" => "New file created",
             "Já existe um arquivo com esse nome." => "A file with that name already exists.",
@@ -600,8 +607,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Não foi possível abrir a pasta" => "Could not open folder",
             "Não foi possível salvar o arquivo" => "Could not save file",
             "Não foi possível criar o arquivo" => "Could not create file",
-            "O editor abre apenas arquivos .por ou .alg." => {
-                "The editor opens only .por and .alg files."
+            "O editor abre apenas arquivos .por, .alg e .poti." => {
+                "The editor opens only .por, .alg, and .poti files."
             }
             "Abra uma pasta de projeto antes de criar arquivos." => {
                 "Open a project folder before creating files."
@@ -612,9 +619,9 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Use um nome simples, sem pastas ou caracteres especiais." => {
                 "Use a simple name without folders or special characters."
             }
-            "Use a extensão .por ou .alg." => "Use the .por or .alg extension.",
-            "Salve o código com a extensão .por ou .alg." => {
-                "Save the code with the .por or .alg extension."
+            "Use a extensão .por, .alg ou .poti." => "Use the .por, .alg, or .poti extension.",
+            "Salve o código com a extensão .por, .alg ou .poti." => {
+                "Save the code with the .por, .alg, or .poti extension."
             }
             "Selecione uma pasta local para abrir." => "Choose a local folder to open.",
             "Selecione um arquivo local." => "Choose a local file.",
@@ -623,7 +630,9 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Não foi possível abrir a janela de salvamento" => "Could not open the save dialog",
             "Abrir arquivo de código" => "Open source file",
-            "Portugol e VisuAlg (*.por, *.alg)" => "Portugol and VisuAlg (*.por, *.alg)",
+            "Portugol, VisuAlg e Potigol (*.por, *.alg, *.poti)" => {
+                "Portugol, VisuAlg, and Potigol (*.por, *.alg, *.poti)"
+            }
             "Não foi possível abrir o arquivo de código" => "Could not open the source file",
             "novo-arquivo" => "new-file",
             "caminho de configuração inválido" => "invalid settings path",
@@ -646,16 +655,18 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Comece um novo programa" => "Empieza un programa nuevo",
             "Projeto Portugol" => "Proyecto Portugol",
             "Projeto VisuAlg" => "Proyecto VisuAlg",
+            "Projeto Potigol" => "Proyecto Potigol",
             "Comece com um arquivo .por" => "Empieza con un archivo .por",
             "Comece com um arquivo .alg" => "Empieza con un archivo .alg",
             "Criar programa inicial (.por)" => "Crear un programa inicial (.por)",
             "Criar programa inicial (.alg)" => "Crear un programa inicial (.alg)",
+            "Criar programa inicial (.poti)" => "Crear un programa inicial (.poti)",
             "Selecionar uma pasta" => "Seleccionar una carpeta",
             "Abra um projeto que não aparece na lista." => {
                 "Abre un proyecto que no aparece en la lista."
             }
-            "Abra um arquivo .por ou .alg diretamente no editor." => {
-                "Abre un archivo .por o .alg directamente en el editor."
+            "Abra um arquivo .por, .alg ou .poti diretamente no editor." => {
+                "Abre un archivo .por, .alg o .poti directamente en el editor."
             }
             "Projeto" => "Proyecto",
             "Abrir um programa recente" => "Abrir un programa reciente",
@@ -705,10 +716,13 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Criar item no projeto" => "Crear elemento del proyecto",
             "Novo projeto" => "Nuevo proyecto",
             "Criar projeto" => "Crear proyecto",
-            "Criar um projeto Portugol ou VisuAlg" => "Crear un proyecto Portugol o VisuAlg",
+            "Criar um projeto Portugol, VisuAlg ou Potigol" => {
+                "Crear un proyecto Portugol, VisuAlg o Potigol"
+            }
             "Selecione a pseudolinguagem do projeto" => "Selecciona el pseudolenguaje del proyecto",
             "Arquivo inicial .por" => "Archivo inicial .por",
             "Arquivo inicial .alg" => "Archivo inicial .alg",
+            "Arquivo inicial .poti" => "Archivo inicial .poti",
             "Crie uma pasta para reunir seus programas e exercícios." => {
                 "Crea una carpeta para reunir tus programas y ejercicios."
             }
@@ -740,7 +754,9 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Não foi possível criar o projeto" => "No se pudo crear el proyecto",
             "Projeto criado" => "Proyecto creado",
             "Novo arquivo" => "Nuevo archivo",
-            "Criar um arquivo Portugol ou VisuAlg" => "Crear un archivo Portugol o VisuAlg",
+            "Criar um arquivo Portugol, VisuAlg ou Potigol" => {
+                "Crear un archivo Portugol, VisuAlg o Potigol"
+            }
             "Nova pasta" => "Nueva carpeta",
             "Criar uma pasta no projeto" => "Crear una carpeta en el proyecto",
             "Criar pasta" => "Crear carpeta",
@@ -1073,8 +1089,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Esta pasta não contém arquivos visíveis." => {
                 "Esta carpeta no tiene archivos visibles."
             }
-            "Nenhum programa .por ou .alg nesta pasta. Os demais arquivos aparecem na lista." => {
-                "No hay programas .por o .alg en esta carpeta. Los demás archivos aparecen en la lista."
+            "Nenhum programa .por, .alg ou .poti nesta pasta. Os demais arquivos aparecem na lista." => {
+                "No hay programas .por, .alg o .poti en esta carpeta. Los demás archivos aparecen en la lista."
             }
             "Fechar arquivo" => "Cerrar archivo",
             "Escolha um nome e a linguagem do novo arquivo." => {
@@ -1113,8 +1129,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Arquivo aberto" => "Archivo abierto",
             "Arquivo salvo" => "Archivo guardado",
-            "Pasta aberta. Crie um arquivo .por ou .alg para começar." => {
-                "Carpeta abierta. Crea un archivo .por o .alg para empezar."
+            "Pasta aberta. Crie um arquivo .por, .alg ou .poti para começar." => {
+                "Carpeta abierta. Crea un archivo .por, .alg o .poti para empezar."
             }
             "Novo arquivo criado" => "Archivo nuevo creado",
             "Já existe um arquivo com esse nome." => "Ya existe un archivo con ese nombre.",
@@ -1148,8 +1164,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Não foi possível abrir a pasta" => "No se pudo abrir la carpeta",
             "Não foi possível salvar o arquivo" => "No se pudo guardar el archivo",
             "Não foi possível criar o arquivo" => "No se pudo crear el archivo",
-            "O editor abre apenas arquivos .por ou .alg." => {
-                "El editor solo abre archivos .por o .alg."
+            "O editor abre apenas arquivos .por, .alg e .poti." => {
+                "El editor solo abre archivos .por, .alg y .poti."
             }
             "Abra uma pasta de projeto antes de criar arquivos." => {
                 "Abre una carpeta de proyecto antes de crear archivos."
@@ -1162,9 +1178,9 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Use um nome simples, sem pastas ou caracteres especiais." => {
                 "Usa un nombre sencillo, sin carpetas ni caracteres especiales."
             }
-            "Use a extensão .por ou .alg." => "Usa la extensión .por o .alg.",
-            "Salve o código com a extensão .por ou .alg." => {
-                "Guarda el código con la extensión .por o .alg."
+            "Use a extensão .por, .alg ou .poti." => "Usa la extensión .por, .alg o .poti.",
+            "Salve o código com a extensão .por, .alg ou .poti." => {
+                "Guarda el código con la extensión .por, .alg o .poti."
             }
             "Selecione uma pasta local para abrir." => "Selecciona una carpeta local para abrir.",
             "Selecione um arquivo local." => "Selecciona un archivo local.",
@@ -1175,7 +1191,9 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
                 "No se pudo abrir la ventana para guardar"
             }
             "Abrir arquivo de código" => "Abrir archivo de código",
-            "Portugol e VisuAlg (*.por, *.alg)" => "Portugol y VisuAlg (*.por, *.alg)",
+            "Portugol, VisuAlg e Potigol (*.por, *.alg, *.poti)" => {
+                "Portugol, VisuAlg y Potigol (*.por, *.alg, *.poti)"
+            }
             "Não foi possível abrir o arquivo de código" => {
                 "No se pudo abrir el archivo de código"
             }
@@ -1244,16 +1262,18 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Comece um novo programa",
     "Projeto Portugol",
     "Projeto VisuAlg",
+    "Projeto Potigol",
     "Comece com um arquivo .por",
     "Comece com um arquivo .alg",
     "Criar programa inicial (.por)",
     "Criar programa inicial (.alg)",
+    "Criar programa inicial (.poti)",
     "Pressione Esc para cancelar a execução.",
     "A explicação da linha pausada aparecerá aqui.",
     "Analisando linha…",
     "Selecionar uma pasta",
     "Abra um projeto que não aparece na lista.",
-    "Abra um arquivo .por ou .alg diretamente no editor.",
+    "Abra um arquivo .por, .alg ou .poti diretamente no editor.",
     "Projeto",
     "Abrir um programa recente",
     "O arquivo ou a pasta recente não está mais disponível.",
@@ -1292,10 +1312,11 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Criar item no projeto",
     "Novo projeto",
     "Criar projeto",
-    "Criar um projeto Portugol ou VisuAlg",
+    "Criar um projeto Portugol, VisuAlg ou Potigol",
     "Selecione a pseudolinguagem do projeto",
     "Arquivo inicial .por",
     "Arquivo inicial .alg",
+    "Arquivo inicial .poti",
     "Crie uma pasta para reunir seus programas e exercícios.",
     "Nome do projeto",
     "Por exemplo: Meu primeiro projeto",
@@ -1315,7 +1336,7 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Não foi possível criar o projeto",
     "Projeto criado",
     "Novo arquivo",
-    "Criar um arquivo Portugol ou VisuAlg",
+    "Criar um arquivo Portugol, VisuAlg ou Potigol",
     "Nova pasta",
     "Criar uma pasta no projeto",
     "Criar pasta",
@@ -1466,7 +1487,7 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "2 espaços",
     "4 espaços",
     "Esta pasta não contém arquivos visíveis.",
-    "Nenhum programa .por ou .alg nesta pasta. Os demais arquivos aparecem na lista.",
+    "Nenhum programa .por, .alg ou .poti nesta pasta. Os demais arquivos aparecem na lista.",
     "Fechar arquivo",
     "Escolha um nome e a linguagem do novo arquivo.",
     "Crie um arquivo dentro do projeto atual.",
@@ -1489,27 +1510,27 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Nenhum problema detectado",
     "Arquivo aberto",
     "Arquivo salvo",
-    "Pasta aberta. Crie um arquivo .por ou .alg para começar.",
+    "Pasta aberta. Crie um arquivo .por, .alg ou .poti para começar.",
     "Novo arquivo criado",
     "Já existe um arquivo com esse nome.",
     "Não foi possível abrir o arquivo",
     "Não foi possível abrir a pasta",
     "Não foi possível salvar o arquivo",
     "Não foi possível criar o arquivo",
-    "O editor abre apenas arquivos .por ou .alg.",
+    "O editor abre apenas arquivos .por, .alg e .poti.",
     "Abra uma pasta de projeto antes de criar arquivos.",
     "Crie ou abra um arquivo antes de salvar.",
     "Não foi possível salvar as configurações",
     "Não foi possível salvar a sessão",
     "Use um nome simples, sem pastas ou caracteres especiais.",
-    "Use a extensão .por ou .alg.",
-    "Salve o código com a extensão .por ou .alg.",
+    "Use a extensão .por, .alg ou .poti.",
+    "Salve o código com a extensão .por, .alg ou .poti.",
     "Selecione uma pasta local para abrir.",
     "Selecione um arquivo local.",
     "Escolha um caminho local para salvar o arquivo.",
     "Não foi possível abrir a janela de salvamento",
     "Abrir arquivo de código",
-    "Portugol e VisuAlg (*.por, *.alg)",
+    "Portugol, VisuAlg e Potigol (*.por, *.alg, *.poti)",
     "Não foi possível abrir o arquivo de código",
     "novo-arquivo",
     "caminho de configuração inválido",
@@ -2442,7 +2463,7 @@ impl MainWindow {
 
         let Some(language) = Language::from_path(&path) else {
             self.output_status = self
-                .text("O editor abre apenas arquivos .por ou .alg.")
+                .text("O editor abre apenas arquivos .por, .alg e .poti.")
                 .to_string();
             return;
         };
@@ -2521,7 +2542,7 @@ impl MainWindow {
             self.open_document(path);
         } else {
             self.output_status = self
-                .text("Pasta aberta. Crie um arquivo .por ou .alg para começar.")
+                .text("Pasta aberta. Crie um arquivo .por, .alg ou .poti para começar.")
                 .to_string();
         }
     }
@@ -5126,6 +5147,21 @@ fn build_window_content(
         );
     });
 
+    let sender_for_start_potigol = sender.clone();
+    let window_for_start_potigol = window.clone();
+    let dark_for_start_potigol = dark_theme.clone();
+    let language_for_start_potigol = ui_language_state.clone();
+    start_page.potigol_button.connect_clicked(move |_| {
+        show_new_project_dialog(
+            &window_for_start_potigol,
+            language_for_start_potigol.get(),
+            Language::Potigol,
+            false,
+            dark_for_start_potigol.get(),
+            sender_for_start_potigol.clone(),
+        );
+    });
+
     let sender_for_start_open = sender.clone();
     let window_for_start_open = window.clone();
     let language_for_start_open = ui_language_state.clone();
@@ -5862,9 +5898,13 @@ fn show_open_file_dialog(
     let dialog = gtk::FileDialog::new();
     dialog.set_title(tr(language, "Abrir arquivo de código"));
     let filter = gtk::FileFilter::new();
-    filter.set_name(Some(tr(language, "Portugol e VisuAlg (*.por, *.alg)")));
+    filter.set_name(Some(tr(
+        language,
+        "Portugol, VisuAlg e Potigol (*.por, *.alg, *.poti)",
+    )));
     filter.add_suffix("por");
     filter.add_suffix("alg");
+    filter.add_suffix("poti");
     let filters = gtk::gio::ListStore::new::<gtk::FileFilter>();
     filters.append(&filter);
     dialog.set_filters(Some(&filters));
@@ -6042,34 +6082,51 @@ fn show_new_project_dialog(
     let portugol_button =
         language_option_button("Portugol", tr(ui_language, "Arquivo inicial .por"));
     let visualg_button = language_option_button("VisuAlg", tr(ui_language, "Arquivo inicial .alg"));
-    for button in [&portugol_button, &visualg_button] {
+    let potigol_button =
+        language_option_button("Potigol", tr(ui_language, "Arquivo inicial .poti"));
+    for button in [&portugol_button, &visualg_button, &potigol_button] {
         button.add_css_class("potoo-project-language-choice");
         button.set_hexpand(true);
     }
     match default_language {
         Language::Portugol => portugol_button.add_css_class("selected"),
         Language::Visualg => visualg_button.add_css_class("selected"),
+        Language::Potigol => potigol_button.add_css_class("selected"),
     }
     language_row.append(&portugol_button);
     language_row.append(&visualg_button);
+    language_row.append(&potigol_button);
     language_field.append(&language_label);
     language_field.append(&language_row);
     content.append(&language_field);
 
     let selected_language = Rc::new(Cell::new(default_language));
     let visualg_button_for_portugol = visualg_button.clone();
+    let potigol_button_for_portugol = potigol_button.clone();
     let selected_language_for_portugol = selected_language.clone();
     portugol_button.connect_clicked(move |button| {
         button.add_css_class("selected");
         visualg_button_for_portugol.remove_css_class("selected");
+        potigol_button_for_portugol.remove_css_class("selected");
         selected_language_for_portugol.set(Language::Portugol);
     });
     let portugol_button_for_visualg = portugol_button.clone();
+    let potigol_button_for_visualg = potigol_button.clone();
     let selected_language_for_visualg = selected_language.clone();
     visualg_button.connect_clicked(move |button| {
         button.add_css_class("selected");
         portugol_button_for_visualg.remove_css_class("selected");
+        potigol_button_for_visualg.remove_css_class("selected");
         selected_language_for_visualg.set(Language::Visualg);
+    });
+    let portugol_button_for_potigol = portugol_button.clone();
+    let visualg_button_for_potigol = visualg_button.clone();
+    let selected_language_for_potigol = selected_language.clone();
+    potigol_button.connect_clicked(move |button| {
+        button.add_css_class("selected");
+        portugol_button_for_potigol.remove_css_class("selected");
+        visualg_button_for_potigol.remove_css_class("selected");
+        selected_language_for_potigol.set(Language::Potigol);
     });
 
     let location_field = gtk::Box::new(gtk::Orientation::Vertical, 6);
@@ -6369,33 +6426,49 @@ fn show_new_file_dialog(
     language_row.set_margin_top(1);
     let portugol_button = language_option_button("Portugol", ".por");
     let visualg_button = language_option_button("VisuAlg", ".alg");
-    for button in [&portugol_button, &visualg_button] {
+    let potigol_button = language_option_button("Potigol", ".poti");
+    for button in [&portugol_button, &visualg_button, &potigol_button] {
         button.add_css_class("potoo-project-language-choice");
         button.set_hexpand(true);
     }
     match default_language {
         Language::Portugol => portugol_button.add_css_class("selected"),
         Language::Visualg => visualg_button.add_css_class("selected"),
+        Language::Potigol => potigol_button.add_css_class("selected"),
     }
     language_row.append(&portugol_button);
     language_row.append(&visualg_button);
+    language_row.append(&potigol_button);
     language_field.append(&language_label);
     language_field.append(&language_row);
     content.append(&language_field);
     let selected_language = Rc::new(Cell::new(default_language));
     let visualg_for_portugol = visualg_button.clone();
+    let potigol_for_portugol = potigol_button.clone();
     let selected_for_portugol = selected_language.clone();
     portugol_button.connect_clicked(move |button| {
         button.add_css_class("selected");
         visualg_for_portugol.remove_css_class("selected");
+        potigol_for_portugol.remove_css_class("selected");
         selected_for_portugol.set(Language::Portugol);
     });
     let portugol_for_visualg = portugol_button.clone();
+    let potigol_for_visualg = potigol_button.clone();
     let selected_for_visualg = selected_language.clone();
     visualg_button.connect_clicked(move |button| {
         button.add_css_class("selected");
         portugol_for_visualg.remove_css_class("selected");
+        potigol_for_visualg.remove_css_class("selected");
         selected_for_visualg.set(Language::Visualg);
+    });
+    let portugol_for_potigol = portugol_button.clone();
+    let visualg_for_potigol = visualg_button.clone();
+    let selected_for_potigol = selected_language.clone();
+    potigol_button.connect_clicked(move |button| {
+        button.add_css_class("selected");
+        portugol_for_potigol.remove_css_class("selected");
+        visualg_for_potigol.remove_css_class("selected");
+        selected_for_potigol.set(Language::Potigol);
     });
 
     let folder_field = gtk::Box::new(gtk::Orientation::Vertical, 6);
@@ -6931,7 +7004,7 @@ fn new_source_path(
     let requested_path = Path::new(name);
     let language = match requested_path.extension() {
         Some(_) => Language::from_path(requested_path)
-            .ok_or_else(|| tr(ui_language, "Use a extensão .por ou .alg.").to_string())?,
+            .ok_or_else(|| tr(ui_language, "Use a extensão .por, .alg ou .poti.").to_string())?,
         None => default_language,
     };
     let file_name = if requested_path.extension().is_some() {
@@ -7014,7 +7087,7 @@ fn normalized_project_item_name(
         return match requested_path.extension() {
             None => Ok(format!("{name}.{}", language.extension())),
             Some(_) if Language::from_path(requested_path).is_some() => Ok(name.to_string()),
-            Some(_) => Err(tr(ui_language, "Use a extensão .por ou .alg.").to_string()),
+            Some(_) => Err(tr(ui_language, "Use a extensão .por, .alg ou .poti.").to_string()),
         };
     }
 
@@ -7030,7 +7103,11 @@ fn supported_save_path(
         Some(_) => Language::from_path(&path)
             .map(|language| (path, language))
             .ok_or_else(|| {
-                tr(ui_language, "Salve o código com a extensão .por ou .alg.").to_string()
+                tr(
+                    ui_language,
+                    "Salve o código com a extensão .por, .alg ou .poti.",
+                )
+                .to_string()
             }),
         None => Ok((
             path.with_extension(default_language.extension()),

@@ -70,7 +70,7 @@ pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
     let new_program_button = icon_label_button(
         "new-document",
         tr(language, "Novo arquivo"),
-        tr(language, "Criar um arquivo Portugol ou VisuAlg"),
+        tr(language, "Criar um arquivo Portugol, VisuAlg ou Potigol"),
         "potoo-sidebar-menu-item",
     );
     let open_file_menu_button = icon_label_button(
@@ -98,7 +98,7 @@ pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
     let new_project_button = icon_label_button(
         "new-folder",
         tr(language, "Novo projeto"),
-        tr(language, "Criar um projeto Portugol ou VisuAlg"),
+        tr(language, "Criar um projeto Portugol, VisuAlg ou Potigol"),
         "potoo-sidebar-create-project",
     );
     new_project_button.set_margin_start(10);
@@ -205,7 +205,7 @@ pub(crate) fn rebuild_file_list(
     {
         let empty_label = gtk::Label::new(Some(tr(
             language,
-            "Nenhum programa .por ou .alg nesta pasta. Os demais arquivos aparecem na lista.",
+            "Nenhum programa .por, .alg ou .poti nesta pasta. Os demais arquivos aparecem na lista.",
         )));
         empty_label.set_wrap(true);
         empty_label.set_xalign(0.0);

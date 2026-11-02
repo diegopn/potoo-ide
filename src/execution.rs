@@ -1477,6 +1477,12 @@ pub(crate) fn start(
             Language::Visualg => {
                 visualg::execute(&source, &mut io).map_err(convert_visualg_diagnostics)
             }
+            Language::Potigol => Err(vec![ExecutionDiagnostic {
+                kind: DiagnosticKind::Runtime,
+                message: "O interpretador Potigol ainda está em desenvolvimento.".to_owned(),
+                line: 1,
+                column: 1,
+            }]),
         };
         let stopped = io.stopped
             || result.as_ref().is_err_and(|diagnostics| {

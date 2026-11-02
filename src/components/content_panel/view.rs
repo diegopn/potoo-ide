@@ -1183,6 +1183,13 @@ fn matching_delimiter_at_cursor(
             continue;
         }
 
+        if language == Language::Potigol && current == '#' {
+            while index < chars.len() && chars[index] != '\n' {
+                index += 1;
+            }
+            continue;
+        }
+
         if language == Language::Portugol && current == '/' && next == Some('*') {
             index += 2;
             let mut closed = false;
