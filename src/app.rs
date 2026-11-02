@@ -1920,9 +1920,29 @@ impl SimpleComponent for MainWindow {
             .is_some_and(|session| !session.clean_exit);
         let restored_root = saved_session
             .as_ref()
-            .and_then(|session| session.project_root.clone())
-            .filter(|path| path.is_dir())
-            .filter(|_| recovering_session);
+            .filter(|_| recovering_session)
+            .and_then(|session| {
+                session
+                    .project_root
+                    .as_ref()
+                    .filter(|path| path.is_dir())
+                    .cloned()
+                    .or_else(|| {
+                        let document_parent = |document: &SessionDocument| {
+                            document
+                                .path
+                                .as_deref()
+                                .and_then(Path::parent)
+                                .filter(|path| path.is_dir())
+                                .map(Path::to_path_buf)
+                        };
+                        session
+                            .documents
+                            .get(session.active_index)
+                            .and_then(document_parent)
+                            .or_else(|| session.documents.iter().find_map(document_parent))
+                    })
+            });
         let mut recent_paths = load_recent_paths();
         if recent_paths.is_empty() {
             if let Some(session) = &saved_session {
