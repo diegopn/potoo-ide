@@ -567,6 +567,30 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Novo arquivo criado" => "New file created",
             "Já existe um arquivo com esse nome." => "A file with that name already exists.",
+            "Já existe um item com esse nome." => "An item with that name already exists.",
+            "Renomear" => "Rename",
+            "Excluir" => "Delete",
+            "Renomear arquivo" => "Rename file",
+            "Renomear pasta" => "Rename folder",
+            "Escolha um novo nome para este item do projeto." => {
+                "Choose a new name for this project item."
+            }
+            "Novo nome" => "New name",
+            "O item selecionado não está mais disponível." => {
+                "The selected item is no longer available."
+            }
+            "Item renomeado." => "Item renamed.",
+            "Item excluído." => "Item deleted.",
+            "Não foi possível renomear o item" => "Could not rename the item",
+            "Não foi possível excluir o item" => "Could not delete the item",
+            "Excluir item do projeto" => "Delete project item",
+            "Deseja excluir este item do projeto?" => "Do you want to delete this project item?",
+            "Há alterações não salvas em arquivos deste item; elas serão perdidas." => {
+                "Unsaved changes in files in this item will be lost."
+            }
+            "O item e todo o seu conteúdo serão excluídos permanentemente." => {
+                "This item and all of its contents will be permanently deleted."
+            }
             "Não foi possível abrir o arquivo" => "Could not open file",
             "Não foi possível abrir a pasta" => "Could not open folder",
             "Não foi possível salvar o arquivo" => "Could not save file",
@@ -1084,6 +1108,32 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Novo arquivo criado" => "Archivo nuevo creado",
             "Já existe um arquivo com esse nome." => "Ya existe un archivo con ese nombre.",
+            "Já existe um item com esse nome." => "Ya existe un elemento con ese nombre.",
+            "Renomear" => "Renombrar",
+            "Excluir" => "Eliminar",
+            "Renomear arquivo" => "Renombrar archivo",
+            "Renomear pasta" => "Renombrar carpeta",
+            "Escolha um novo nome para este item do projeto." => {
+                "Elige un nombre nuevo para este elemento del proyecto."
+            }
+            "Novo nome" => "Nombre nuevo",
+            "O item selecionado não está mais disponível." => {
+                "El elemento seleccionado ya no está disponible."
+            }
+            "Item renomeado." => "Elemento renombrado.",
+            "Item excluído." => "Elemento eliminado.",
+            "Não foi possível renomear o item" => "No se pudo renombrar el elemento",
+            "Não foi possível excluir o item" => "No se pudo eliminar el elemento",
+            "Excluir item do projeto" => "Eliminar elemento del proyecto",
+            "Deseja excluir este item do projeto?" => {
+                "¿Quieres eliminar este elemento del proyecto?"
+            }
+            "Há alterações não salvas em arquivos deste item; elas serão perdidas." => {
+                "Se perderán los cambios sin guardar en los archivos de este elemento."
+            }
+            "O item e todo o seu conteúdo serão excluídos permanentemente." => {
+                "Este elemento y todo su contenido se eliminarán de forma permanente."
+            }
             "Não foi possível abrir o arquivo" => "No se pudo abrir el archivo",
             "Não foi possível abrir a pasta" => "No se pudo abrir la carpeta",
             "Não foi possível salvar o arquivo" => "No se pudo guardar el archivo",
@@ -1265,6 +1315,22 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Digite um nome válido para a pasta.",
     "Não foi possível criar a pasta",
     "Abra uma pasta de projeto antes de criar itens.",
+    "Renomear",
+    "Excluir",
+    "Renomear arquivo",
+    "Renomear pasta",
+    "Escolha um novo nome para este item do projeto.",
+    "Novo nome",
+    "O item selecionado não está mais disponível.",
+    "Já existe um item com esse nome.",
+    "Item renomeado.",
+    "Item excluído.",
+    "Não foi possível renomear o item",
+    "Não foi possível excluir o item",
+    "Excluir item do projeto",
+    "Deseja excluir este item do projeto?",
+    "Há alterações não salvas em arquivos deste item; elas serão perdidas.",
+    "O item e todo o seu conteúdo serão excluídos permanentemente.",
     "Aprenda enquanto programa",
     "Abrir Aprenda enquanto programa",
     "Recolher Aprenda enquanto programa",
@@ -1521,6 +1587,10 @@ pub(crate) enum MainWindowMsg {
     CreateProject(PathBuf, String, Language),
     CreateFile(String, Language, PathBuf),
     CreateFolder(String, PathBuf),
+    RenameProjectItem(PathBuf),
+    RenameProjectItemConfirmed(PathBuf, String),
+    DeleteProjectItem(PathBuf),
+    DeleteProjectItemConfirmed(PathBuf),
     OpenFile(PathBuf),
     ActivateDocument(u64),
     CloseDocument(u64),
@@ -2584,6 +2654,136 @@ impl MainWindow {
         }
     }
 
+    fn validate_project_item(&self, path: &Path) -> Result<bool, String> {
+        let unavailable = || {
+            self.text("O item selecionado não está mais disponível.")
+                .to_string()
+        };
+        let Some(root) = self.project_root.as_deref() else {
+            return Err(unavailable());
+        };
+        let Some(item) = self.project_files.iter().find(|item| item.path == path) else {
+            return Err(unavailable());
+        };
+        let root = fs::canonicalize(root).map_err(|_| unavailable())?;
+        let item_path = fs::canonicalize(path).map_err(|_| unavailable())?;
+        if item_path == root
+            || !item_path.starts_with(&root)
+            || item_path.is_dir() != item.is_directory
+        {
+            return Err(unavailable());
+        }
+        Ok(item.is_directory)
+    }
+
+    fn rename_project_item(&mut self, path: PathBuf, name: String) {
+        let is_directory = match self.validate_project_item(&path) {
+            Ok(is_directory) => is_directory,
+            Err(error) => {
+                self.output_status = error;
+                return;
+            }
+        };
+        let name = match normalized_project_item_name(&path, &name, is_directory, self.ui_language)
+        {
+            Ok(name) => name,
+            Err(error) => {
+                self.output_status = error;
+                return;
+            }
+        };
+        let Some(parent) = path.parent() else {
+            self.output_status = self
+                .text("O item selecionado não está mais disponível.")
+                .to_string();
+            return;
+        };
+        let new_path = parent.join(name);
+        if new_path == path {
+            return;
+        }
+        if new_path.exists() && fs::canonicalize(&new_path).ok() != fs::canonicalize(&path).ok() {
+            self.output_status = self.text("Já existe um item com esse nome.").to_string();
+            return;
+        }
+
+        if let Err(error) = fs::rename(&path, &new_path) {
+            self.output_status =
+                format!("{}: {error}", self.text("Não foi possível renomear o item"));
+            return;
+        }
+
+        for document in &mut self.documents {
+            let Some(document_path) = document.path.clone() else {
+                continue;
+            };
+            let Ok(relative_path) = document_path.strip_prefix(&path) else {
+                continue;
+            };
+            if document_path == path {
+                document.name = new_path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| new_path.display().to_string());
+                if let Some(language) = Language::from_path(&new_path) {
+                    document.language = language;
+                }
+            }
+            document.path = Some(new_path.join(relative_path));
+        }
+
+        if let Some(root) = self.project_root.as_deref()
+            && let Ok(files) = scan_project_files(root)
+        {
+            self.project_files = files;
+        }
+        self.output_status = self.text("Item renomeado.").to_string();
+    }
+
+    fn delete_project_item(&mut self, path: PathBuf) {
+        let is_directory = match self.validate_project_item(&path) {
+            Ok(is_directory) => is_directory,
+            Err(error) => {
+                self.output_status = error;
+                return;
+            }
+        };
+        let result = if is_directory {
+            fs::remove_dir_all(&path)
+        } else {
+            fs::remove_file(&path)
+        };
+        if let Err(error) = result {
+            self.output_status =
+                format!("{}: {error}", self.text("Não foi possível excluir o item"));
+            return;
+        }
+
+        let removed_documents = self
+            .documents
+            .iter()
+            .filter(|document| {
+                document.path.as_deref().is_some_and(|document_path| {
+                    document_path == path || (is_directory && document_path.starts_with(&path))
+                })
+            })
+            .map(|document| document.id)
+            .collect::<Vec<_>>();
+        for id in removed_documents {
+            self.close_document(id);
+        }
+
+        if let Some(root) = self.project_root.as_deref()
+            && let Ok(files) = scan_project_files(root)
+        {
+            self.project_files = files;
+        } else {
+            self.project_files
+                .retain(|item| item.path != path && !item.path.starts_with(&path));
+        }
+        self.output_status = self.text("Item excluído.").to_string();
+    }
+
     fn create_project(
         &mut self,
         parent: PathBuf,
@@ -2999,6 +3199,8 @@ impl SimpleComponent for MainWindow {
                 | MainWindowMsg::CreateProject(_, _, _)
                 | MainWindowMsg::CreateFile(_, _, _)
                 | MainWindowMsg::CreateFolder(_, _)
+                | MainWindowMsg::RenameProjectItemConfirmed(_, _)
+                | MainWindowMsg::DeleteProjectItemConfirmed(_)
                 | MainWindowMsg::OpenFile(_)
                 | MainWindowMsg::ActivateDocument(_)
                 | MainWindowMsg::CloseDocument(_)
@@ -3064,6 +3266,59 @@ impl SimpleComponent for MainWindow {
             }
             MainWindowMsg::CreateFolder(name, relative_folder) => {
                 self.create_project_folder(name, relative_folder)
+            }
+            MainWindowMsg::RenameProjectItem(path) => match self.validate_project_item(&path) {
+                Ok(is_directory) => show_rename_project_item_dialog(
+                    &self.window,
+                    path,
+                    is_directory,
+                    self.ui_language,
+                    self.dark,
+                    sender.clone(),
+                ),
+                Err(error) => self.output_status = error,
+            },
+            MainWindowMsg::RenameProjectItemConfirmed(path, name) => {
+                self.rename_project_item(path, name);
+            }
+            MainWindowMsg::DeleteProjectItem(path) => match self.validate_project_item(&path) {
+                Ok(is_directory) => {
+                    let has_unsaved_changes = self.documents.iter().any(|document| {
+                        document.is_dirty()
+                            && document.path.as_deref().is_some_and(|document_path| {
+                                document_path == path
+                                    || (is_directory && document_path.starts_with(&path))
+                            })
+                    });
+                    let sender_for_delete = sender.clone();
+                    let path_for_delete = path.clone();
+                    show_potoo_confirmation(
+                        &self.window,
+                        self.ui_language,
+                        self.dark,
+                        "Excluir item do projeto",
+                        "Deseja excluir este item do projeto?",
+                        if has_unsaved_changes {
+                            "Há alterações não salvas em arquivos deste item; elas serão perdidas."
+                        } else {
+                            "O item e todo o seu conteúdo serão excluídos permanentemente."
+                        },
+                        vec!["Cancelar", "Excluir"],
+                        Some(1),
+                        Some(1),
+                        move |response| {
+                            if response == 1 {
+                                sender_for_delete.input(MainWindowMsg::DeleteProjectItemConfirmed(
+                                    path_for_delete.clone(),
+                                ));
+                            }
+                        },
+                    );
+                }
+                Err(error) => self.output_status = error,
+            },
+            MainWindowMsg::DeleteProjectItemConfirmed(path) => {
+                self.delete_project_item(path);
             }
             MainWindowMsg::OpenFile(path) => self.open_document(path),
             MainWindowMsg::ActivateDocument(id) => {
@@ -3734,6 +3989,11 @@ impl SimpleComponent for MainWindow {
         if ui.displayed_project_files != project_file_signature
             || ui.displayed_project_open != project_open
         {
+            ui.expanded_folders.borrow_mut().retain(|expanded| {
+                self.project_files
+                    .iter()
+                    .any(|item| item.is_directory && item.path == *expanded)
+            });
             sidebar::rebuild_file_list(
                 &ui.file_list,
                 &self.project_files,
@@ -5993,6 +6253,136 @@ fn show_new_file_dialog(
     dialog.present();
 }
 
+fn show_rename_project_item_dialog(
+    parent: &gtk::ApplicationWindow,
+    path: PathBuf,
+    is_directory: bool,
+    ui_language: UiLanguage,
+    initial_dark: bool,
+    sender: ComponentSender<MainWindow>,
+) {
+    let title = if is_directory {
+        "Renomear pasta"
+    } else {
+        "Renomear arquivo"
+    };
+    let dialog = gtk::Window::new();
+    dialog.set_title(Some(tr(ui_language, title)));
+    dialog.set_default_size(520, 260);
+    dialog.set_resizable(false);
+    dialog.set_transient_for(Some(parent));
+    dialog.set_modal(true);
+    dialog.add_css_class("potoo-window");
+    dialog.add_css_class("potoo-dialog-window");
+    if initial_dark {
+        dialog.add_css_class("potoo-dark");
+    }
+    set_dialog_titlebar(&dialog, ui_language, title);
+
+    let dialog_content = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    dialog_content.add_css_class("potoo-dialog-surface");
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    content.add_css_class("potoo-dialog-body");
+    content.set_vexpand(true);
+    content.set_margin_start(22);
+    content.set_margin_end(22);
+    content.set_margin_top(20);
+    content.set_margin_bottom(20);
+
+    let description = gtk::Label::new(Some(tr(
+        ui_language,
+        "Escolha um novo nome para este item do projeto.",
+    )));
+    description.set_xalign(0.0);
+    description.add_css_class("potoo-dialog-intro");
+    description.set_margin_bottom(18);
+    content.append(&description);
+
+    let name_field = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    name_field.add_css_class("potoo-dialog-field");
+    let name_label = gtk::Label::new(Some(tr(ui_language, "Novo nome")));
+    name_label.set_xalign(0.0);
+    name_label.add_css_class("potoo-project-field-label");
+    let name = gtk::Entry::new();
+    if let Some(file_name) = path.file_name() {
+        name.set_text(&file_name.to_string_lossy());
+    }
+    name.add_css_class("potoo-project-name-entry");
+    name.select_region(0, -1);
+    let error = gtk::Label::new(None);
+    error.set_xalign(0.0);
+    error.set_wrap(true);
+    error.add_css_class("potoo-project-error");
+    error.set_visible(false);
+    name_field.append(&name_label);
+    name_field.append(&name);
+    name_field.append(&error);
+    content.append(&name_field);
+
+    let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    actions.add_css_class("potoo-dialog-actions");
+    actions.set_hexpand(true);
+    let actions_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    actions_spacer.set_hexpand(true);
+    let cancel_button = gtk::Button::with_label(tr(ui_language, "Cancelar"));
+    cancel_button.add_css_class("potoo-project-cancel-button");
+    let rename_button = gtk::Button::with_label(tr(ui_language, "Renomear"));
+    rename_button.add_css_class("potoo-run-button");
+    actions.append(&actions_spacer);
+    actions.append(&cancel_button);
+    actions.append(&rename_button);
+    dialog_content.append(&content);
+    dialog_content.append(&actions);
+    dialog.set_child(Some(&dialog_content));
+
+    let dialog_for_cancel = dialog.clone();
+    cancel_button.connect_clicked(move |_| dialog_for_cancel.close());
+
+    let dialog_for_rename = dialog.clone();
+    let name_for_rename = name.clone();
+    let error_for_rename = error.clone();
+    let path_for_rename = path.clone();
+    rename_button.connect_clicked(move |_| {
+        let new_name = match normalized_project_item_name(
+            &path_for_rename,
+            &name_for_rename.text(),
+            is_directory,
+            ui_language,
+        ) {
+            Ok(name) => name,
+            Err(message) => {
+                error_for_rename.set_text(&message);
+                error_for_rename.set_visible(true);
+                return;
+            }
+        };
+        let Some(parent) = path_for_rename.parent() else {
+            error_for_rename.set_text(tr(
+                ui_language,
+                "O item selecionado não está mais disponível.",
+            ));
+            error_for_rename.set_visible(true);
+            return;
+        };
+        let new_path = parent.join(&new_name);
+        if new_path.exists()
+            && fs::canonicalize(&new_path).ok() != fs::canonicalize(&path_for_rename).ok()
+        {
+            error_for_rename.set_text(tr(ui_language, "Já existe um item com esse nome."));
+            error_for_rename.set_visible(true);
+            return;
+        }
+        sender.input(MainWindowMsg::RenameProjectItemConfirmed(
+            path_for_rename.clone(),
+            new_name,
+        ));
+        dialog_for_rename.close();
+    });
+    let rename_button_for_entry = rename_button.clone();
+    name.connect_activate(move |_| rename_button_for_entry.emit_clicked());
+    dialog.present();
+}
+
 fn show_new_folder_dialog(
     parent: &gtk::ApplicationWindow,
     ui_language: UiLanguage,
@@ -6163,6 +6553,7 @@ fn show_project_switch_confirmation(
         "Salve os arquivos abertos antes de trocar de pasta ou descarte as alterações para continuar.",
         vec!["Cancelar", "Descartar e abrir"],
         Some(1),
+        None,
         move |response| sender.input(MainWindowMsg::ProjectSwitchDecision(response == 1)),
     );
 }
@@ -6187,6 +6578,7 @@ fn show_close_document_confirmation(
             "Salvar e fechar",
         ],
         Some(2),
+        None,
         move |response| match response {
             1 => sender.input(MainWindowMsg::CloseDocumentDecision(id, true)),
             2 => sender.input(MainWindowMsg::SaveAndCloseDocument(id)),
@@ -6210,6 +6602,7 @@ fn show_close_app_confirmation(
         "Salve os arquivos antes de sair ou descarte as alterações para fechar o Potoo IDE.",
         vec!["Continuar editando", "Descartar e sair"],
         Some(1),
+        None,
         move |response| sender.input(MainWindowMsg::CloseAppDecision(response == 1)),
     );
 }
@@ -6223,6 +6616,7 @@ fn show_potoo_confirmation(
     detail: &'static str,
     actions: Vec<&'static str>,
     primary_action: Option<usize>,
+    destructive_action: Option<usize>,
     on_response: impl Fn(usize) + 'static,
 ) {
     let dialog = gtk::Window::new();
@@ -6278,7 +6672,9 @@ fn show_potoo_confirmation(
     let on_response: Rc<dyn Fn(usize)> = Rc::new(on_response);
     for (index, label) in actions.into_iter().enumerate() {
         let button = gtk::Button::with_label(tr(language, label));
-        button.add_css_class(if Some(index) == primary_action {
+        button.add_css_class(if Some(index) == destructive_action {
+            "potoo-destructive-button"
+        } else if Some(index) == primary_action {
             "potoo-run-button"
         } else {
             "potoo-project-cancel-button"
@@ -6395,6 +6791,33 @@ fn is_valid_directory_name(name: &str) -> bool {
         && !name
             .chars()
             .any(|character| character.is_control() || "<>:\"|?*".contains(character))
+}
+
+fn normalized_project_item_name(
+    path: &Path,
+    name: &str,
+    is_directory: bool,
+    ui_language: UiLanguage,
+) -> Result<String, String> {
+    let name = name.trim();
+    if !is_valid_directory_name(name) {
+        return Err(tr(
+            ui_language,
+            "Use um nome simples, sem pastas ou caracteres especiais.",
+        )
+        .to_string());
+    }
+
+    if !is_directory && let Some(language) = Language::from_path(path) {
+        let requested_path = Path::new(name);
+        return match requested_path.extension() {
+            None => Ok(format!("{name}.{}", language.extension())),
+            Some(_) if Language::from_path(requested_path).is_some() => Ok(name.to_string()),
+            Some(_) => Err(tr(ui_language, "Use a extensão .por ou .alg.").to_string()),
+        };
+    }
+
+    Ok(name.to_string())
 }
 
 fn supported_save_path(

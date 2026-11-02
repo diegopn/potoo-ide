@@ -519,6 +519,27 @@ button.potoo-project-language-choice {
   color: var(--potoo-text);
 }
 
+.potoo-destructive-button {
+  min-height: 36px;
+  padding: 0 16px;
+  background-color: var(--potoo-learning-problem-text);
+  background-image: none;
+  border: 0;
+  border-radius: 0;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 650;
+  box-shadow: none;
+}
+
+.potoo-destructive-button:hover {
+  opacity: 0.9;
+}
+
+window.potoo-window.potoo-dark .potoo-destructive-button {
+  color: #241719;
+}
+
 .potoo-project-open-button {
   min-height: 36px;
   padding: 0 14px;
@@ -591,6 +612,15 @@ popover.potoo-sidebar-popover > arrow {
 .potoo-sidebar-menu-item:hover {
   background-color: var(--potoo-panel-hover-bg);
   color: var(--potoo-accent-text);
+}
+
+.potoo-sidebar-menu-danger {
+  color: var(--potoo-learning-problem-text);
+}
+
+.potoo-sidebar-menu-danger:hover {
+  background-color: var(--potoo-learning-problem-bg);
+  color: var(--potoo-learning-problem-text);
 }
 
 .potoo-folder-expander {

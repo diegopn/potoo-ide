@@ -7,7 +7,7 @@ use relm4::prelude::*;
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
-    path::PathBuf,
+    path::{Path, PathBuf},
     rc::Rc,
 };
 
@@ -253,6 +253,7 @@ pub(crate) fn rebuild_file_list(
             label.set_hexpand(true);
             title.append(&label);
             expander.set_label_widget(Some(&title));
+            attach_project_item_context_menu(&title, &file.path, language, sender.clone());
 
             let children = gtk::Box::new(gtk::Orientation::Vertical, 1);
             children.set_margin_start(14);
@@ -313,8 +314,64 @@ pub(crate) fn rebuild_file_list(
         button.connect_clicked(move |_| {
             sender_for_file.input(MainWindowMsg::OpenFile(path.clone()));
         });
+        attach_project_item_context_menu(&button, &file.path, language, sender.clone());
         parent.append(&button);
     }
+}
+
+fn attach_project_item_context_menu(
+    target: &impl IsA<gtk::Widget>,
+    path: &Path,
+    language: UiLanguage,
+    sender: ComponentSender<MainWindow>,
+) {
+    let popover = gtk::Popover::new();
+    popover.add_css_class("potoo-sidebar-popover");
+    let menu = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    menu.set_margin_top(4);
+    menu.set_margin_bottom(4);
+    menu.set_margin_start(4);
+    menu.set_margin_end(4);
+
+    let rename = gtk::Button::with_label(tr(language, "Renomear"));
+    rename.add_css_class("potoo-sidebar-menu-item");
+    rename.set_halign(gtk::Align::Fill);
+    rename.set_hexpand(true);
+    let delete = gtk::Button::with_label(tr(language, "Excluir"));
+    delete.add_css_class("potoo-sidebar-menu-item");
+    delete.add_css_class("potoo-sidebar-menu-danger");
+    delete.set_halign(gtk::Align::Fill);
+    delete.set_hexpand(true);
+    menu.append(&rename);
+    menu.append(&delete);
+    popover.set_child(Some(&menu));
+    popover.set_parent(target);
+
+    let rename_path = path.to_path_buf();
+    let sender_for_rename = sender.clone();
+    let popover_for_rename = popover.clone();
+    rename.connect_clicked(move |_| {
+        popover_for_rename.popdown();
+        sender_for_rename.input(MainWindowMsg::RenameProjectItem(rename_path.clone()));
+    });
+    let delete_path = path.to_path_buf();
+    let popover_for_delete = popover.clone();
+    delete.connect_clicked(move |_| {
+        popover_for_delete.popdown();
+        sender.input(MainWindowMsg::DeleteProjectItem(delete_path.clone()));
+    });
+
+    let click = gtk::GestureClick::new();
+    click.set_button(3);
+    click.set_propagation_phase(gtk::PropagationPhase::Capture);
+    let popover_for_click = popover;
+    click.connect_pressed(move |gesture, _, x, y| {
+        let point = gtk::gdk::Rectangle::new(x.round() as i32, y.round() as i32, 1, 1);
+        popover_for_click.set_pointing_to(Some(&point));
+        let _ = gesture.set_state(gtk::EventSequenceState::Claimed);
+        popover_for_click.popup();
+    });
+    target.add_controller(click);
 }
 
 fn empty_project_state(language: UiLanguage) -> (gtk::Widget, gtk::Button, gtk::Button) {
