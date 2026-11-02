@@ -1900,14 +1900,7 @@ impl<'a> Interpreter<'a> {
                     return Ok(value);
                 }
                 let class_name = object.borrow().class_name.clone();
-                let Some(declaration) = self.classes.get(&class_name).cloned() else {
-                    return Err(vec![self.error("tipo do objeto não foi encontrado", span)]);
-                };
-                let Some(method) = declaration
-                    .methods
-                    .iter()
-                    .find(|method| method.name == name)
-                else {
+                let Some((declaration, method)) = self.method_declaration(&class_name, name) else {
                     return Err(vec![self.error(
                         format!("membro '{name}' não existe em '{class_name}'"),
                         span,
@@ -1917,7 +1910,7 @@ impl<'a> Interpreter<'a> {
                     declaration: method.clone(),
                     environment: self
                         .class_environments
-                        .get(&class_name)
+                        .get(&declaration.name)
                         .cloned()
                         .unwrap_or_else(|| self.environment.clone()),
                     owner: Some(declaration.name),
@@ -2248,14 +2241,7 @@ impl<'a> Interpreter<'a> {
             Value::TypeName(type_name) => self.call_type_factory(&type_name, name, arguments, span),
             Value::Object(object) => {
                 let class_name = object.borrow().class_name.clone();
-                let Some(declaration) = self.classes.get(&class_name).cloned() else {
-                    return Err(vec![self.error("tipo do objeto não foi encontrado", span)]);
-                };
-                let Some(method) = declaration
-                    .methods
-                    .iter()
-                    .find(|method| method.name == name)
-                else {
+                let Some((declaration, method)) = self.method_declaration(&class_name, name) else {
                     return Err(vec![self.error(
                         format!("método '{name}' não existe em '{class_name}'"),
                         span,
@@ -2265,10 +2251,10 @@ impl<'a> Interpreter<'a> {
                     declaration: method.clone(),
                     environment: self
                         .class_environments
-                        .get(&class_name)
+                        .get(&declaration.name)
                         .cloned()
                         .unwrap_or_else(|| self.environment.clone()),
-                    owner: Some(class_name),
+                    owner: Some(declaration.name),
                     receiver: Some(Value::Object(object)),
                 }));
                 self.apply(callable, arguments, span)
@@ -2907,8 +2893,8 @@ impl<'a> Interpreter<'a> {
             Callable::Lambda { parameters, .. } => Some(parameters.len()),
             Callable::Placeholder { arity, .. } => Some(*arity),
             Callable::Constructor { declaration, .. } => Some(
-                declaration
-                    .fields
+                self.effective_type_fields(&declaration.name)
+                    .ok()?
                     .iter()
                     .filter(|field| field.constructor_parameter)
                     .count(),
@@ -3143,7 +3129,7 @@ impl<'a> Interpreter<'a> {
             let call_environment = Environment::child(environment.clone());
             let setup = (|| {
                 if let (Some(owner), Some(Value::Object(object))) = (owner, receiver.as_ref()) {
-                    let Some(class) = self.classes.get(owner).cloned() else {
+                    let Some(class) = self.type_info.classes.get(owner).cloned() else {
                         return Err(vec![self.error("tipo da função não foi encontrado", span)]);
                     };
                     for field in &class.fields {
@@ -3155,14 +3141,24 @@ impl<'a> Interpreter<'a> {
                         )
                         .map_err(|message| vec![self.error(message, span)])?;
                     }
-                    for method in &class.methods {
+                    let runtime_class = object.borrow().class_name.clone();
+                    for method_name in class.methods.keys() {
+                        let Some((method_owner, method)) =
+                            self.method_declaration(&runtime_class, method_name)
+                        else {
+                            continue;
+                        };
                         Environment::define(
                             &call_environment,
-                            method.name.clone(),
+                            method_name.clone(),
                             Value::Function(Rc::new(Callable::Function {
-                                declaration: method.clone(),
-                                environment: environment.clone(),
-                                owner: Some(owner.to_owned()),
+                                declaration: method,
+                                environment: self
+                                    .class_environments
+                                    .get(&method_owner.name)
+                                    .cloned()
+                                    .unwrap_or_else(|| environment.clone()),
+                                owner: Some(method_owner.name),
                                 receiver: receiver.clone(),
                             })),
                             false,
@@ -3277,6 +3273,49 @@ impl<'a> Interpreter<'a> {
         }
     }
 
+    fn effective_type_fields(&self, type_name: &str) -> RuntimeResult<Vec<crate::ast::TypeField>> {
+        let declaration = self.classes.get(type_name).ok_or_else(|| {
+            vec![self.error(
+                format!("tipo '{type_name}' não foi encontrado"),
+                SourceSpan::default(),
+            )]
+        })?;
+        let mut fields = if let Some(parent) = &declaration.parent {
+            self.effective_type_fields(parent)?
+        } else {
+            Vec::new()
+        };
+        for field in &declaration.fields {
+            if let Some(inherited) = fields.iter_mut().find(|item| item.name == field.name) {
+                let mut field = field.clone();
+                field.mutable |= inherited.mutable;
+                *inherited = field;
+            } else {
+                fields.push(field.clone());
+            }
+        }
+        Ok(fields)
+    }
+
+    fn method_declaration(
+        &self,
+        type_name: &str,
+        method_name: &str,
+    ) -> Option<(TypeDecl, FunctionDecl)> {
+        let mut declaration = self.classes.get(type_name)?.clone();
+        loop {
+            if let Some(method) = declaration
+                .methods
+                .iter()
+                .find(|method| method.name == method_name)
+                .cloned()
+            {
+                return Some((declaration, method));
+            }
+            declaration = self.classes.get(declaration.parent.as_deref()?)?.clone();
+        }
+    }
+
     fn construct(
         &mut self,
         declaration: &TypeDecl,
@@ -3284,8 +3323,17 @@ impl<'a> Interpreter<'a> {
         arguments: Vec<Value>,
         span: SourceSpan,
     ) -> RuntimeResult<Value> {
-        let fields = declaration
-            .fields
+        if declaration.abstract_type {
+            return Err(vec![self.error(
+                format!(
+                    "o tipo abstrato '{}' não pode ser instanciado",
+                    declaration.name
+                ),
+                span,
+            )]);
+        }
+        let all_fields = self.effective_type_fields(&declaration.name)?;
+        let fields = all_fields
             .iter()
             .filter(|field| field.constructor_parameter)
             .collect::<Vec<_>>();
@@ -3300,7 +3348,7 @@ impl<'a> Interpreter<'a> {
             fields: HashMap::new(),
         }));
         let instance_environment = Environment::child(environment);
-        for field in &declaration.fields {
+        for field in &all_fields {
             Environment::define(
                 &instance_environment,
                 field.name.clone(),
@@ -3314,7 +3362,7 @@ impl<'a> Interpreter<'a> {
             object.borrow_mut().fields.insert(field.name.clone(), value);
         }
         self.with_environment(instance_environment, |interpreter| {
-            for field in &declaration.fields {
+            for field in &all_fields {
                 if let Some(default) = &field.default_value {
                     let value = interpreter.evaluate_expression(default)?;
                     let value = interpreter.coerce_to_node(value, field.id, field.span)?;

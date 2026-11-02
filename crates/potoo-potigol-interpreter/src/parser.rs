@@ -288,8 +288,15 @@ impl Parser {
 
     fn parse_type_declaration(&mut self) -> Result<Stmt, Vec<Diagnostic>> {
         let start = self.advance().span.start;
+        let abstract_type = self.consume_keyword("abstrato").is_some();
         let name_token = self.expect_identifier()?;
         let name = self.identifier_value(&name_token)?;
+        let parent = if self.consume_symbol(':').is_some() {
+            let parent = self.expect_identifier()?;
+            Some(self.identifier_value(&parent)?)
+        } else {
+            None
+        };
         self.skip_separators();
         let mut fields = Vec::new();
         let mut methods = Vec::new();
@@ -342,6 +349,8 @@ impl Parser {
         let declaration = TypeDecl {
             id: self.id(),
             name,
+            parent,
+            abstract_type,
             fields,
             methods,
             span: SourceSpan { start, end },
@@ -1374,6 +1383,7 @@ impl Parser {
         if nesting != 0 {
             return false;
         }
+        let starts_new_line = self.token_at(index, |kind| matches!(kind, TokenKind::Newline));
         while matches!(
             self.tokens.get(index).map(|token| &token.kind),
             Some(TokenKind::Newline)
@@ -1392,10 +1402,11 @@ impl Parser {
         let has_block_terminator = self.tokens[index..]
             .iter()
             .any(|token| matches!(&token.kind, TokenKind::Identifier(word) if word == "fim"));
-        let body_is_indented = self
-            .tokens
-            .get(index)
-            .is_some_and(|body| body.span.start.column > self.current().span.start.column);
+        let body_is_indented = self.tokens.get(index).is_some_and(|body| {
+            starts_new_line
+                && body.span.start.line > self.current().span.start.line
+                && body.span.start.column > self.current().span.start.column
+        });
         has_block_terminator && body_is_indented
     }
 

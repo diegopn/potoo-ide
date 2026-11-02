@@ -87,6 +87,8 @@ pub struct Parameter {
 pub struct TypeDecl {
     pub id: NodeId,
     pub name: String,
+    pub parent: Option<String>,
+    pub abstract_type: bool,
     pub fields: Vec<TypeField>,
     pub methods: Vec<FunctionDecl>,
     pub span: SourceSpan,

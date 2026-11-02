@@ -25,6 +25,7 @@ pub(crate) enum LearningTopic {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum LearningProblemKind {
     Syntax,
+    Type,
     Runtime,
     Logic,
     PossibleLogic,
@@ -257,6 +258,7 @@ where
             ExecutionDiagnosticKind::Lexical | ExecutionDiagnosticKind::Syntax => {
                 LearningProblemKind::Syntax
             }
+            ExecutionDiagnosticKind::Type => LearningProblemKind::Type,
             ExecutionDiagnosticKind::Runtime => LearningProblemKind::Runtime,
         };
         if problems.iter().any(|problem: &LearningProblem| {
@@ -1023,6 +1025,27 @@ mod tests {
                 .problems
                 .iter()
                 .any(|problem| problem.kind == LearningProblemKind::Logic)
+        );
+    }
+
+    #[test]
+    fn type_diagnostics_keep_their_own_learning_category() {
+        let diagnostics = [ExecutionDiagnostic {
+            kind: ExecutionDiagnosticKind::Type,
+            message: "tipos incompatíveis: esperava Inteiro, recebeu Lógico".to_owned(),
+            line: 1,
+            column: 5,
+        }];
+        let hint = learning_hint_with_runtime(
+            "valor = 1 + verdadeiro",
+            1,
+            Language::Potigol,
+            &diagnostics,
+        );
+        assert!(
+            hint.problems
+                .iter()
+                .any(|problem| problem.kind == LearningProblemKind::Type)
         );
     }
 }

@@ -8,6 +8,7 @@ use std::time::Duration;
 use gtk::gio::prelude::*;
 use gtk::glib::{Regex, RegexCompileFlags, RegexMatchFlags};
 use potoo_portugol_interpreter as portugol;
+use potoo_potigol_interpreter as potigol;
 use potoo_visualg_interpreter as visualg;
 
 use crate::components::content_panel::Language;
@@ -477,6 +478,7 @@ fn decode_chunked_http_body(bytes: &[u8]) -> Result<Vec<u8>, String> {
 pub(crate) enum DiagnosticKind {
     Lexical,
     Syntax,
+    Type,
     Runtime,
 }
 
@@ -1440,6 +1442,93 @@ impl visualg::RuntimeIo for WorkerIo {
     }
 }
 
+impl potigol::RuntimeIo for WorkerIo {
+    fn write(&mut self, text: &str) {
+        self.write_limited(text);
+    }
+
+    fn read_line(&mut self, prompt: &potigol::InputPrompt) -> Result<String, String> {
+        self.send_input_prompt(InputPrompt {
+            variable_name: None,
+            data_type: Some(
+                match prompt.data_type {
+                    potigol::DataType::Integer => "inteiro",
+                    potigol::DataType::Real => "real",
+                    potigol::DataType::Text => "texto",
+                    potigol::DataType::Character => "caractere",
+                    potigol::DataType::Logical => "lógico",
+                }
+                .to_owned(),
+            ),
+        })
+    }
+
+    fn should_stop(&mut self) -> bool {
+        if self.poll_stop() {
+            self.stopped = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn wait(&mut self, duration: Duration) -> Result<(), String> {
+        let started = std::time::Instant::now();
+        loop {
+            if self.should_stop() {
+                return Err(STOP_SENTINEL.to_owned());
+            }
+            let remaining = duration.saturating_sub(started.elapsed());
+            if remaining.is_zero() {
+                return Ok(());
+            }
+            match self
+                .control
+                .recv_timeout(remaining.min(Duration::from_millis(40)))
+            {
+                Ok(ControlAction::Stop) => {
+                    self.stopped = true;
+                    return Err(STOP_SENTINEL.to_owned());
+                }
+                Ok(action) => self.pending_action = Some(action),
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => {
+                    self.stopped = true;
+                    return Err(STOP_SENTINEL.to_owned());
+                }
+            }
+        }
+    }
+
+    fn is_debugging(&self) -> bool {
+        self.debugging
+    }
+
+    fn on_execution_event(
+        &mut self,
+        event: &potigol::ExecutionEvent,
+    ) -> Result<potigol::ControlAction, String> {
+        let reason = event.pause_reason.map(|reason| match reason {
+            potigol::PauseReason::Debugger => DebugPauseReason::Debug,
+            potigol::PauseReason::Step => DebugPauseReason::Step,
+        });
+        let action = self.await_action(Self::execution_snapshot(
+            event.location.line,
+            event.location.column,
+            event
+                .variables
+                .iter()
+                .map(|variable| (variable.name.clone(), variable.value.clone())),
+            reason,
+        ))?;
+        Ok(match action {
+            ControlAction::Continue => potigol::ControlAction::Continue,
+            ControlAction::Step => potigol::ControlAction::Step,
+            ControlAction::Stop => potigol::ControlAction::Stop,
+        })
+    }
+}
+
 pub(crate) fn start(
     source: String,
     language: Language,
@@ -1477,12 +1566,9 @@ pub(crate) fn start(
             Language::Visualg => {
                 visualg::execute(&source, &mut io).map_err(convert_visualg_diagnostics)
             }
-            Language::Potigol => Err(vec![ExecutionDiagnostic {
-                kind: DiagnosticKind::Runtime,
-                message: "O interpretador Potigol ainda está em desenvolvimento.".to_owned(),
-                line: 1,
-                column: 1,
-            }]),
+            Language::Potigol => {
+                potigol::execute(&source, &mut io).map_err(convert_potigol_diagnostics)
+            }
         };
         let stopped = io.stopped
             || result.as_ref().is_err_and(|diagnostics| {
@@ -1499,6 +1585,23 @@ pub(crate) fn start(
         input,
         control,
     }
+}
+
+fn convert_potigol_diagnostics(diagnostics: Vec<potigol::Diagnostic>) -> Vec<ExecutionDiagnostic> {
+    diagnostics
+        .into_iter()
+        .map(|diagnostic| ExecutionDiagnostic {
+            kind: match diagnostic.kind {
+                potigol::DiagnosticKind::Lexical => DiagnosticKind::Lexical,
+                potigol::DiagnosticKind::Syntax => DiagnosticKind::Syntax,
+                potigol::DiagnosticKind::Type => DiagnosticKind::Type,
+                potigol::DiagnosticKind::Runtime => DiagnosticKind::Runtime,
+            },
+            message: diagnostic.message,
+            line: diagnostic.span.start.line,
+            column: diagnostic.span.start.column,
+        })
+        .collect()
 }
 
 fn convert_portugol_diagnostics(
@@ -1897,6 +2000,47 @@ mod tests {
             );
             assert_eq!(output, expected);
         }
+    }
+
+    #[test]
+    fn runs_potigol_program_with_typed_input_and_debugger_events() {
+        let source = "idade = leia_inteiro\nescreva \"dobro: {idade * 2}\"";
+        let (output, events) = collect(
+            start(source.into(), Language::Potigol, None, None, true),
+            &["21"],
+            &[ControlAction::Continue; 8],
+        );
+
+        assert_eq!(output, "dobro: 42\n");
+        assert!(events.iter().any(|event| matches!(
+            event,
+            ExecutionEvent::InputRequested(prompt)
+                if prompt.data_type.as_deref() == Some("inteiro")
+        )));
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, ExecutionEvent::Debugger(_)))
+        );
+    }
+
+    #[test]
+    fn stopping_potigol_interrupts_a_cpu_bound_loop() {
+        let source = "var i := 0\nenquanto i < 1000000000 faça\n  i := i + 1\nfim";
+        let program = start(source.into(), Language::Potigol, None, None, false);
+        program.control.send(ControlAction::Stop).unwrap();
+
+        let event = program
+            .events
+            .recv_timeout(Duration::from_secs(2))
+            .expect("stopping should interrupt the Potigol loop");
+        assert!(matches!(
+            event,
+            ExecutionEvent::Finished {
+                result: Ok(()),
+                stopped: true
+            }
+        ));
     }
 
     #[test]

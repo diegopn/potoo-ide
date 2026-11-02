@@ -261,6 +261,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Problemas nesta linha" => "Problems on this line",
             "Nenhum problema conhecido nesta linha." => "No known problem on this line.",
             "Erro de sintaxe" => "Syntax error",
+            "Erro de tipo" => "Type error",
             "Erro durante a execução" => "Runtime error",
             "Possível problema lógico" => "Possible logic issue",
             "Índice fora dos limites" => "Index out of bounds",
@@ -280,6 +281,9 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
                 "Use an index within the declared range for this array or matrix."
             }
             "Há um problema de sintaxe nesta linha." => "There is a syntax problem on this line.",
+            "O interpretador encontrou uma incompatibilidade de tipos nesta linha." => {
+                "The interpreter found a type mismatch on this line."
+            }
             "A execução encontrou um problema nesta linha." => {
                 "Execution encountered a problem on this line."
             }
@@ -805,6 +809,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Problemas nesta linha" => "Problemas en esta línea",
             "Nenhum problema conhecido nesta linha." => "No se conocen problemas en esta línea.",
             "Erro de sintaxe" => "Error de sintaxis",
+            "Erro de tipo" => "Error de tipo",
             "Erro durante a execução" => "Error durante la ejecución",
             "Possível problema lógico" => "Posible problema lógico",
             "Índice fora dos limites" => "Índice fuera de los límites",
@@ -825,6 +830,9 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Há um problema de sintaxe nesta linha." => {
                 "Hay un problema de sintaxis en esta línea."
+            }
+            "O interpretador encontrou uma incompatibilidade de tipos nesta linha." => {
+                "El intérprete encontró una incompatibilidad de tipos en esta línea."
             }
             "A execução encontrou um problema nesta linha." => {
                 "La ejecución encontró un problema en esta línea."
@@ -1379,6 +1387,7 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Problemas nesta linha",
     "Nenhum problema conhecido nesta linha.",
     "Erro de sintaxe",
+    "Erro de tipo",
     "Erro durante a execução",
     "Possível problema lógico",
     "Índice fora dos limites",
@@ -1388,6 +1397,7 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "O índice {value} está fora dos limites de `{name}` ({lower} a {upper}).",
     "Use um índice dentro da faixa declarada para esse vetor ou matriz.",
     "Há um problema de sintaxe nesta linha.",
+    "O interpretador encontrou uma incompatibilidade de tipos nesta linha.",
     "A execução encontrou um problema nesta linha.",
     "Detalhe original do interpretador (português): {message}",
     "A função",
@@ -4422,6 +4432,7 @@ fn format_diagnostics(diagnostics: &[execution::ExecutionDiagnostic]) -> String 
             let category = match diagnostic.kind {
                 execution::DiagnosticKind::Lexical => "Erro léxico",
                 execution::DiagnosticKind::Syntax => "Erro de sintaxe",
+                execution::DiagnosticKind::Type => "Erro de tipo",
                 execution::DiagnosticKind::Runtime => "Erro de execução",
             };
             format!(

@@ -84,6 +84,8 @@ pub struct FieldInfo {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClassInfo {
     pub name: String,
+    pub parent: Option<String>,
+    pub abstract_type: bool,
     pub fields: Vec<FieldInfo>,
     pub methods: HashMap<String, FunctionSignature>,
 }

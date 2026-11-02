@@ -560,6 +560,7 @@ version = "0.1.0"
 dependencies = [
  "gtk4",
  "potoo-portugol-interpreter",
+ "potoo-potigol-interpreter",
  "potoo-visualg-interpreter",
  "relm4",
 ]

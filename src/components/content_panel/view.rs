@@ -358,6 +358,7 @@ pub(crate) fn show_learning_problems(
         contents.set_halign(gtk::Align::Fill);
         let title = gtk::Label::new(Some(match problem.kind {
             crate::learning::LearningProblemKind::Syntax => tr(language, "Erro de sintaxe"),
+            crate::learning::LearningProblemKind::Type => tr(language, "Erro de tipo"),
             crate::learning::LearningProblemKind::Runtime => {
                 tr(language, "Erro durante a execução")
             }
@@ -473,6 +474,9 @@ fn localize_learning_problem(
 
             let summary = match problem.kind {
                 LearningProblemKind::Syntax => "Há um problema de sintaxe nesta linha.",
+                LearningProblemKind::Type => {
+                    "O interpretador encontrou uma incompatibilidade de tipos nesta linha."
+                }
                 LearningProblemKind::Runtime => "A execução encontrou um problema nesta linha.",
                 LearningProblemKind::Logic => "Índice fora dos limites",
                 LearningProblemKind::PossibleLogic => "Possível problema lógico",

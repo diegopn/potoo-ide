@@ -91,10 +91,23 @@ impl Checker {
     }
 
     fn register_classes(&mut self, program: &Program) -> Result<(), Vec<Diagnostic>> {
+        let mut ordered = Vec::new();
+        let mut visiting = HashSet::new();
+        let mut visited = HashSet::new();
         for statement in &program.statements {
             let StmtKind::Type(declaration) = &statement.kind else {
                 continue;
             };
+            self.order_type_declaration(
+                &declaration.name,
+                &mut visiting,
+                &mut visited,
+                &mut ordered,
+                declaration.span,
+            )?;
+        }
+
+        for declaration in ordered {
             let mut fields = Vec::new();
             for field in &declaration.fields {
                 let field_type = if let Some(annotation) = &field.annotation {
@@ -110,9 +123,47 @@ impl Checker {
                     constructor_parameter: field.constructor_parameter,
                 });
             }
-            let mut methods = HashMap::new();
+
+            let mut inherited = declaration
+                .parent
+                .as_ref()
+                .and_then(|parent| self.info.classes.get(parent))
+                .cloned();
+            let mut effective_fields = inherited
+                .as_ref()
+                .map_or_else(Vec::new, |class| class.fields.clone());
+            for field in fields {
+                if let Some(existing) = effective_fields
+                    .iter_mut()
+                    .find(|existing| existing.name == field.name)
+                {
+                    self.unify_assignable(
+                        &existing.value_type,
+                        &field.value_type,
+                        declaration.span,
+                    )?;
+                    let inherited_mutability = existing.mutable;
+                    *existing = FieldInfo {
+                        mutable: inherited_mutability || field.mutable,
+                        ..field
+                    };
+                } else {
+                    effective_fields.push(field);
+                }
+            }
+
+            let mut methods = inherited
+                .take()
+                .map_or_else(HashMap::new, |class| class.methods);
             for method in &declaration.methods {
                 let method_type = self.function_type_for_declaration(method)?;
+                if let Some(inherited) = methods.get(&method.name) {
+                    let inherited = ValueType::Function(
+                        inherited.parameters.clone(),
+                        Box::new(inherited.return_type.clone()),
+                    );
+                    self.unify_assignable(&inherited, &method_type, method.span)?;
+                }
                 self.function_types.insert(method.id, method_type.clone());
                 methods.insert(
                     method.name.clone(),
@@ -123,11 +174,13 @@ impl Checker {
                 declaration.name.clone(),
                 ClassInfo {
                     name: declaration.name.clone(),
-                    fields: fields.clone(),
+                    parent: declaration.parent.clone(),
+                    abstract_type: declaration.abstract_type,
+                    fields: effective_fields.clone(),
                     methods,
                 },
             );
-            let constructor_parameters = fields
+            let constructor_parameters = effective_fields
                 .iter()
                 .filter(|field| field.constructor_parameter)
                 .map(|field| field.value_type.clone())
@@ -144,6 +197,38 @@ impl Checker {
                 declaration.span,
             )?;
         }
+        Ok(())
+    }
+
+    fn order_type_declaration(
+        &self,
+        name: &str,
+        visiting: &mut HashSet<String>,
+        visited: &mut HashSet<String>,
+        ordered: &mut Vec<TypeDecl>,
+        span: SourceSpan,
+    ) -> Result<(), Vec<Diagnostic>> {
+        if visited.contains(name) {
+            return Ok(());
+        }
+        if !visiting.insert(name.to_owned()) {
+            return Err(vec![self.error("herança circular de tipos", span)]);
+        }
+        let declaration = self.class_declarations.get(name).ok_or_else(|| {
+            vec![self.error(format!("tipo pai '{name}' não foi declarado"), span)]
+        })?;
+        if let Some(parent) = &declaration.parent {
+            if !self.class_declarations.contains_key(parent) {
+                return Err(vec![self.error(
+                    format!("tipo pai '{parent}' não foi declarado"),
+                    declaration.span,
+                )]);
+            }
+            self.order_type_declaration(parent, visiting, visited, ordered, declaration.span)?;
+        }
+        visiting.remove(name);
+        visited.insert(name.to_owned());
+        ordered.push(declaration.clone());
         Ok(())
     }
 
@@ -679,6 +764,17 @@ impl Checker {
         span: SourceSpan,
     ) -> Result<ValueType, Vec<Diagnostic>> {
         if let ExprKind::Identifier(name) = &callee.kind {
+            if self
+                .info
+                .classes
+                .get(name)
+                .is_some_and(|class| class.abstract_type)
+            {
+                return Err(vec![self.error(
+                    format!("o tipo abstrato '{name}' não pode ser instanciado"),
+                    span,
+                )]);
+            }
             if let Some(value_type) = self.check_builtin_call(name, arguments, span)? {
                 return Ok(value_type);
             }
@@ -689,9 +785,63 @@ impl Checker {
         let callee_type = self.check_expression(callee)?;
         let argument_types = arguments
             .iter()
-            .map(|argument| self.check_argument(argument))
+            .enumerate()
+            .map(|(index, argument)| {
+                let expected = match self.resolve(callee_type.clone()) {
+                    ValueType::Function(parameters, _) => parameters.get(index).cloned(),
+                    _ => None,
+                };
+                if let Some(expected) = expected {
+                    self.check_argument_as(argument, &expected)
+                } else {
+                    self.check_argument(argument)
+                }
+            })
             .collect::<Result<Vec<_>, _>>()?;
         self.apply_type(callee_type, &argument_types, span)
+    }
+
+    fn check_argument_as(
+        &mut self,
+        argument: &Expr,
+        expected: &ValueType,
+    ) -> Result<ValueType, Vec<Diagnostic>> {
+        let expected = self.resolve(expected.clone());
+        if let (
+            ExprKind::Lambda { parameters, body },
+            ValueType::Function(expected_parameters, expected_result),
+        ) = (&argument.kind, &expected)
+            && parameters.len() == expected_parameters.len()
+        {
+            self.push_scope();
+            for (parameter, expected) in parameters.iter().zip(expected_parameters) {
+                let parameter_type = if let Some(annotation) = &parameter.annotation {
+                    self.type_from_annotation(annotation)?
+                } else {
+                    expected.clone()
+                };
+                self.unify_assignable(expected, &parameter_type, parameter.span)?;
+                self.define(
+                    parameter.name.clone(),
+                    parameter_type.clone(),
+                    parameter.mutable,
+                    Vec::new(),
+                    parameter.span,
+                )?;
+                self.info.node_types.insert(parameter.id, parameter_type);
+            }
+            let result = self.check_expression(body)?;
+            self.unify_assignable(expected_result, &result, body.span)?;
+            self.pop_scope();
+            Ok(ValueType::Function(
+                expected_parameters.clone(),
+                Box::new(result),
+            ))
+        } else {
+            let actual = self.check_argument(argument)?;
+            self.unify_assignable(&expected, &actual, argument.span)?;
+            Ok(actual)
+        }
     }
 
     fn check_argument(&mut self, argument: &Expr) -> Result<ValueType, Vec<Diagnostic>> {
@@ -936,6 +1086,9 @@ impl Checker {
         name: &str,
         span: SourceSpan,
     ) -> Result<ValueType, Vec<Diagnostic>> {
+        if let Some(binding) = self.lookup(name) {
+            return Ok(self.instantiate(&binding.scheme));
+        }
         let lower = name.to_lowercase();
         let builtin = match lower.as_str() {
             "leia_inteiro" => Some(ValueType::Integer),
@@ -953,12 +1106,10 @@ impl Checker {
         if let Some(value_type) = builtin {
             return Ok(value_type);
         }
-        let Some(binding) = self.lookup(name) else {
-            return Err(vec![
-                self.error(format!("identificador '{name}' não foi declarado"), span),
-            ]);
-        };
-        Ok(self.instantiate(&binding.scheme))
+        Err(vec![self.error(
+            format!("identificador '{name}' não foi declarado"),
+            span,
+        )])
     }
 
     fn check_binary(
@@ -2389,12 +2540,41 @@ impl Checker {
             self.unify(&expected, &actual, span)
         } else if expected == actual || can_implicitly_convert(&actual, &expected) {
             Ok(())
+        } else if let (
+            ValueType::Function(expected_parameters, expected_result),
+            ValueType::Function(actual_parameters, actual_result),
+        ) = (&expected, &actual)
+            && expected_parameters.len() == actual_parameters.len()
+        {
+            for (expected, actual) in expected_parameters.iter().zip(actual_parameters) {
+                self.unify_assignable(expected, actual, span)?;
+            }
+            self.unify_assignable(expected_result, actual_result, span)
+        } else if let (ValueType::Named(expected), ValueType::Named(actual)) = (&expected, &actual)
+            && self.is_subtype(actual, expected)
+        {
+            Ok(())
         } else {
             Err(vec![self.error(
                 format!("tipos incompatíveis: esperava {expected}, recebeu {actual}"),
                 span,
             )])
         }
+    }
+
+    fn is_subtype(&self, actual: &str, expected: &str) -> bool {
+        let mut current = Some(actual);
+        while let Some(name) = current {
+            if name == expected {
+                return true;
+            }
+            current = self
+                .info
+                .classes
+                .get(name)
+                .and_then(|class| class.parent.as_deref());
+        }
+        false
     }
 
     fn merge_types(

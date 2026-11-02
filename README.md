@@ -4,7 +4,7 @@
 
 # Potoo IDE
 
-A desktop IDE for students and teachers to practice programming logic with Portugol and VisuAlg.
+A desktop IDE for students and teachers to practice programming logic with Portugol, VisuAlg, and Potigol.
 
 The project aims to provide a simple, intuitive space for students to practice and for teachers to support the concepts taught through code. The interface is built with Rust, GTK 4, and Relm4, with Potoo-owned components and inspiration from GNOME Builder. Teachers choose which tools fit their classes; the IDE does not impose one learning path.
 
@@ -15,17 +15,22 @@ The project aims to provide a simple, intuitive space for students to practice a
 - Portugol
 - VisuAlg
 
+**Implemented**
+
+- Potigol (official 1.0.0-RC2 language core)
+
+External JVM libraries such as Jerimum are not included.
+
 **Future**
 
-- Potigol
 - PSeInt
 - Linotte
 - C0 (Simplified C)
 - Karel
 
-The native app can run Portugol programs with variables, functions, constants, conditionals, loops, vectors and matrices, interactive input, and the Matematica, Texto, Tipos, Util, Calendario, Arquivos, and Objetos libraries. Its interpreter is a reusable Rust library in [crates/potoo-portugol-interpreter](crates/potoo-portugol-interpreter/README.md), where the remaining compatibility gaps are listed.
+The native app can run Potigol programs with the official 1.0.0-RC2 language core through the independent Rust library [crates/potoo-potigol-interpreter](crates/potoo-potigol-interpreter/README.md). The app also runs Portugol programs with variables, functions, constants, conditionals, loops, vectors and matrices, interactive input, and the Matematica, Texto, Tipos, Util, Calendario, Arquivos, and Objetos libraries. Its interpreter is a reusable Rust library in [crates/potoo-portugol-interpreter](crates/potoo-portugol-interpreter/README.md), where the remaining compatibility gaps are listed.
 
-The app can also run classic VisuAlg .alg programs through the reusable [potoo-visualg-interpreter](crates/potoo-visualg-interpreter/README.md) Rust library, which targets VisuAlg 3.0.5.2 and has no third-party dependencies. Both interpreters provide interactive input, source-located diagnostics, resource limits, and debugger control. Their compatibility details and current limits are documented in each crate README; compatibility testing remains in development.
+The app can also run classic VisuAlg .alg programs through the reusable [potoo-visualg-interpreter](crates/potoo-visualg-interpreter/README.md) Rust library, which targets VisuAlg 3.0.5.2 and has no third-party dependencies. The interpreters provide interactive input, source-located diagnostics, resource limits, and debugger control. Compatibility details and current limits are documented in each crate README.
 
 Project documentation is maintained in English. Both the app and project website are planned to support English (default), Brazilian Portuguese, and Spanish; app localization has not been implemented yet.
 
