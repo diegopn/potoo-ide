@@ -386,6 +386,18 @@ impl<'a> Interpreter<'a> {
         pattern: &Pattern,
         expression: &Expr,
     ) -> RuntimeResult<Value> {
+        if let (PatternKind::Tuple(patterns), ExprKind::Call { callee, arguments }) =
+            (&pattern.kind, &expression.kind)
+            && let ExprKind::Identifier(name) = &callee.kind
+            && let Some(data_type) = input_list_data_type(name)
+        {
+            let lists = patterns
+                .iter()
+                .map(|_| self.read_input_list(arguments, data_type, expression.span))
+                .collect::<RuntimeResult<Vec<_>>>()?;
+            self.reserve_elements(lists.len(), expression.span)?;
+            return Ok(Value::Tuple(lists));
+        }
         if let (PatternKind::Tuple(_), ExprKind::Identifier(name)) =
             (&pattern.kind, &expression.kind)
             && let Some(data_type) = input_data_type(name)
@@ -3794,6 +3806,15 @@ fn input_data_type(name: &str) -> Option<DataType> {
         "leia_texto" => Some(DataType::Text),
         "leia_caractere" => Some(DataType::Character),
         "leia_logico" => Some(DataType::Logical),
+        _ => None,
+    }
+}
+
+fn input_list_data_type(name: &str) -> Option<DataType> {
+    match name {
+        "leia_inteiros" => Some(DataType::Integer),
+        "leia_reais" | "leia_numeros" | "leia_números" => Some(DataType::Real),
+        "leia_textos" => Some(DataType::Text),
         _ => None,
     }
 }

@@ -284,6 +284,27 @@ fn official_list_input_reading_by_count_and_delimiter_works() {
 }
 
 #[test]
+fn official_parallel_text_list_input_reads_a_list_for_each_binding() {
+    let io = run(
+        "nomes, emails = leia_textos(3)\nescreva \"{nomes} {emails}\"",
+        &[
+            "Ana",
+            "Bia",
+            "Caio",
+            "ana@example.com",
+            "bia@example.com",
+            "caio@example.com",
+        ],
+    )
+    .unwrap();
+
+    assert_eq!(
+        io.output,
+        "[Ana, Bia, Caio] [ana@example.com, bia@example.com, caio@example.com]\n"
+    );
+}
+
+#[test]
 fn official_multiple_generators_loop_steps_and_function_values_work() {
     let source = r#"
 identidade_inteiro(valor: Inteiro) = valor
