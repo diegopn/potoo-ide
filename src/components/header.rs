@@ -44,6 +44,8 @@ pub(crate) fn build_header(
     run_button.set_size_request(-1, 32);
     run_button.set_margin_top(0);
     run_button.set_margin_bottom(0);
+    #[cfg(target_os = "linux")]
+    run_button.set_margin_end(12);
     let run_content = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let run_icon = icon("play");
     run_icon.set_pixel_size(14);
