@@ -29,5 +29,6 @@ strip = "symbols"
 members = [
     "crates/potoo-portugol-interpreter",
     "crates/potoo-visualg-interpreter",
+    "crates/potoo-potigol-interpreter",
 ]
 resolver = "3"

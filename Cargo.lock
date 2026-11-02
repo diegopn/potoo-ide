@@ -569,6 +569,10 @@ name = "potoo-portugol-interpreter"
 version = "0.1.0"
 
 [[package]]
+name = "potoo-potigol-interpreter"
+version = "0.1.0"
+
+[[package]]
 name = "potoo-visualg-interpreter"
 version = "0.1.0"
 
