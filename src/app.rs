@@ -459,6 +459,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Pronto para executar" => "Ready to run",
             "Executar o programa atual" => "Run the current program",
             "Executando o programa…" => "Running program…",
+            "Interrompendo execução…" => "Stopping execution…",
             "Execução concluída." => "Execution finished.",
             "O programa terminou com um erro." => "The program ended with an error.",
             "Abra um programa antes de executar." => "Open a program before running it.",
@@ -994,6 +995,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Pronto para executar" => "Listo para ejecutar",
             "Executar o programa atual" => "Ejecutar el programa actual",
             "Executando o programa…" => "Ejecutando el programa…",
+            "Interrompendo execução…" => "Deteniendo la ejecución…",
             "Execução concluída." => "Ejecución finalizada.",
             "O programa terminou com um erro." => "El programa terminó con un error.",
             "Abra um programa antes de executar." => "Abre un programa antes de ejecutarlo.",
@@ -2892,6 +2894,8 @@ pub struct MainUi {
     settings: SettingsUi,
     project_title: gtk::Label,
     run_button: gtk::Button,
+    run_icon: gtk::Image,
+    run_label: gtk::Label,
     start_page: start_page::StartPageUi,
     project_row: gtk::Box,
     project_label: gtk::Label,
@@ -2944,6 +2948,8 @@ pub struct MainUi {
     displayed_project_open: bool,
     displayed_recent_paths: Vec<PathBuf>,
     displayed_start_page: bool,
+    displayed_run_active: bool,
+    displayed_run_language: UiLanguage,
     displayed_tabs: Vec<(u64, String, bool, bool)>,
     displayed_pending_project: Option<PathBuf>,
     displayed_pending_close_document_id: Option<u64>,
@@ -3480,7 +3486,16 @@ impl SimpleComponent for MainWindow {
             }
             MainWindowMsg::OpenSettings => self.settings_visible = true,
             MainWindowMsg::CloseSettings => self.settings_visible = false,
-            MainWindowMsg::Run => self.start_execution(sender.clone(), false),
+            MainWindowMsg::Run => {
+                if self.active_execution_id.is_some() {
+                    if let Some(control) = &self.execution_control {
+                        let _ = control.send(ControlAction::Stop);
+                        self.output_status = self.text("Interrompendo execução…").to_string();
+                    }
+                } else {
+                    self.start_execution(sender.clone(), false);
+                }
+            }
             MainWindowMsg::StartDebug => {
                 self.start_execution(sender.clone(), true);
             }
@@ -4341,8 +4356,27 @@ impl SimpleComponent for MainWindow {
                 .set_visible_child_name(debugger_analysis_state);
             ui.displayed_debugger_analysis_state = debugger_analysis_state;
         }
-        ui.run_button
-            .set_sensitive(self.active_execution_id.is_none());
+        let execution_active = self.active_execution_id.is_some();
+        if ui.displayed_run_active != execution_active
+            || ui.displayed_run_language != self.ui_language
+        {
+            let (icon_name, label) = if execution_active {
+                ("potoo-stop-symbolic", "Parar")
+            } else {
+                ("potoo-play-symbolic", "Executar")
+            };
+            ui.run_icon.set_icon_name(Some(icon_name));
+            ui.run_label.set_text(self.text(label));
+            ui.run_button
+                .set_tooltip_text(Some(self.text(if execution_active {
+                    "Parar"
+                } else {
+                    "Executar o programa atual"
+                })));
+            ui.displayed_run_active = execution_active;
+            ui.displayed_run_language = self.ui_language;
+        }
+        ui.run_button.set_sensitive(true);
 
         content_panel::update_line_numbers(&ui.code_buffer, &ui.line_numbers);
         content_panel::highlight_buffer(
@@ -4727,6 +4761,8 @@ fn build_window_content(
     let header = header::build_header(&window, ui_language_state.clone());
     let project_title = header.project_title.clone();
     let run_button = header.run_button.clone();
+    let run_icon = header.run_icon.clone();
+    let run_label = header.run_label.clone();
     project_title.set_text(if initial_start_page {
         tr(ui_language, "Início")
     } else {
@@ -5263,6 +5299,8 @@ fn build_window_content(
         settings,
         project_title,
         run_button,
+        run_icon,
+        run_label,
         start_page,
         project_row,
         project_label,
@@ -5315,6 +5353,8 @@ fn build_window_content(
         displayed_project_open: false,
         displayed_recent_paths: initial_recent_paths.to_vec(),
         displayed_start_page: initial_start_page,
+        displayed_run_active: false,
+        displayed_run_language: ui_language,
         displayed_tabs: Vec::new(),
         displayed_pending_project: None,
         displayed_pending_close_document_id: None,

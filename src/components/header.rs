@@ -18,6 +18,8 @@ pub(crate) struct HeaderUi {
     pub(crate) widget: Option<gtk::Widget>,
     pub(crate) project_title: gtk::Label,
     pub(crate) run_button: gtk::Button,
+    pub(crate) run_icon: gtk::Image,
+    pub(crate) run_label: gtk::Label,
 }
 
 pub(crate) fn build_header(
@@ -46,7 +48,8 @@ pub(crate) fn build_header(
     let run_icon = icon("play");
     run_icon.set_pixel_size(14);
     run_content.append(&run_icon);
-    run_content.append(&gtk::Label::new(Some(tr(language, "Executar"))));
+    let run_label = gtk::Label::new(Some(tr(language, "Executar")));
+    run_content.append(&run_label);
     run_button.set_child(Some(&run_content));
     run_button.set_tooltip_text(Some(tr(language, "Executar o programa atual")));
 
@@ -123,6 +126,8 @@ pub(crate) fn build_header(
         widget,
         project_title,
         run_button,
+        run_icon,
+        run_label,
     }
 }
 
