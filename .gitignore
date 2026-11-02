@@ -1,5 +1,7 @@
 /target/
 /build/
+/build-validation/
+/.superpowers/
 /.flatpak-build/
 /.flatpak-builder/
 /docs/
