@@ -1,0 +1,15 @@
+[package]
+name = "potoo-visualg-interpreter"
+version = "0.1.0"
+description = "Reusable VisuAlg 3.0.5.2 interpreter for Rust applications"
+license = "GPL-3.0-or-later"
+readme = "README.md"
+repository = "https://github.com/diegopn/potoo-visualg-interpreter"
+homepage = "https://diegopn.github.io/potoo-site/"
+documentation = "https://docs.rs/potoo-visualg-interpreter"
+edition = "2024"
+rust-version = "1.93"
+
+[lib]
+name = "potoo_visualg_interpreter"
+path = "src/lib.rs"

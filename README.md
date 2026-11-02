@@ -23,7 +23,11 @@ The project aims to provide a simple, intuitive space for students to practice a
 - C0 (Simplified C)
 - Karel
 
-The current native preview includes an editable code area and the main learning workspace. Portugol and VisuAlg execution engines are not connected yet; compatibility and integration work will be delivered in stages. Project documentation is maintained in English. Both the app and project website are planned to support English (default), Brazilian Portuguese, and Spanish; app localization has not been implemented yet.
+The native app can run Portugol programs with variables, functions, constants, conditionals, loops, vectors and matrices, interactive input, and the Matematica, Texto, Tipos, Util, Calendario, Arquivos, and Objetos libraries. Its interpreter is a reusable Rust library in [crates/potoo-portugol-interpreter](crates/potoo-portugol-interpreter/README.md), where the remaining compatibility gaps are listed.
+
+The app can also run classic VisuAlg .alg programs through the reusable [potoo-visualg-interpreter](crates/potoo-visualg-interpreter/README.md) Rust library, which targets VisuAlg 3.0.5.2 and has no third-party dependencies. Both interpreters provide interactive input, source-located diagnostics, resource limits, and debugger control. Their compatibility details and current limits are documented in each crate README; compatibility testing remains in development.
+
+Project documentation is maintained in English. Both the app and project website are planned to support English (default), Brazilian Portuguese, and Spanish; app localization has not been implemented yet.
 
 ## Platforms
 

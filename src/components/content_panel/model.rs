@@ -18,13 +18,6 @@ impl Language {
         }
     }
 
-    pub(crate) fn selected_index(self) -> u32 {
-        match self {
-            Self::Portugol => 0,
-            Self::Visualg => 1,
-        }
-    }
-
     pub(crate) fn key(self) -> &'static str {
         match self {
             Self::Portugol => "portugol",

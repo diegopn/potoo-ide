@@ -48,10 +48,7 @@ pub(crate) fn build_header(
     run_content.append(&run_icon);
     run_content.append(&gtk::Label::new(Some(tr(language, "Executar"))));
     run_button.set_child(Some(&run_content));
-    run_button.set_tooltip_text(Some(tr(
-        language,
-        "A execução real usa o interpretador da linguagem selecionada",
-    )));
+    run_button.set_tooltip_text(Some(tr(language, "Executar o programa atual")));
 
     let header_actions = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     header_actions.set_valign(gtk::Align::Center);

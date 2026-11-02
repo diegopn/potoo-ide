@@ -559,8 +559,18 @@ name = "potoo-ide"
 version = "0.1.0"
 dependencies = [
  "gtk4",
+ "potoo-portugol-interpreter",
+ "potoo-visualg-interpreter",
  "relm4",
 ]
+
+[[package]]
+name = "potoo-portugol-interpreter"
+version = "0.1.0"
+
+[[package]]
+name = "potoo-visualg-interpreter"
+version = "0.1.0"
 
 [[package]]
 name = "proc-macro-crate"

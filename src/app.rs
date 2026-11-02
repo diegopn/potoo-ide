@@ -4,14 +4,24 @@ use crate::components::{
     sidebar::ProjectFile,
     start_page,
 };
+use crate::execution::{self, ControlAction, DebuggerSnapshot, ExecutionEvent, InputPrompt};
+use crate::learning::{
+    LearningHint, LearningSymbol, LearningTopic, learning_hint_with_runtime_cancellable,
+};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::{
     cell::{Cell, RefCell},
     fs,
     fs::OpenOptions,
+    hash::{Hash, Hasher},
     path::{Path, PathBuf},
     rc::Rc,
+    sync::{
+        Arc, Condvar, Mutex,
+        atomic::{AtomicU64, Ordering},
+        mpsc::Sender,
+    },
     time::Duration,
 };
 
@@ -128,6 +138,12 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Abrir pasta de projeto" => "Open project folder",
             "Abrir projeto" => "Open project",
             "Abrir arquivo" => "Open file",
+            "Selecionar arquivo" => "Select file",
+            "Todos os arquivos" => "All files",
+            "Abra um projeto antes de selecionar um arquivo." => {
+                "Open a project before selecting a file."
+            }
+            "Não foi possível selecionar o arquivo" => "Could not select the file",
             "Abrir projeto ou programa" => "Open project or program",
             "Nenhum projeto aberto" => "No project open",
             "Abra uma pasta ou um programa para começar." => {
@@ -179,10 +195,6 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Erros de sintaxe e execução aparecerão aqui." => {
                 "Syntax and runtime errors will appear here."
             }
-            "Depurador pronto" => "Debugger ready",
-            "Execute o programa passo a passo para acompanhar as variáveis." => {
-                "Step through the program to follow its variables."
-            }
             "Escolher pasta" => "Choose folder",
             "Escolha a pasta de destino" => "Choose a destination folder",
             "Selecione uma pasta local para criar o projeto." => {
@@ -213,18 +225,227 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
                 "Open a project folder before creating items."
             }
             "Aprenda enquanto programa" => "Learn as you code",
-            "Linha 7 · decisão" => "Line 7 · decision",
-            "Uma condição verifica se uma expressão é verdadeira antes de executar um bloco." => {
-                "A condition checks whether an expression is true before running a block."
+            "Abrir Aprenda enquanto programa" => "Open Learn as you code",
+            "Recolher Aprenda enquanto programa" => "Collapse Learn as you code",
+            "Abrir depurador" => "Open debugger",
+            "Recolher depurador" => "Collapse debugger",
+            "Analisando a linha selecionada…" => "Analyzing selected line…",
+            "Linha 1 · programa" => "Line 1 · program",
+            "Selecione uma linha para ver uma explicação contextual do programa." => {
+                "Select a line to see a contextual explanation of the program."
             }
+            "Mova o cursor para uma condição, um laço, uma entrada ou uma saída." => {
+                "Move the cursor to a condition, loop, input, or output statement."
+            }
+            "Conceito: programa" => "Concept: program",
+            "O painel acompanha a linha selecionada e o conteúdo atual do editor." => {
+                "This panel follows the selected line and the editor's current contents."
+            }
+            "decisão" => "decision",
+            "laço" => "loop",
+            "entrada" => "input",
+            "saída" => "output",
+            "variável" => "variable",
+            "função" => "function",
+            "procedimento" => "procedure",
+            "atribuição" => "assignment",
+            "retorno" => "return",
+            "programa" => "program",
+            "Problemas nesta linha" => "Problems on this line",
+            "Nenhum problema conhecido nesta linha." => "No known problem on this line.",
+            "Erro de sintaxe" => "Syntax error",
+            "Erro durante a execução" => "Runtime error",
+            "Possível problema lógico" => "Possible logic issue",
+            "Índice fora dos limites" => "Index out of bounds",
+            "A condição é sempre verdadeira; o ramo alternativo pode nunca ser executado." => {
+                "This condition is always true; the alternative branch may never run."
+            }
+            "A condição é sempre falsa; o bloco pode nunca ser executado." => {
+                "This condition is always false; the block may never run."
+            }
+            "Confira se a condição deveria comparar uma variável." => {
+                "Check whether the condition should compare a variable."
+            }
+            "O índice {value} está fora dos limites de `{name}` ({lower} a {upper})." => {
+                "Index {value} is outside the bounds of `{name}` ({lower} to {upper})."
+            }
+            "Use um índice dentro da faixa declarada para esse vetor ou matriz." => {
+                "Use an index within the declared range for this array or matrix."
+            }
+            "Há um problema de sintaxe nesta linha." => "There is a syntax problem on this line.",
+            "A execução encontrou um problema nesta linha." => {
+                "Execution encountered a problem on this line."
+            }
+            "Detalhe original do interpretador (português): {message}" => {
+                "Original interpreter detail (Portuguese): {message}"
+            }
+            "Conceito:" => "Concept:",
+            "Uma condição escolhe qual bloco executar com base em verdadeiro ou falso." => {
+                "A condition selects which block to run based on a true or false result."
+            }
+            "Um laço repete instruções de acordo com uma condição ou faixa de valores." => {
+                "A loop repeats instructions based on a condition or range of values."
+            }
+            "leia solicita um valor para uma variável antes de continuar a execução." => {
+                "leia requests a value for a variable before execution continues."
+            }
+            "escreva e escreval mostram valores na saída do programa." => {
+                "escreva and escreval display values in program output."
+            }
+            "Uma variável guarda um valor que o programa pode consultar ou alterar." => {
+                "A variable stores a value that the program can read or change."
+            }
+            "A linha selecionada participa do fluxo do algoritmo. Selecione outra linha para ver seu papel." => {
+                "The selected line is part of the algorithm's flow. Select another line to see its role."
+            }
+            "Troque a condição" => "Change the condition",
+            "por" => "to",
+            "e execute de novo. O resultado muda?" => "and run it again. Does the result change?",
+            "Mude a condição e execute novamente. O resultado muda?" => {
+                "Change the condition and run it again. Does the result change?"
+            }
+            "Mude a condição ou os limites do laço e observe quantas vezes ele repete." => {
+                "Change the condition or loop bounds and see how many times it repeats."
+            }
+            "Digite outro valor e observe como o restante do programa reage." => {
+                "Enter a different value and see how the rest of the program responds."
+            }
+            "Altere o texto ou o valor exibido e execute novamente." => {
+                "Change the displayed text or value and run it again."
+            }
+            "Altere o valor armazenado e observe o efeito no resultado." => {
+                "Change the stored value and observe its effect on the result."
+            }
+            "Selecione uma linha com entrada, saída, condição ou laço para experimentar." => {
+                "Select an input, output, condition, or loop line to experiment."
+            }
+            "A condição" => "The condition",
+            "é avaliada conforme os valores atuais." => "is evaluated using the current values.",
+            "Cada repetição executa novamente as instruções do bloco." => {
+                "Each repetition runs the block's instructions again."
+            }
+            "A entrada é convertida para o tipo da variável solicitada." => {
+                "Input is converted to the requested variable's type."
+            }
+            "A saída permite observar valores calculados pelo programa." => {
+                "Output lets you observe values calculated by the program."
+            }
+            "O nome identifica onde um valor fica guardado." => {
+                "The name identifies where a value is stored."
+            }
+            "Uma instrução é executada na ordem definida pelo algoritmo." => {
+                "An instruction runs in the order defined by the algorithm."
+            }
+            "A condição é avaliada como verdadeira ou falsa." => {
+                "The condition evaluates to true or false."
+            }
+            "A função" => "The function",
+            "Esta declaração parece ser de uma função; complete a assinatura para identificar nome, parâmetros e retorno." => {
+                "This appears to be a function declaration; complete its signature to identify its name, parameters, and return type."
+            }
+            "Esta declaração parece ser de um procedimento; complete a assinatura para identificar nome e parâmetros." => {
+                "This appears to be a procedure declaration; complete its signature to identify its name and parameters."
+            }
+            "O procedimento" => "The procedure",
+            "recebe" => "receives",
+            "nenhum parâmetro" => "no parameters",
+            "O tipo `vazio` indica que a função não devolve um valor." => {
+                "The `vazio` type means the function does not return a value."
+            }
+            "Ela devolve um valor do tipo" => "It returns a value of type",
+            "Esse tipo representa texto." => "This type represents text.",
+            "O retorno não foi identificado." => "The return type could not be identified.",
+            "Ele executa ações e não devolve um valor como resultado." => {
+                "It performs actions and does not return a value."
+            }
+            "A declaração define o nome e o tipo de um dado usado pelo algoritmo." => {
+                "A declaration defines the name and type of data used by the algorithm."
+            }
+            "determina qual bloco será executado conforme resulte em verdadeiro ou falso." => {
+                "determines which block runs based on whether it is true or false."
+            }
+            "leia solicita um valor e o armazena na variável informada antes de o programa continuar." => {
+                "leia requests a value and stores it in the given variable before the program continues."
+            }
+            "escreva e escreval mostram na saída os valores e textos informados." => {
+                "escreva and escreval display the given values and text in the output."
+            }
+            "A atribuição calcula o lado direito e atualiza o valor da variável à esquerda." => {
+                "An assignment evaluates the right side and updates the variable on the left."
+            }
+            "Esta função não devolve valor; retorne encerra sua execução." => {
+                "This function returns no value; retorne ends its execution."
+            }
+            "retorne encerra a rotina e pode entregar um resultado a quem a chamou." => {
+                "retorne ends the routine and can provide a result to its caller."
+            }
+            "retorne encerra a função e entrega um valor do tipo" => {
+                "retorne ends the function and gives a value of type"
+            }
+            "a quem a chamou" => "to its caller",
+            "Parâmetros são os dados recebidos pela função. `vazio` informa que nenhum resultado é devolvido." => {
+                "Parameters are the data received by a function. `vazio` means no result is returned."
+            }
+            "A função produz um valor de texto, representado pelo tipo `cadeia` no Portugol Studio." => {
+                "The function produces text, represented by the `cadeia` type in Portugol Studio."
+            }
+            "A função devolve um resultado do tipo `{return_type}`. Seus parâmetros recebem os dados usados no cálculo." => {
+                "The function returns a `{return_type}` value. Its parameters receive the data used in the calculation."
+            }
+            "A função devolve um resultado do tipo" => "The function returns a value of type",
+            "Seus parâmetros recebem os dados usados no cálculo." => {
+                "Its parameters receive the data used in the calculation."
+            }
+            "Parâmetros são os dados recebidos pela função; o tipo de retorno descreve o resultado produzido." => {
+                "Parameters are the data received by a function; its return type describes the result it produces."
+            }
+            "No VisuAlg, procedimento é uma rotina de ações. Parâmetros por referência podem alterar a variável enviada por quem chamou." => {
+                "In VisuAlg, a procedure is a routine of actions. Reference parameters can change the variable passed by its caller."
+            }
+            "O tipo define quais valores podem ser guardados; o formato indica se há um valor, um vetor ou uma matriz." => {
+                "The type defines which values can be stored; the shape indicates a scalar, vector, or matrix."
+            }
+            "Atribuir associa um novo valor a uma variável; o operador determina como o valor é calculado." => {
+                "Assignment gives a variable a new value; the operator determines how that value is calculated."
+            }
+            "O retorno leva o resultado da função de volta ao ponto que a chamou." => {
+                "The return carries the function result back to the point that called it."
+            }
+            "Troque o valor atribuído e acompanhe a próxima leitura da variável." => {
+                "Change the assigned value and follow the next read of the variable."
+            }
+            "Altere o valor devolvido e veja como a chamada da função reage." => {
+                "Change the returned value and see how the function call responds."
+            }
+            "Altere o valor inicial ou um elemento do vetor e observe o efeito no resultado." => {
+                "Change the initial value or a vector element and observe the effect on the result."
+            }
+            "Mude um argumento na chamada de" => "Change an argument in the call to",
+            "e compare o resultado devolvido" => "and compare the returned result",
+            "Altere um parâmetro usado ao chamar" => "Change a parameter passed when calling",
+            "e observe quais valores mudam" => "and observe which values change",
+            "vetor com índices de" => "vector with indices from",
+            "vetor com" => "vector with",
+            "posições, índices de" => "positions, with indices from",
+            "matriz com" => "matrix with",
+            "dimensões" => "dimensions",
+            "vetor" => "vector",
+            "tipo usado para guardar texto" => "type used to store text",
+            "número sem parte decimal" => "number without a fractional part",
+            "número que pode ter parte decimal" => "number that can have a fractional part",
+            "valor verdadeiro ou falso" => "true or false value",
+            "um caractere" => "one character",
+            "é uma constante do tipo" => "is a constant of type",
+            "é uma variável do tipo" => "is a variable of type",
+            "passado por referência, pode alterar o valor original" => {
+                "passed by reference, so it can change the original value"
+            }
+            "valor inicial" => "initial value",
+            "seu valor não muda durante a execução" => {
+                "its value does not change during execution"
+            }
+            "seu valor pode mudar durante a execução" => "its value can change during execution",
             "Experimente" => "Try it",
-            "Troque o valor 18 por 16 e execute de novo. O resultado muda?" => {
-                "Change 18 to 16 and run it again. Does the result change?"
-            }
-            "Conceito: condição" => "Concept: condition",
-            "Uma comparação como idade >= 18 resulta em verdadeiro ou falso." => {
-                "A comparison such as age >= 18 evaluates to true or false."
-            }
             "Saída" => "Output",
             "Problemas" => "Problems",
             "Depurador" => "Debugger",
@@ -236,6 +457,38 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
                 "Program output will appear here after you run it."
             }
             "Pronto para executar" => "Ready to run",
+            "Executar o programa atual" => "Run the current program",
+            "Executando o programa…" => "Running program…",
+            "Execução concluída." => "Execution finished.",
+            "O programa terminou com um erro." => "The program ended with an error.",
+            "Abra um programa antes de executar." => "Open a program before running it.",
+            "Depuração iniciada…" => "Debugging started…",
+            "Execução interrompida." => "Execution stopped.",
+            "Entrada solicitada:" => "Input requested:",
+            "Digite a entrada do programa" => "Enter program input",
+            "Pressione Esc para cancelar a execução." => "Press Esc to cancel execution.",
+            "Iniciar depuração" => "Start debugging",
+            "Continuar" => "Continue",
+            "Avançar um passo" => "Step",
+            "Parar" => "Stop",
+            "Aguardando depuração" => "Waiting for debugging",
+            "Os valores das variáveis aparecerão durante a execução passo a passo." => {
+                "Variable values will appear while stepping through the program."
+            }
+            "Nenhuma variável visível." => "No visible variables.",
+            "Pausado na linha" => "Paused at line",
+            "passo a passo" => "step",
+            "pausa" => "pause",
+            "ponto de depuração" => "debug point",
+            "depuração" => "debugging",
+            "Digite um valor e pressione Enter" => "Enter a value and press Enter",
+            "O interpretador foi encerrado antes de concluir o programa." => {
+                "The interpreter exited before the program finished."
+            }
+            "Não foi possível concluir a execução." => "Could not finish execution.",
+            "Não foi possível enviar a entrada ao programa." => {
+                "Could not send input to the program."
+            }
             "Alterações da sessão anterior recuperadas." => {
                 "Changes from the previous session were recovered."
             }
@@ -307,9 +560,6 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Os erros de sintaxe e execução aparecerão aqui." => {
                 "Syntax and runtime errors will appear here."
             }
-            "Acompanhe a execução linha por linha e os valores das variáveis." => {
-                "Follow execution line by line and inspect variable values."
-            }
             "Arquivo aberto" => "File opened",
             "Arquivo salvo" => "File saved",
             "Pasta aberta. Crie um arquivo .por ou .alg para começar." => {
@@ -328,15 +578,6 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
                 "Open a project folder before creating files."
             }
             "Crie ou abra um arquivo antes de salvar." => "Create or open a file before saving.",
-            "A execução real depende da integração com o interpretador oficial selecionado." => {
-                "Running code requires connecting the selected language interpreter."
-            }
-            "Interpretador ainda não conectado nesta prévia" => {
-                "Interpreter not connected in this preview yet"
-            }
-            "A execução real usa o interpretador da linguagem selecionada" => {
-                "Running code uses the selected language interpreter"
-            }
             "Não foi possível salvar as configurações" => "Could not save settings",
             "Não foi possível salvar a sessão" => "Could not save session",
             "Use um nome simples, sem pastas ou caracteres especiais." => {
@@ -396,6 +637,12 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Abrir pasta de projeto" => "Abrir carpeta del proyecto",
             "Abrir projeto" => "Abrir proyecto",
             "Abrir arquivo" => "Abrir archivo",
+            "Selecionar arquivo" => "Seleccionar archivo",
+            "Todos os arquivos" => "Todos los archivos",
+            "Abra um projeto antes de selecionar um arquivo." => {
+                "Abre un proyecto antes de seleccionar un archivo."
+            }
+            "Não foi possível selecionar o arquivo" => "No se pudo seleccionar el archivo",
             "Abrir projeto ou programa" => "Abrir proyecto o programa",
             "Nenhum projeto aberto" => "No hay ningún proyecto abierto",
             "Abra uma pasta ou um programa para começar." => {
@@ -449,10 +696,6 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Erros de sintaxe e execução aparecerão aqui." => {
                 "Los errores de sintaxis y ejecución aparecerán aquí."
             }
-            "Depurador pronto" => "Depurador listo",
-            "Execute o programa passo a passo para acompanhar as variáveis." => {
-                "Ejecuta el programa paso a paso para seguir sus variables."
-            }
             "Escolher pasta" => "Elegir carpeta",
             "Escolha a pasta de destino" => "Elige una carpeta de destino",
             "Selecione uma pasta local para criar o projeto." => {
@@ -487,18 +730,229 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
                 "Abre una carpeta de proyecto antes de crear elementos."
             }
             "Aprenda enquanto programa" => "Aprende mientras programas",
-            "Linha 7 · decisão" => "Línea 7 · decisión",
-            "Uma condição verifica se uma expressão é verdadeira antes de executar um bloco." => {
-                "Una condición comprueba si una expresión es verdadera antes de ejecutar un bloque."
+            "Abrir Aprenda enquanto programa" => "Abrir Aprende mientras programas",
+            "Recolher Aprenda enquanto programa" => "Contraer Aprende mientras programas",
+            "Abrir depurador" => "Abrir depurador",
+            "Recolher depurador" => "Contraer depurador",
+            "Analisando a linha selecionada…" => "Analizando la línea seleccionada…",
+            "Linha 1 · programa" => "Línea 1 · programa",
+            "Selecione uma linha para ver uma explicação contextual do programa." => {
+                "Selecciona una línea para ver una explicación contextual del programa."
+            }
+            "Mova o cursor para uma condição, um laço, uma entrada ou uma saída." => {
+                "Mueve el cursor a una condición, un ciclo, una entrada o una salida."
+            }
+            "Conceito: programa" => "Concepto: programa",
+            "O painel acompanha a linha selecionada e o conteúdo atual do editor." => {
+                "Este panel sigue la línea seleccionada y el contenido actual del editor."
+            }
+            "decisão" => "decisión",
+            "laço" => "ciclo",
+            "entrada" => "entrada",
+            "saída" => "salida",
+            "variável" => "variable",
+            "função" => "función",
+            "procedimento" => "procedimiento",
+            "atribuição" => "asignación",
+            "retorno" => "retorno",
+            "programa" => "programa",
+            "Problemas nesta linha" => "Problemas en esta línea",
+            "Nenhum problema conhecido nesta linha." => "No se conocen problemas en esta línea.",
+            "Erro de sintaxe" => "Error de sintaxis",
+            "Erro durante a execução" => "Error durante la ejecución",
+            "Possível problema lógico" => "Posible problema lógico",
+            "Índice fora dos limites" => "Índice fuera de los límites",
+            "A condição é sempre verdadeira; o ramo alternativo pode nunca ser executado." => {
+                "Esta condición siempre es verdadera; es posible que la alternativa nunca se ejecute."
+            }
+            "A condição é sempre falsa; o bloco pode nunca ser executado." => {
+                "Esta condición siempre es falsa; es posible que el bloque nunca se ejecute."
+            }
+            "Confira se a condição deveria comparar uma variável." => {
+                "Comprueba si la condición debería comparar una variable."
+            }
+            "O índice {value} está fora dos limites de `{name}` ({lower} a {upper})." => {
+                "El índice {value} está fuera de los límites de `{name}` ({lower} a {upper})."
+            }
+            "Use um índice dentro da faixa declarada para esse vetor ou matriz." => {
+                "Usa un índice dentro del rango declarado para este vector o matriz."
+            }
+            "Há um problema de sintaxe nesta linha." => {
+                "Hay un problema de sintaxis en esta línea."
+            }
+            "A execução encontrou um problema nesta linha." => {
+                "La ejecución encontró un problema en esta línea."
+            }
+            "Detalhe original do interpretador (português): {message}" => {
+                "Detalle original del intérprete (portugués): {message}"
+            }
+            "Conceito:" => "Concepto:",
+            "Uma condição escolhe qual bloco executar com base em verdadeiro ou falso." => {
+                "Una condición elige qué bloque ejecutar según un resultado verdadero o falso."
+            }
+            "Um laço repete instruções de acordo com uma condição ou faixa de valores." => {
+                "Un ciclo repite instrucciones según una condición o un rango de valores."
+            }
+            "leia solicita um valor para uma variável antes de continuar a execução." => {
+                "leia solicita un valor para una variable antes de continuar la ejecución."
+            }
+            "escreva e escreval mostram valores na saída do programa." => {
+                "escreva y escreval muestran valores en la salida del programa."
+            }
+            "Uma variável guarda um valor que o programa pode consultar ou alterar." => {
+                "Una variable guarda un valor que el programa puede consultar o cambiar."
+            }
+            "A linha selecionada participa do fluxo do algoritmo. Selecione outra linha para ver seu papel." => {
+                "La línea seleccionada forma parte del flujo del algoritmo. Selecciona otra para ver su función."
+            }
+            "Troque a condição" => "Cambia la condición",
+            "por" => "por",
+            "e execute de novo. O resultado muda?" => "y vuelve a ejecutar. ¿Cambia el resultado?",
+            "Mude a condição e execute novamente. O resultado muda?" => {
+                "Cambia la condición y vuelve a ejecutar. ¿Cambia el resultado?"
+            }
+            "Mude a condição ou os limites do laço e observe quantas vezes ele repete." => {
+                "Cambia la condición o los límites del ciclo y observa cuántas veces se repite."
+            }
+            "Digite outro valor e observe como o restante do programa reage." => {
+                "Escribe otro valor y observa cómo responde el resto del programa."
+            }
+            "Altere o texto ou o valor exibido e execute novamente." => {
+                "Cambia el texto o el valor mostrado y vuelve a ejecutar."
+            }
+            "Altere o valor armazenado e observe o efeito no resultado." => {
+                "Cambia el valor almacenado y observa el efecto en el resultado."
+            }
+            "Selecione uma linha com entrada, saída, condição ou laço para experimentar." => {
+                "Selecciona una línea de entrada, salida, condición o ciclo para probar."
+            }
+            "A condição" => "La condición",
+            "é avaliada conforme os valores atuais." => "se evalúa según los valores actuales.",
+            "Cada repetição executa novamente as instruções do bloco." => {
+                "Cada repetición vuelve a ejecutar las instrucciones del bloque."
+            }
+            "A entrada é convertida para o tipo da variável solicitada." => {
+                "La entrada se convierte al tipo de la variable solicitada."
+            }
+            "A saída permite observar valores calculados pelo programa." => {
+                "La salida permite observar los valores calculados por el programa."
+            }
+            "O nome identifica onde um valor fica guardado." => {
+                "El nombre identifica dónde se guarda un valor."
+            }
+            "Uma instrução é executada na ordem definida pelo algoritmo." => {
+                "Una instrucción se ejecuta en el orden definido por el algoritmo."
+            }
+            "A condição é avaliada como verdadeira ou falsa." => {
+                "La condición se evalúa como verdadera o falsa."
+            }
+            "A função" => "La función",
+            "Esta declaração parece ser de uma função; complete a assinatura para identificar nome, parâmetros e retorno." => {
+                "Esta parece ser una declaración de función; completa la firma para identificar el nombre, los parámetros y el retorno."
+            }
+            "Esta declaração parece ser de um procedimento; complete a assinatura para identificar nome e parâmetros." => {
+                "Esta parece ser una declaración de procedimiento; completa la firma para identificar el nombre y los parámetros."
+            }
+            "O procedimento" => "El procedimiento",
+            "recebe" => "recibe",
+            "nenhum parâmetro" => "ningún parámetro",
+            "O tipo `vazio` indica que a função não devolve um valor." => {
+                "El tipo `vazio` indica que la función no devuelve ningún valor."
+            }
+            "Ela devolve um valor do tipo" => "Devuelve un valor del tipo",
+            "Esse tipo representa texto." => "Este tipo representa texto.",
+            "O retorno não foi identificado." => "No se pudo identificar el tipo de retorno.",
+            "Ele executa ações e não devolve um valor como resultado." => {
+                "Ejecuta acciones y no devuelve un valor como resultado."
+            }
+            "A declaração define o nome e o tipo de um dado usado pelo algoritmo." => {
+                "La declaración define el nombre y el tipo de un dato usado por el algoritmo."
+            }
+            "determina qual bloco será executado conforme resulte em verdadeiro ou falso." => {
+                "determina qué bloque se ejecuta según sea verdadera o falsa."
+            }
+            "leia solicita um valor e o armazena na variável informada antes de o programa continuar." => {
+                "leia solicita un valor y lo guarda en la variable indicada antes de continuar."
+            }
+            "escreva e escreval mostram na saída os valores e textos informados." => {
+                "escreva y escreval muestran los valores y textos indicados en la salida."
+            }
+            "A atribuição calcula o lado direito e atualiza o valor da variável à esquerda." => {
+                "La asignación evalúa el lado derecho y actualiza la variable de la izquierda."
+            }
+            "Esta função não devolve valor; retorne encerra sua execução." => {
+                "Esta función no devuelve un valor; retorne termina su ejecución."
+            }
+            "retorne encerra a rotina e pode entregar um resultado a quem a chamou." => {
+                "retorne termina la rutina y puede entregar un resultado a quien la llamó."
+            }
+            "retorne encerra a função e entrega um valor do tipo" => {
+                "retorne termina la función y entrega un valor del tipo"
+            }
+            "a quem a chamou" => "a quien la llamó",
+            "Parâmetros são os dados recebidos pela função. `vazio` informa que nenhum resultado é devolvido." => {
+                "Los parámetros son los datos que recibe la función. `vazio` indica que no devuelve un resultado."
+            }
+            "A função produz um valor de texto, representado pelo tipo `cadeia` no Portugol Studio." => {
+                "La función produce texto, representado por el tipo `cadeia` en Portugol Studio."
+            }
+            "A função devolve um resultado do tipo `{return_type}`. Seus parâmetros recebem os dados usados no cálculo." => {
+                "La función devuelve un valor `{return_type}`. Sus parámetros reciben los datos usados en el cálculo."
+            }
+            "A função devolve um resultado do tipo" => "La función devuelve un valor del tipo",
+            "Seus parâmetros recebem os dados usados no cálculo." => {
+                "Sus parámetros reciben los datos usados en el cálculo."
+            }
+            "Parâmetros são os dados recebidos pela função; o tipo de retorno descreve o resultado produzido." => {
+                "Los parámetros son los datos que recibe la función; el tipo de retorno describe el resultado producido."
+            }
+            "No VisuAlg, procedimento é uma rotina de ações. Parâmetros por referência podem alterar a variável enviada por quem chamou." => {
+                "En VisuAlg, un procedimiento es una rutina de acciones. Los parámetros por referencia pueden cambiar la variable enviada por quien lo llamó."
+            }
+            "O tipo define quais valores podem ser guardados; o formato indica se há um valor, um vetor ou uma matriz." => {
+                "El tipo define qué valores se pueden guardar; la forma indica si es un escalar, un vector o una matriz."
+            }
+            "Atribuir associa um novo valor a uma variável; o operador determina como o valor é calculado." => {
+                "Asignar da un nuevo valor a una variable; el operador determina cómo se calcula."
+            }
+            "O retorno leva o resultado da função de volta ao ponto que a chamou." => {
+                "El retorno lleva el resultado de la función al punto que la llamó."
+            }
+            "Troque o valor atribuído e acompanhe a próxima leitura da variável." => {
+                "Cambia el valor asignado y sigue la próxima lectura de la variable."
+            }
+            "Altere o valor devolvido e veja como a chamada da função reage." => {
+                "Cambia el valor devuelto y observa cómo responde la llamada de la función."
+            }
+            "Altere o valor inicial ou um elemento do vetor e observe o efeito no resultado." => {
+                "Cambia el valor inicial o un elemento del vector y observa el efecto en el resultado."
+            }
+            "Mude um argumento na chamada de" => "Cambia un argumento en la llamada a",
+            "e compare o resultado devolvido" => "y compara el resultado devuelto",
+            "Altere um parâmetro usado ao chamar" => "Cambia un parámetro al llamar a",
+            "e observe quais valores mudam" => "y observa qué valores cambian",
+            "vetor com índices de" => "vector con índices de",
+            "vetor com" => "vector con",
+            "posições, índices de" => "posiciones, con índices de",
+            "matriz com" => "matriz con",
+            "dimensões" => "dimensiones",
+            "vetor" => "vector",
+            "tipo usado para guardar texto" => "tipo usado para guardar texto",
+            "número sem parte decimal" => "número sin parte decimal",
+            "número que pode ter parte decimal" => "número que puede tener parte decimal",
+            "valor verdadeiro ou falso" => "valor verdadero o falso",
+            "um caractere" => "un carácter",
+            "é uma constante do tipo" => "es una constante del tipo",
+            "é uma variável do tipo" => "es una variable del tipo",
+            "passado por referência, pode alterar o valor original" => {
+                "pasado por referencia, puede cambiar el valor original"
+            }
+            "valor inicial" => "valor inicial",
+            "seu valor não muda durante a execução" => "su valor no cambia durante la ejecución",
+            "seu valor pode mudar durante a execução" => {
+                "su valor puede cambiar durante la ejecución"
             }
             "Experimente" => "Pruébalo",
-            "Troque o valor 18 por 16 e execute de novo. O resultado muda?" => {
-                "Cambia 18 por 16 y ejecútalo de nuevo. ¿Cambia el resultado?"
-            }
-            "Conceito: condição" => "Concepto: condición",
-            "Uma comparação como idade >= 18 resulta em verdadeiro ou falso." => {
-                "Una comparación como edad >= 18 da como resultado verdadero o falso."
-            }
             "Saída" => "Salida",
             "Problemas" => "Problemas",
             "Depurador" => "Depurador",
@@ -510,6 +964,38 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
                 "La salida aparecerá aquí después de ejecutar el programa."
             }
             "Pronto para executar" => "Listo para ejecutar",
+            "Executar o programa atual" => "Ejecutar el programa actual",
+            "Executando o programa…" => "Ejecutando el programa…",
+            "Execução concluída." => "Ejecución finalizada.",
+            "O programa terminou com um erro." => "El programa terminó con un error.",
+            "Abra um programa antes de executar." => "Abre un programa antes de ejecutarlo.",
+            "Depuração iniciada…" => "Depuración iniciada…",
+            "Execução interrompida." => "Ejecución detenida.",
+            "Entrada solicitada:" => "Entrada solicitada:",
+            "Digite a entrada do programa" => "Escribe la entrada del programa",
+            "Pressione Esc para cancelar a execução." => "Pulsa Esc para cancelar la ejecución.",
+            "Iniciar depuração" => "Iniciar depuración",
+            "Continuar" => "Continuar",
+            "Avançar um passo" => "Avanzar un paso",
+            "Parar" => "Detener",
+            "Aguardando depuração" => "Esperando depuración",
+            "Os valores das variáveis aparecerão durante a execução passo a passo." => {
+                "Los valores de las variables aparecerán al recorrer el programa paso a paso."
+            }
+            "Nenhuma variável visível." => "No hay variables visibles.",
+            "Pausado na linha" => "Pausado en la línea",
+            "passo a passo" => "paso a paso",
+            "pausa" => "pausa",
+            "ponto de depuração" => "punto de depuración",
+            "depuração" => "depuración",
+            "Digite um valor e pressione Enter" => "Escribe un valor y pulsa Enter",
+            "O interpretador foi encerrado antes de concluir o programa." => {
+                "El intérprete se cerró antes de terminar el programa."
+            }
+            "Não foi possível concluir a execução." => "No se pudo terminar la ejecución.",
+            "Não foi possível enviar a entrada ao programa." => {
+                "No se pudo enviar la entrada al programa."
+            }
             "Alterações da sessão anterior recuperadas." => {
                 "Se recuperaron los cambios de la sesión anterior."
             }
@@ -591,9 +1077,6 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Os erros de sintaxe e execução aparecerão aqui." => {
                 "Los errores de sintaxis y ejecución aparecerán aquí."
             }
-            "Acompanhe a execução linha por linha e os valores das variáveis." => {
-                "Sigue la ejecución línea por línea y consulta los valores de las variables."
-            }
             "Arquivo aberto" => "Archivo abierto",
             "Arquivo salvo" => "Archivo guardado",
             "Pasta aberta. Crie um arquivo .por ou .alg para começar." => {
@@ -613,15 +1096,6 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Crie ou abra um arquivo antes de salvar." => {
                 "Crea o abre un archivo antes de guardar."
-            }
-            "A execução real depende da integração com o interpretador oficial selecionado." => {
-                "La ejecución requiere conectar el intérprete del lenguaje seleccionado."
-            }
-            "Interpretador ainda não conectado nesta prévia" => {
-                "El intérprete todavía no está conectado en esta vista previa"
-            }
-            "A execução real usa o interpretador da linguagem selecionada" => {
-                "La ejecución usa el intérprete del lenguaje seleccionado"
             }
             "Não foi possível salvar as configurações" => "No se pudo guardar la configuración",
             "Não foi possível salvar a sessão" => "No se pudo guardar la sesión",
@@ -714,6 +1188,7 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Comece com um arquivo .alg",
     "Criar programa inicial (.por)",
     "Criar programa inicial (.alg)",
+    "Pressione Esc para cancelar a execução.",
     "Selecionar uma pasta",
     "Abra um projeto que não aparece na lista.",
     "Abra um arquivo .por ou .alg diretamente no editor.",
@@ -769,8 +1244,6 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Pasta do projeto",
     "A pasta selecionada não está disponível.",
     "Erros de sintaxe e execução aparecerão aqui.",
-    "Depurador pronto",
-    "Execute o programa passo a passo para acompanhar as variáveis.",
     "Escolher pasta",
     "Escolha a pasta de destino",
     "Selecione uma pasta local para criar o projeto.",
@@ -793,12 +1266,84 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Não foi possível criar a pasta",
     "Abra uma pasta de projeto antes de criar itens.",
     "Aprenda enquanto programa",
-    "Linha 7 · decisão",
-    "Uma condição verifica se uma expressão é verdadeira antes de executar um bloco.",
+    "Abrir Aprenda enquanto programa",
+    "Recolher Aprenda enquanto programa",
+    "Abrir depurador",
+    "Recolher depurador",
+    "Analisando a linha selecionada…",
+    "função",
+    "procedimento",
+    "atribuição",
+    "retorno",
+    "Problemas nesta linha",
+    "Nenhum problema conhecido nesta linha.",
+    "Erro de sintaxe",
+    "Erro durante a execução",
+    "Possível problema lógico",
+    "Índice fora dos limites",
+    "A condição é sempre verdadeira; o ramo alternativo pode nunca ser executado.",
+    "A condição é sempre falsa; o bloco pode nunca ser executado.",
+    "Confira se a condição deveria comparar uma variável.",
+    "O índice {value} está fora dos limites de `{name}` ({lower} a {upper}).",
+    "Use um índice dentro da faixa declarada para esse vetor ou matriz.",
+    "Há um problema de sintaxe nesta linha.",
+    "A execução encontrou um problema nesta linha.",
+    "Detalhe original do interpretador (português): {message}",
+    "A função",
+    "Esta declaração parece ser de uma função; complete a assinatura para identificar nome, parâmetros e retorno.",
+    "Esta declaração parece ser de um procedimento; complete a assinatura para identificar nome e parâmetros.",
+    "O procedimento",
+    "recebe",
+    "nenhum parâmetro",
+    "O tipo `vazio` indica que a função não devolve um valor.",
+    "Ela devolve um valor do tipo",
+    "Esse tipo representa texto.",
+    "O retorno não foi identificado.",
+    "Ele executa ações e não devolve um valor como resultado.",
+    "A declaração define o nome e o tipo de um dado usado pelo algoritmo.",
+    "determina qual bloco será executado conforme resulte em verdadeiro ou falso.",
+    "leia solicita um valor e o armazena na variável informada antes de o programa continuar.",
+    "escreva e escreval mostram na saída os valores e textos informados.",
+    "A atribuição calcula o lado direito e atualiza o valor da variável à esquerda.",
+    "Esta função não devolve valor; retorne encerra sua execução.",
+    "retorne encerra a rotina e pode entregar um resultado a quem a chamou.",
+    "retorne encerra a função e entrega um valor do tipo",
+    "a quem a chamou",
+    "Parâmetros são os dados recebidos pela função. `vazio` informa que nenhum resultado é devolvido.",
+    "A função produz um valor de texto, representado pelo tipo `cadeia` no Portugol Studio.",
+    "A função devolve um resultado do tipo `{return_type}`. Seus parâmetros recebem os dados usados no cálculo.",
+    "A função devolve um resultado do tipo",
+    "Seus parâmetros recebem os dados usados no cálculo.",
+    "Parâmetros são os dados recebidos pela função; o tipo de retorno descreve o resultado produzido.",
+    "No VisuAlg, procedimento é uma rotina de ações. Parâmetros por referência podem alterar a variável enviada por quem chamou.",
+    "O tipo define quais valores podem ser guardados; o formato indica se há um valor, um vetor ou uma matriz.",
+    "Atribuir associa um novo valor a uma variável; o operador determina como o valor é calculado.",
+    "O retorno leva o resultado da função de volta ao ponto que a chamou.",
+    "Troque o valor atribuído e acompanhe a próxima leitura da variável.",
+    "Altere o valor devolvido e veja como a chamada da função reage.",
+    "Altere o valor inicial ou um elemento do vetor e observe o efeito no resultado.",
+    "Mude um argumento na chamada de",
+    "e compare o resultado devolvido",
+    "Altere um parâmetro usado ao chamar",
+    "e observe quais valores mudam",
+    "vetor com índices de",
+    "vetor com",
+    "posições, índices de",
+    "matriz com",
+    "dimensões",
+    "vetor",
+    "tipo usado para guardar texto",
+    "número sem parte decimal",
+    "número que pode ter parte decimal",
+    "valor verdadeiro ou falso",
+    "um caractere",
+    "é uma constante do tipo",
+    "é uma variável do tipo",
+    "passado por referência, pode alterar o valor original",
+    "valor inicial",
+    "seu valor não muda durante a execução",
+    "seu valor pode mudar durante a execução",
     "Experimente",
-    "Troque o valor 18 por 16 e execute de novo. O resultado muda?",
-    "Conceito: condição",
-    "Uma comparação como idade >= 18 resulta em verdadeiro ou falso.",
     "Saída",
     "Problemas",
     "Depurador",
@@ -808,6 +1353,14 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Coluna",
     "A saída aparecerá aqui após a execução.",
     "Pronto para executar",
+    "Executar o programa atual",
+    "Executando o programa…",
+    "Execução concluída.",
+    "O programa terminou com um erro.",
+    "Digite um valor e pressione Enter",
+    "O interpretador foi encerrado antes de concluir o programa.",
+    "Não foi possível concluir a execução.",
+    "Não foi possível enviar a entrada ao programa.",
     "Alterações da sessão anterior recuperadas.",
     "Personalize a aparência e o editor.",
     "Aparência",
@@ -856,7 +1409,6 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Salve os arquivos abertos antes de trocar de pasta ou descarte as alterações para continuar.",
     "Salve os arquivos antes de sair ou descarte as alterações para fechar o Potoo IDE.",
     "Nenhum problema detectado",
-    "Acompanhe a execução linha por linha e os valores das variáveis.",
     "Arquivo aberto",
     "Arquivo salvo",
     "Pasta aberta. Crie um arquivo .por ou .alg para começar.",
@@ -869,9 +1421,6 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "O editor abre apenas arquivos .por ou .alg.",
     "Abra uma pasta de projeto antes de criar arquivos.",
     "Crie ou abra um arquivo antes de salvar.",
-    "A execução real depende da integração com o interpretador oficial selecionado.",
-    "Interpretador ainda não conectado nesta prévia",
-    "A execução real usa o interpretador da linguagem selecionada",
     "Não foi possível salvar as configurações",
     "Não foi possível salvar a sessão",
     "Use um nome simples, sem pastas ou caracteres especiais.",
@@ -956,6 +1505,12 @@ struct SessionSnapshot {
     documents: Vec<SessionDocument>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RightPanelSection {
+    Learning,
+    Debugger,
+}
+
 #[derive(Debug)]
 pub(crate) enum MainWindowMsg {
     InterfaceLanguageSelected(UiLanguage),
@@ -986,12 +1541,182 @@ pub(crate) enum MainWindowMsg {
     OpenSettings,
     CloseSettings,
     Run,
+    StartDebug,
+    ContinueDebug,
+    StepDebug,
+    StopDebug,
+    ExecutionEvent(u64, ExecutionEvent),
+    ExecutionLost(u64),
+    SubmitProgramInput(String),
     SourceChanged(String),
-    CursorMoved,
+    CursorMoved(usize),
+    SelectRightPanel(RightPanelSection),
+    LearningDebounceElapsed(u64),
+    LearningAnalysisReady {
+        generation: u64,
+        document_id: u64,
+        revision: u64,
+        line: usize,
+        language: Language,
+        hint: LearningHint,
+    },
     PersistRecovery(u64),
 }
 
+struct LearningAnalysisRequest {
+    generation: u64,
+    document_id: u64,
+    revision: u64,
+    line: usize,
+    contents: String,
+    language: Language,
+    runtime_diagnostics: Vec<execution::ExecutionDiagnostic>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LearningAnalysisIdentity {
+    generation: u64,
+    document_id: u64,
+    revision: u64,
+    line: usize,
+    language: Language,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CurrentLearningAnalysis {
+    generation: u64,
+    active_document_id: Option<u64>,
+    learning_document_id: Option<u64>,
+    revision: u64,
+    line: usize,
+    language: Option<Language>,
+}
+
+impl CurrentLearningAnalysis {
+    fn accepts(self, result: LearningAnalysisIdentity) -> bool {
+        self.generation == result.generation
+            && self.active_document_id == Some(result.document_id)
+            && self.learning_document_id == Some(result.document_id)
+            && self.revision == result.revision
+            && self.line == result.line
+            && self.language == Some(result.language)
+    }
+}
+
+fn invalidate_learning_hint(generation: &mut u64, hint: &mut Option<LearningHint>) -> u64 {
+    *generation = generation.wrapping_add(1).max(1);
+    *hint = None;
+    *generation
+}
+
+#[derive(Default)]
+struct LearningAnalysisWorkerState {
+    latest_request: Option<LearningAnalysisRequest>,
+    shutdown: bool,
+}
+
+struct LearningAnalysisWorker {
+    state: Arc<(Mutex<LearningAnalysisWorkerState>, Condvar)>,
+    generation: Arc<AtomicU64>,
+}
+
+impl LearningAnalysisWorker {
+    fn new(sender: ComponentSender<MainWindow>) -> Self {
+        let state = Arc::new((
+            Mutex::new(LearningAnalysisWorkerState::default()),
+            Condvar::new(),
+        ));
+        let generation = Arc::new(AtomicU64::new(0));
+        let state_for_worker = Arc::clone(&state);
+        let generation_for_worker = Arc::clone(&generation);
+        std::thread::spawn(move || {
+            loop {
+                let request = {
+                    let (state_lock, wake) = &*state_for_worker;
+                    let mut state = state_lock
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    while state.latest_request.is_none() && !state.shutdown {
+                        state = wake
+                            .wait(state)
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    }
+                    if state.shutdown {
+                        return;
+                    }
+                    state.latest_request.take().expect("request was checked")
+                };
+                if generation_for_worker.load(Ordering::Acquire) != request.generation {
+                    continue;
+                }
+
+                let request_generation = request.generation;
+                let hint = learning_hint_with_runtime_cancellable(
+                    &request.contents,
+                    request.line,
+                    request.language,
+                    &request.runtime_diagnostics,
+                    || generation_for_worker.load(Ordering::Acquire) != request_generation,
+                );
+                if let Some(hint) = hint
+                    && generation_for_worker.load(Ordering::Acquire) == request_generation
+                {
+                    sender.input(MainWindowMsg::LearningAnalysisReady {
+                        generation: request.generation,
+                        document_id: request.document_id,
+                        revision: request.revision,
+                        line: request.line,
+                        language: request.language,
+                        hint,
+                    });
+                }
+            }
+        });
+        Self { state, generation }
+    }
+
+    fn invalidate(&self, generation: u64) {
+        self.generation.store(generation, Ordering::Release);
+        let (state_lock, _) = &*self.state;
+        let mut state = state_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.latest_request = None;
+    }
+
+    fn submit(&self, request: LearningAnalysisRequest) {
+        if self.generation.load(Ordering::Acquire) != request.generation {
+            return;
+        }
+        let (state_lock, wake) = &*self.state;
+        let mut state = state_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if state.shutdown || self.generation.load(Ordering::Acquire) != request.generation {
+            return;
+        }
+        state.latest_request = Some(request);
+        wake.notify_one();
+    }
+}
+
+impl Drop for LearningAnalysisWorker {
+    fn drop(&mut self) {
+        self.generation.fetch_add(1, Ordering::AcqRel);
+        let (state_lock, wake) = &*self.state;
+        let mut state = state_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.shutdown = true;
+        state.latest_request = None;
+        wake.notify_one();
+    }
+}
+
 pub(crate) struct MainWindow {
+    window: gtk::ApplicationWindow,
+    audio_host: crate::audio::AudioHost,
+    graphics_host: crate::graphics::GraphicsHost,
     new_file_language: Language,
     documents: Vec<SourceDocument>,
     active_document_id: Option<u64>,
@@ -1020,6 +1745,28 @@ pub(crate) struct MainWindow {
     settings_visible: bool,
     output_text: String,
     output_status: String,
+    problem_text: String,
+    next_execution_id: u64,
+    active_execution_id: Option<u64>,
+    execution_document_id: Option<u64>,
+    execution_input: Option<Sender<String>>,
+    execution_control: Option<Sender<ControlAction>>,
+    input_requested: bool,
+    input_prompt: Option<InputPrompt>,
+    debugger_snapshot: Option<DebuggerSnapshot>,
+    execution_diagnostics: Vec<execution::ExecutionDiagnostic>,
+    execution_diagnostics_document_id: Option<u64>,
+    execution_source_fingerprint: Option<u64>,
+    learning_generation: u64,
+    learning_revision: u64,
+    learning_cursor_line: usize,
+    learning_document_id: Option<u64>,
+    learning_language: Option<Language>,
+    learning_hint: Option<LearningHint>,
+    learning_loading: bool,
+    right_panel_section: RightPanelSection,
+    right_panel_collapsed: bool,
+    learning_worker: LearningAnalysisWorker,
     recent_paths: Vec<PathBuf>,
     start_page_visible: bool,
 }
@@ -1486,6 +2233,88 @@ impl MainWindow {
             .find(|document| Some(document.id) == self.active_document_id)
     }
 
+    fn source_fingerprint(source: &str) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        source.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    fn schedule_learning_refresh(&mut self, sender: ComponentSender<Self>, delay: Duration) {
+        let generation =
+            invalidate_learning_hint(&mut self.learning_generation, &mut self.learning_hint);
+        self.learning_worker.invalidate(generation);
+        self.learning_document_id = self.active_document_id;
+        self.learning_language = self.active_document().map(|document| document.language);
+        self.learning_loading = self.learning_document_id.is_some();
+        if self.learning_document_id.is_some() {
+            gtk::glib::timeout_add_local_once(delay, move || {
+                sender.input(MainWindowMsg::LearningDebounceElapsed(generation));
+            });
+        }
+    }
+
+    fn start_execution(&mut self, sender: ComponentSender<Self>, debugging: bool) {
+        if self.active_execution_id.is_some() {
+            return;
+        }
+        let Some(document) = self.active_document().cloned() else {
+            self.output_status = self.text("Abra um programa antes de executar.").to_string();
+            return;
+        };
+
+        self.output_text.clear();
+        self.problem_text.clear();
+        self.input_requested = false;
+        self.input_prompt = None;
+        self.debugger_snapshot = None;
+        self.execution_diagnostics.clear();
+        self.execution_diagnostics_document_id = None;
+        self.schedule_learning_refresh(sender.clone(), Duration::from_millis(20));
+        self.execution_source_fingerprint = Some(Self::source_fingerprint(&document.contents));
+        self.output_status = self
+            .text(if debugging {
+                "Depuração iniciada…"
+            } else {
+                "Executando o programa…"
+            })
+            .to_string();
+        let execution_id = self.next_execution_id;
+        self.next_execution_id = self.next_execution_id.wrapping_add(1).max(1);
+        self.active_execution_id = Some(execution_id);
+        self.execution_document_id = Some(document.id);
+
+        let running = execution::start(
+            document.contents,
+            document.language,
+            document.path.clone(),
+            self.project_root.clone(),
+            debugging,
+        );
+        self.execution_input = Some(running.input);
+        self.execution_control = Some(running.control);
+        let events = running.events;
+        gtk::glib::timeout_add_local(Duration::from_millis(16), move || {
+            loop {
+                match events.try_recv() {
+                    Ok(event) => {
+                        let finished = matches!(&event, ExecutionEvent::Finished { .. });
+                        sender.input(MainWindowMsg::ExecutionEvent(execution_id, event));
+                        if finished {
+                            return gtk::glib::ControlFlow::Break;
+                        }
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        return gtk::glib::ControlFlow::Continue;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        sender.input(MainWindowMsg::ExecutionLost(execution_id));
+                        return gtk::glib::ControlFlow::Break;
+                    }
+                }
+            }
+        });
+    }
+
     fn create_document(
         &mut self,
         path: Option<PathBuf>,
@@ -1866,7 +2695,30 @@ pub struct MainUi {
     line_numbers_separator: gtk::Separator,
     output_buffer: gtk::TextBuffer,
     output_view: gtk::TextView,
+    problems_buffer: gtk::TextBuffer,
+    problems_view: gtk::TextView,
+    problems_tab: gtk::Button,
+    input_entry: gtk::Entry,
     output_status: gtk::Label,
+    debugger_start: gtk::Button,
+    debugger_continue: gtk::Button,
+    debugger_step: gtk::Button,
+    debugger_stop: gtk::Button,
+    debugger_position: gtk::Label,
+    debugger_variables: gtk::TextBuffer,
+    right_panel_revealer: gtk::Revealer,
+    right_panel_stack: gtk::Stack,
+    learning_tool_button: gtk::Button,
+    debugger_tool_button: gtk::Button,
+    learning_spinner: gtk::Spinner,
+    learning_analysis_stack: gtk::Stack,
+    learning_line_title: gtk::Label,
+    learning_explanation: gtk::Label,
+    learning_experiment: gtk::Label,
+    learning_concept_title: gtk::Label,
+    learning_concept_text: gtk::Label,
+    learning_problem_list: gtk::Box,
+    learning_problem_empty: gtk::Label,
     displayed_language: Option<Language>,
     displayed_active_document_id: Option<u64>,
     displayed_project_name: String,
@@ -1890,7 +2742,14 @@ pub struct MainUi {
     displayed_preferred_ui_language: UiLanguage,
     displayed_settings_visible: bool,
     displayed_output_text: String,
+    displayed_problem_text: String,
+    displayed_input_requested: bool,
     displayed_output_status: String,
+    displayed_debugger_snapshot: Option<DebuggerSnapshot>,
+    displayed_learning_hint: Option<LearningHint>,
+    displayed_learning_loading: bool,
+    displayed_right_panel_section: Option<RightPanelSection>,
+    displayed_right_panel_collapsed: bool,
 }
 
 impl SimpleComponent for MainWindow {
@@ -1999,8 +2858,17 @@ impl SimpleComponent for MainWindow {
                 },
             );
         }
+        let learning_worker = LearningAnalysisWorker::new(sender.clone());
 
         let mut model = Self {
+            window: root.clone(),
+            audio_host: crate::audio::AudioHost::default(),
+            graphics_host: {
+                let sender = sender.clone();
+                crate::graphics::GraphicsHost::new(root.clone(), move || {
+                    sender.input(MainWindowMsg::StopDebug);
+                })
+            },
             new_file_language: preferences.default_language,
             next_document_id: documents.len() as u64 + 1,
             documents,
@@ -2047,6 +2915,28 @@ impl SimpleComponent for MainWindow {
             } else {
                 tr(preferences.ui_language, "Pronto para executar").to_string()
             },
+            problem_text: tr(preferences.ui_language, "Nenhum problema detectado").to_string(),
+            next_execution_id: 1,
+            active_execution_id: None,
+            execution_document_id: None,
+            execution_input: None,
+            execution_control: None,
+            input_requested: false,
+            input_prompt: None,
+            debugger_snapshot: None,
+            execution_diagnostics: Vec::new(),
+            execution_diagnostics_document_id: None,
+            execution_source_fingerprint: None,
+            learning_generation: 0,
+            learning_revision: 0,
+            learning_cursor_line: 1,
+            learning_document_id: None,
+            learning_language: None,
+            learning_hint: None,
+            learning_loading: false,
+            right_panel_section: RightPanelSection::Learning,
+            right_panel_collapsed: false,
+            learning_worker,
             recent_paths,
             start_page_visible,
         };
@@ -2067,6 +2957,7 @@ impl SimpleComponent for MainWindow {
             model.ui_language,
             sender.clone(),
         );
+        sender.input(MainWindowMsg::CursorMoved(1));
         start_page::rebuild_recent_items(
             &widgets.start_page.recent_section,
             &widgets.start_page.recent_list,
@@ -2305,11 +3196,181 @@ impl SimpleComponent for MainWindow {
             }
             MainWindowMsg::OpenSettings => self.settings_visible = true,
             MainWindowMsg::CloseSettings => self.settings_visible = false,
-            MainWindowMsg::Run => {
-                self.output_text = self.text("A execução real depende da integração com o interpretador oficial selecionado.").to_string();
-                self.output_status = self
-                    .text("Interpretador ainda não conectado nesta prévia")
-                    .to_string();
+            MainWindowMsg::Run => self.start_execution(sender.clone(), false),
+            MainWindowMsg::StartDebug => {
+                self.start_execution(sender.clone(), true);
+            }
+            MainWindowMsg::ContinueDebug => {
+                if let Some(control) = &self.execution_control {
+                    let _ = control.send(ControlAction::Continue);
+                }
+                self.debugger_snapshot = None;
+            }
+            MainWindowMsg::StepDebug => {
+                if let Some(control) = &self.execution_control {
+                    let _ = control.send(ControlAction::Step);
+                }
+                self.debugger_snapshot = None;
+            }
+            MainWindowMsg::StopDebug => {
+                if let Some(control) = &self.execution_control {
+                    let _ = control.send(ControlAction::Stop);
+                }
+                self.debugger_snapshot = None;
+            }
+            MainWindowMsg::ExecutionEvent(execution_id, event) => {
+                if self.active_execution_id == Some(execution_id) {
+                    match event {
+                        ExecutionEvent::Output(text) => self.output_text.push_str(&text),
+                        ExecutionEvent::ClearOutput => self.output_text.clear(),
+                        ExecutionEvent::InputRequested(prompt) => {
+                            if let (Some(name), Some(data_type)) =
+                                (&prompt.variable_name, &prompt.data_type)
+                            {
+                                self.output_status = format!(
+                                    "{} {name} ({data_type})",
+                                    self.text("Entrada solicitada:")
+                                );
+                            }
+                            self.input_prompt = Some(prompt);
+                            self.input_requested = true;
+                        }
+                        ExecutionEvent::FileSelectionRequested {
+                            extensions,
+                            allow_all_files,
+                        } => {
+                            self.input_prompt = None;
+                            self.input_requested = true;
+                            show_portugol_file_selection_dialog(
+                                &self.window,
+                                self.ui_language,
+                                self.project_root.clone(),
+                                extensions,
+                                allow_all_files,
+                                sender.clone(),
+                            );
+                        }
+                        ExecutionEvent::HostRequest { request, response } => {
+                            let result = match request {
+                                execution::HostRequest::Audio {
+                                    function,
+                                    arguments,
+                                } => {
+                                    let root = self.project_root.clone();
+                                    self.audio_host
+                                        .handle(root.as_deref(), &function, &arguments)
+                                        .map(Some)
+                                }
+                                execution::HostRequest::Graphics {
+                                    function,
+                                    arguments,
+                                } => {
+                                    let root = self.project_root.clone();
+                                    self.graphics_host
+                                        .graphics(root.as_deref(), &function, &arguments)
+                                        .map(Some)
+                                }
+                                request => self
+                                    .graphics_host
+                                    .handle_input_request(request, response.clone()),
+                            };
+                            match result {
+                                Ok(Some(value)) => {
+                                    let _ = response.send(Ok(value));
+                                }
+                                Ok(None) => {}
+                                Err(error) => {
+                                    let _ = response.send(Err(error));
+                                }
+                            }
+                        }
+                        ExecutionEvent::Debugger(snapshot) => {
+                            self.output_status =
+                                format!("{} {}", self.text("Pausado na linha"), snapshot.line);
+                            self.debugger_snapshot = Some(snapshot);
+                        }
+                        ExecutionEvent::Finished { result, stopped } => {
+                            self.audio_host.stop_all();
+                            self.graphics_host.finish();
+                            let finished_document_id = self.execution_document_id;
+                            let source_matches_execution = finished_document_id
+                                .and_then(|id| {
+                                    self.documents.iter().find(|document| document.id == id)
+                                })
+                                .is_some_and(|document| {
+                                    self.execution_source_fingerprint
+                                        == Some(Self::source_fingerprint(&document.contents))
+                                });
+                            self.active_execution_id = None;
+                            self.execution_document_id = None;
+                            self.execution_source_fingerprint = None;
+                            self.execution_input = None;
+                            self.execution_control = None;
+                            self.input_requested = false;
+                            self.input_prompt = None;
+                            match result {
+                                Ok(()) => {
+                                    self.execution_diagnostics.clear();
+                                    self.execution_diagnostics_document_id = None;
+                                    self.output_status = if stopped {
+                                        self.text("Execução interrompida.").to_string()
+                                    } else {
+                                        self.text("Execução concluída.").to_string()
+                                    };
+                                }
+                                Err(diagnostics) => {
+                                    self.problem_text = format_diagnostics(&diagnostics);
+                                    self.output_status =
+                                        self.text("O programa terminou com um erro.").to_string();
+                                    if source_matches_execution {
+                                        self.execution_diagnostics = diagnostics;
+                                        self.execution_diagnostics_document_id =
+                                            finished_document_id;
+                                        self.schedule_learning_refresh(
+                                            sender.clone(),
+                                            Duration::from_millis(20),
+                                        );
+                                    } else {
+                                        self.execution_diagnostics.clear();
+                                        self.execution_diagnostics_document_id = None;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            MainWindowMsg::ExecutionLost(execution_id) => {
+                if self.active_execution_id == Some(execution_id) {
+                    self.active_execution_id = None;
+                    self.execution_document_id = None;
+                    self.execution_source_fingerprint = None;
+                    self.execution_input = None;
+                    self.execution_control = None;
+                    self.input_requested = false;
+                    self.problem_text = self
+                        .text("O interpretador foi encerrado antes de concluir o programa.")
+                        .to_string();
+                    self.output_status = self
+                        .text("Não foi possível concluir a execução.")
+                        .to_string();
+                }
+            }
+            MainWindowMsg::SubmitProgramInput(input) => {
+                if self.input_requested {
+                    if self
+                        .execution_input
+                        .as_ref()
+                        .is_some_and(|sender| sender.send(input).is_ok())
+                    {
+                        self.input_requested = false;
+                        self.input_prompt = None;
+                    } else {
+                        self.output_status = self
+                            .text("Não foi possível enviar a entrada ao programa.")
+                            .to_string();
+                    }
+                }
             }
             MainWindowMsg::SourceChanged(contents) => {
                 if let Some(id) = self.active_document_id {
@@ -2317,6 +3378,10 @@ impl SimpleComponent for MainWindow {
                         document.contents = contents;
                     }
                 }
+                self.learning_revision = self.learning_revision.wrapping_add(1);
+                self.execution_diagnostics.clear();
+                self.execution_diagnostics_document_id = None;
+                self.schedule_learning_refresh(sender.clone(), Duration::from_millis(280));
                 self.recovery_generation += 1;
                 let generation = self.recovery_generation;
                 let sender_for_recovery = sender.clone();
@@ -2324,12 +3389,89 @@ impl SimpleComponent for MainWindow {
                     sender_for_recovery.input(MainWindowMsg::PersistRecovery(generation));
                 });
             }
-            MainWindowMsg::CursorMoved => {}
+            MainWindowMsg::CursorMoved(line) => {
+                let line = line.max(1);
+                if self.learning_cursor_line != line {
+                    self.learning_cursor_line = line;
+                    self.schedule_learning_refresh(sender.clone(), Duration::from_millis(100));
+                }
+            }
+            MainWindowMsg::SelectRightPanel(section) => {
+                if self.right_panel_collapsed {
+                    self.right_panel_section = section;
+                    self.right_panel_collapsed = false;
+                } else if self.right_panel_section == section {
+                    self.right_panel_collapsed = true;
+                } else {
+                    self.right_panel_section = section;
+                }
+            }
+            MainWindowMsg::LearningDebounceElapsed(generation) => {
+                if generation == self.learning_generation {
+                    if let Some(document) = self.active_document().cloned() {
+                        let line = self.learning_cursor_line;
+                        let revision = self.learning_revision;
+                        let runtime_diagnostics =
+                            if self.execution_diagnostics_document_id == Some(document.id) {
+                                self.execution_diagnostics.clone()
+                            } else {
+                                Vec::new()
+                            };
+                        self.learning_worker.submit(LearningAnalysisRequest {
+                            generation,
+                            document_id: document.id,
+                            revision,
+                            line,
+                            contents: document.contents,
+                            language: document.language,
+                            runtime_diagnostics,
+                        });
+                    } else {
+                        self.learning_loading = false;
+                    }
+                }
+            }
+            MainWindowMsg::LearningAnalysisReady {
+                generation,
+                document_id,
+                revision,
+                line,
+                language,
+                hint,
+            } => {
+                let current = CurrentLearningAnalysis {
+                    generation: self.learning_generation,
+                    active_document_id: self.active_document_id,
+                    learning_document_id: self.learning_document_id,
+                    revision: self.learning_revision,
+                    line: self.learning_cursor_line,
+                    language: self.learning_language,
+                };
+                let result = LearningAnalysisIdentity {
+                    generation,
+                    document_id,
+                    revision,
+                    line,
+                    language,
+                };
+                if current.accepts(result) {
+                    self.learning_hint = Some(hint);
+                    self.learning_loading = false;
+                }
+            }
             MainWindowMsg::PersistRecovery(generation) => {
                 if generation == self.recovery_generation {
                     self.persist_session(false, false);
                 }
             }
+        }
+
+        let active_language = self.active_document().map(|document| document.language);
+        if self.learning_document_id != self.active_document_id
+            || self.learning_language != active_language
+        {
+            self.learning_revision = self.learning_revision.wrapping_add(1);
+            self.schedule_learning_refresh(sender.clone(), Duration::from_millis(80));
         }
 
         if persist_after {
@@ -2342,9 +3484,117 @@ impl SimpleComponent for MainWindow {
         ui.project_root_for_new_items
             .replace(self.project_root.clone());
 
+        if ui.displayed_right_panel_section != Some(self.right_panel_section)
+            || ui.displayed_right_panel_collapsed != self.right_panel_collapsed
+        {
+            let collapsed = self.right_panel_collapsed;
+            let section = self.right_panel_section;
+            ui.right_panel_stack.set_visible_child_name(match section {
+                RightPanelSection::Learning => "learning",
+                RightPanelSection::Debugger => "debugger",
+            });
+            ui.right_panel_revealer.set_reveal_child(!collapsed);
+
+            let learning_selected = section == RightPanelSection::Learning;
+            if learning_selected {
+                ui.learning_tool_button
+                    .add_css_class("potoo-tool-rail-button-selected");
+                ui.debugger_tool_button
+                    .remove_css_class("potoo-tool-rail-button-selected");
+            } else {
+                ui.learning_tool_button
+                    .remove_css_class("potoo-tool-rail-button-selected");
+                ui.debugger_tool_button
+                    .add_css_class("potoo-tool-rail-button-selected");
+            }
+            ui.learning_tool_button.set_tooltip_text(Some(self.text(
+                if learning_selected && !collapsed {
+                    "Recolher Aprenda enquanto programa"
+                } else {
+                    "Abrir Aprenda enquanto programa"
+                },
+            )));
+            ui.debugger_tool_button.set_tooltip_text(Some(self.text(
+                if section == RightPanelSection::Debugger && !collapsed {
+                    "Recolher depurador"
+                } else {
+                    "Abrir depurador"
+                },
+            )));
+
+            ui.displayed_right_panel_section = Some(section);
+            ui.displayed_right_panel_collapsed = collapsed;
+        }
+
         let active_document = self.active_document();
         let active_document_id = active_document.map(|document| document.id);
         let active_language = active_document.map(|document| document.language);
+        let current_learning_hint = self.learning_hint.clone();
+        if ui.displayed_learning_hint != current_learning_hint {
+            if let Some(hint) = &current_learning_hint {
+                let topic_name = learning_topic_label(hint.topic, self.ui_language);
+                ui.learning_line_title.set_text(&format!(
+                    "{} {} · {topic_name}",
+                    self.text("Linha"),
+                    hint.line
+                ));
+                let (explanation, concept, experiment) = learning_copy(hint, self.ui_language);
+                ui.learning_explanation.set_text(&explanation);
+                ui.learning_experiment.set_text(&experiment);
+                ui.learning_concept_title
+                    .set_text(&format!("{} {topic_name}", self.text("Conceito:")));
+                ui.learning_concept_text.set_text(&concept);
+                content_panel::show_learning_problems(
+                    &ui.learning_problem_list,
+                    &ui.learning_problem_empty,
+                    &hint.problems,
+                    self.ui_language,
+                    &ui.code_buffer,
+                    &ui.code_view,
+                );
+            } else {
+                ui.learning_line_title
+                    .set_text(self.text("Linha 1 · programa"));
+                ui.learning_explanation.set_text(
+                    self.text(
+                        "Selecione uma linha para ver uma explicação contextual do programa.",
+                    ),
+                );
+                ui.learning_experiment.set_text(
+                    self.text(
+                        "Mova o cursor para uma condição, um laço, uma entrada ou uma saída.",
+                    ),
+                );
+                ui.learning_concept_title
+                    .set_text(self.text("Conceito: programa"));
+                ui.learning_concept_text.set_text(
+                    self.text(
+                        "O painel acompanha a linha selecionada e o conteúdo atual do editor.",
+                    ),
+                );
+                content_panel::show_learning_problems(
+                    &ui.learning_problem_list,
+                    &ui.learning_problem_empty,
+                    &[],
+                    self.ui_language,
+                    &ui.code_buffer,
+                    &ui.code_view,
+                );
+            }
+            ui.displayed_learning_hint
+                .clone_from(&current_learning_hint);
+        }
+        if ui.displayed_learning_loading != self.learning_loading {
+            ui.learning_spinner.set_spinning(self.learning_loading);
+            ui.learning_spinner.set_visible(self.learning_loading);
+            ui.learning_analysis_stack
+                .set_visible_child_name(if self.learning_loading {
+                    "loading"
+                } else {
+                    "content"
+                });
+            ui.displayed_learning_loading = self.learning_loading;
+        }
         if ui.displayed_active_document_id != active_document_id {
             ui.code_buffer.set_text(
                 active_document
@@ -2598,6 +3848,88 @@ impl SimpleComponent for MainWindow {
             ui.output_status.set_text(&self.output_status);
             ui.displayed_output_status.clone_from(&self.output_status);
         }
+        if ui.displayed_problem_text != self.problem_text {
+            ui.problems_buffer.set_text(&self.problem_text);
+            let is_placeholder = self.problem_text == self.text("Nenhum problema detectado");
+            if is_placeholder || self.problem_text.is_empty() {
+                ui.problems_view
+                    .add_css_class("potoo-output-placeholder-text");
+            } else {
+                ui.problems_view
+                    .remove_css_class("potoo-output-placeholder-text");
+            }
+            if !self.problem_text.is_empty() && !is_placeholder {
+                ui.problems_tab.emit_clicked();
+            }
+            ui.displayed_problem_text.clone_from(&self.problem_text);
+        }
+        if ui.displayed_input_requested != self.input_requested {
+            ui.input_entry.set_visible(self.input_requested);
+            if self.input_requested {
+                if let Some(prompt) = &self.input_prompt {
+                    let placeholder = match (&prompt.variable_name, &prompt.data_type) {
+                        (Some(name), Some(data_type)) => format!("{} ({data_type})", name),
+                        _ => self.text("Digite a entrada do programa").to_owned(),
+                    };
+                    ui.input_entry.set_placeholder_text(Some(&placeholder));
+                }
+                ui.input_entry.grab_focus();
+            }
+            ui.displayed_input_requested = self.input_requested;
+        }
+        ui.debugger_start
+            .set_sensitive(self.active_execution_id.is_none());
+        ui.debugger_continue
+            .set_sensitive(self.active_execution_id.is_some() && self.debugger_snapshot.is_some());
+        ui.debugger_step
+            .set_sensitive(self.active_execution_id.is_some() && self.debugger_snapshot.is_some());
+        ui.debugger_stop
+            .set_sensitive(self.active_execution_id.is_some());
+        if ui.displayed_debugger_snapshot != self.debugger_snapshot {
+            if let Some(snapshot) = &self.debugger_snapshot {
+                let reason = match snapshot.pause_reason {
+                    Some(execution::DebugPauseReason::Step) => self.text("passo a passo"),
+                    Some(execution::DebugPauseReason::Pause) => self.text("pausa"),
+                    Some(execution::DebugPauseReason::Debug) => self.text("ponto de depuração"),
+                    None => self.text("depuração"),
+                };
+                ui.debugger_position.set_text(&format!(
+                    "{} {} · {reason}",
+                    self.text("Linha"),
+                    snapshot.line
+                ));
+                let variables = if snapshot.variables.is_empty() {
+                    self.text("Nenhuma variável visível.").to_owned()
+                } else {
+                    snapshot
+                        .variables
+                        .iter()
+                        .map(|(name, value)| format!("{name} = {value}"))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                };
+                ui.debugger_variables.set_text(&variables);
+                if self.execution_document_id == self.active_document_id
+                    && let Some(iter) = ui
+                        .code_buffer
+                        .iter_at_line(snapshot.line.saturating_sub(1) as i32)
+                {
+                    ui.code_buffer.place_cursor(&iter);
+                }
+            } else {
+                ui.debugger_position
+                    .set_text(self.text("Aguardando depuração"));
+                ui.debugger_variables.set_text(
+                    self.text(
+                        "Os valores das variáveis aparecerão durante a execução passo a passo.",
+                    ),
+                );
+            }
+            ui.displayed_debugger_snapshot
+                .clone_from(&self.debugger_snapshot);
+        }
+        ui.run_button
+            .set_sensitive(self.active_execution_id.is_none());
 
         content_panel::update_line_numbers(&ui.code_buffer, &ui.line_numbers);
         content_panel::highlight_buffer(
@@ -2610,6 +3942,323 @@ impl SimpleComponent for MainWindow {
     }
 }
 
+fn format_diagnostics(diagnostics: &[execution::ExecutionDiagnostic]) -> String {
+    diagnostics
+        .iter()
+        .map(|diagnostic| {
+            let category = match diagnostic.kind {
+                execution::DiagnosticKind::Lexical => "Erro léxico",
+                execution::DiagnosticKind::Syntax => "Erro de sintaxe",
+                execution::DiagnosticKind::Runtime => "Erro de execução",
+            };
+            format!(
+                "{category} · Linha {}, coluna {}: {}",
+                diagnostic.line, diagnostic.column, diagnostic.message
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn learning_topic_label(topic: LearningTopic, language: UiLanguage) -> &'static str {
+    tr(
+        language,
+        match topic {
+            LearningTopic::Function => "função",
+            LearningTopic::Procedure => "procedimento",
+            LearningTopic::Decision => "decisão",
+            LearningTopic::Loop => "laço",
+            LearningTopic::Input => "entrada",
+            LearningTopic::Output => "saída",
+            LearningTopic::Variable => "variável",
+            LearningTopic::Assignment => "atribuição",
+            LearningTopic::Return => "retorno",
+            LearningTopic::Program => "programa",
+        },
+    )
+}
+
+fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (String, String, String) {
+    let text = |portuguese| tr(language, portuguese).to_owned();
+    let has_syntax_error = hint
+        .problems
+        .iter()
+        .any(|problem| problem.kind == crate::learning::LearningProblemKind::Syntax);
+    let parameters = hint
+        .parameters
+        .iter()
+        .map(|symbol| format_learning_symbol(symbol, hint.language, language, true))
+        .collect::<Vec<_>>();
+    let name = hint.name.as_deref().unwrap_or("?");
+    let explanation = match hint.topic {
+        LearningTopic::Function => {
+            if has_syntax_error && hint.name.is_none() {
+                text(
+                    "Esta declaração parece ser de uma função; complete a assinatura para identificar nome, parâmetros e retorno.",
+                )
+            } else {
+                let params = if parameters.is_empty() {
+                    text("nenhum parâmetro")
+                } else {
+                    parameters.join(", ")
+                };
+                let declaration =
+                    format!("{} `{name}` {} {params}", text("A função"), text("recebe"));
+                match hint.return_type.as_deref() {
+                    Some("vazio") => format!(
+                        "{declaration}. {}",
+                        text("O tipo `vazio` indica que a função não devolve um valor.")
+                    ),
+                    Some(return_type) => format!(
+                        "{declaration}. {} `{return_type}`.{}",
+                        text("Ela devolve um valor do tipo"),
+                        if return_type == "cadeia" {
+                            format!(" {}", text("Esse tipo representa texto."))
+                        } else {
+                            String::new()
+                        }
+                    ),
+                    None => format!("{declaration}. {}", text("O retorno não foi identificado.")),
+                }
+            }
+        }
+        LearningTopic::Procedure => {
+            if has_syntax_error && hint.name.is_none() {
+                text(
+                    "Esta declaração parece ser de um procedimento; complete a assinatura para identificar nome e parâmetros.",
+                )
+            } else {
+                let params = if parameters.is_empty() {
+                    text("nenhum parâmetro")
+                } else {
+                    parameters.join(", ")
+                };
+                format!(
+                    "{} `{name}` {} {params}. {}",
+                    text("O procedimento"),
+                    text("recebe"),
+                    text("Ele executa ações e não devolve um valor como resultado.")
+                )
+            }
+        }
+        LearningTopic::Variable => {
+            if hint.variables.is_empty() {
+                text("A declaração define o nome e o tipo de um dado usado pelo algoritmo.")
+            } else {
+                hint.variables
+                    .iter()
+                    .map(|symbol| format_learning_symbol(symbol, hint.language, language, false))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+        }
+        LearningTopic::Decision => match hint.expression.as_deref() {
+            Some(expression) => format!(
+                "{} “{expression}” {}",
+                text("A condição"),
+                text(
+                    "determina qual bloco será executado conforme resulte em verdadeiro ou falso."
+                )
+            ),
+            None => {
+                text("Uma condição escolhe qual bloco executar com base em verdadeiro ou falso.")
+            }
+        },
+        LearningTopic::Loop => {
+            text("Um laço repete instruções de acordo com uma condição ou faixa de valores.")
+        }
+        LearningTopic::Input => text(
+            "leia solicita um valor e o armazena na variável informada antes de o programa continuar.",
+        ),
+        LearningTopic::Output => {
+            text("escreva e escreval mostram na saída os valores e textos informados.")
+        }
+        LearningTopic::Assignment => {
+            text("A atribuição calcula o lado direito e atualiza o valor da variável à esquerda.")
+        }
+        LearningTopic::Return => match hint.return_type.as_deref() {
+            Some("vazio") => text("Esta função não devolve valor; retorne encerra sua execução."),
+            Some(data_type) => format!(
+                "{} `{data_type}` {}.",
+                text("retorne encerra a função e entrega um valor do tipo"),
+                text("a quem a chamou")
+            ),
+            None => text("retorne encerra a rotina e pode entregar um resultado a quem a chamou."),
+        },
+        LearningTopic::Program => text(
+            "A linha selecionada participa do fluxo do algoritmo. Selecione outra linha para ver seu papel.",
+        ),
+    };
+
+    let concept = match hint.topic {
+        LearningTopic::Function => match hint.return_type.as_deref() {
+            Some("vazio") => text(
+                "Parâmetros são os dados recebidos pela função. `vazio` informa que nenhum resultado é devolvido.",
+            ),
+            Some("cadeia") => text(
+                "A função produz um valor de texto, representado pelo tipo `cadeia` no Portugol Studio.",
+            ),
+            Some(return_type) => format!(
+                "{} `{return_type}`. {}",
+                text("A função devolve um resultado do tipo"),
+                text("Seus parâmetros recebem os dados usados no cálculo.")
+            ),
+            None => text(
+                "Parâmetros são os dados recebidos pela função; o tipo de retorno descreve o resultado produzido.",
+            ),
+        },
+        LearningTopic::Procedure => text(
+            "No VisuAlg, procedimento é uma rotina de ações. Parâmetros por referência podem alterar a variável enviada por quem chamou.",
+        ),
+        LearningTopic::Variable => text(
+            "O tipo define quais valores podem ser guardados; o formato indica se há um valor, um vetor ou uma matriz.",
+        ),
+        LearningTopic::Assignment => text(
+            "Atribuir associa um novo valor a uma variável; o operador determina como o valor é calculado.",
+        ),
+        LearningTopic::Return => {
+            text("O retorno leva o resultado da função de volta ao ponto que a chamou.")
+        }
+        LearningTopic::Decision => text("A condição é avaliada como verdadeira ou falsa."),
+        LearningTopic::Loop => text("Cada repetição executa novamente as instruções do bloco."),
+        LearningTopic::Input => text("A entrada é convertida para o tipo da variável solicitada."),
+        LearningTopic::Output => text("A saída permite observar valores calculados pelo programa."),
+        LearningTopic::Program => {
+            text("Uma instrução é executada na ordem definida pelo algoritmo.")
+        }
+    };
+
+    let experiment = match hint.topic {
+        LearningTopic::Function if !hint.parameters.is_empty() => format!(
+            "{} `{name}` {}.",
+            text("Mude um argumento na chamada de"),
+            text("e compare o resultado devolvido")
+        ),
+        LearningTopic::Procedure => format!(
+            "{} `{name}` {}.",
+            text("Altere um parâmetro usado ao chamar"),
+            text("e observe quais valores mudam")
+        ),
+        LearningTopic::Function => {
+            text("Chame a função em outro ponto do programa e compare o valor que ela devolve.")
+        }
+        LearningTopic::Decision => match (&hint.expression, &hint.experiment_expression) {
+            (Some(current), Some(changed)) => format!(
+                "{} “{current}” {} “{changed}” {}",
+                text("Troque a condição"),
+                text("por"),
+                text("e execute de novo. O resultado muda?")
+            ),
+            _ => text("Mude a condição e execute novamente. O resultado muda?"),
+        },
+        LearningTopic::Loop => {
+            text("Mude a condição ou os limites do laço e observe quantas vezes ele repete.")
+        }
+        LearningTopic::Input => {
+            text("Digite outro valor e observe como o restante do programa reage.")
+        }
+        LearningTopic::Output => text("Altere o texto ou o valor exibido e execute novamente."),
+        LearningTopic::Variable => {
+            text("Altere o valor inicial ou um elemento do vetor e observe o efeito no resultado.")
+        }
+        LearningTopic::Assignment => {
+            text("Troque o valor atribuído e acompanhe a próxima leitura da variável.")
+        }
+        LearningTopic::Return => {
+            text("Altere o valor devolvido e veja como a chamada da função reage.")
+        }
+        LearningTopic::Program => {
+            text("Selecione uma linha com entrada, saída, condição ou laço para experimentar.")
+        }
+    };
+    (explanation, concept, experiment)
+}
+
+fn format_learning_symbol(
+    symbol: &LearningSymbol,
+    dialect: Language,
+    ui_language: UiLanguage,
+    parameter: bool,
+) -> String {
+    let text = |portuguese| tr(ui_language, portuguese).to_owned();
+    let dimensions = match symbol.dimensions.len() {
+        0 => String::new(),
+        1 => {
+            let dimension = symbol.dimensions[0];
+            match (dialect, dimension.lower_bound, dimension.upper_bound) {
+                (Language::Visualg, Some(lower), Some(upper)) => format!(
+                    "; {} {lower} {} {upper}",
+                    text("vetor com índices de"),
+                    text("até")
+                ),
+                (Language::Portugol, Some(lower), Some(upper)) => format!(
+                    "; {} {} {} {}",
+                    text("vetor com"),
+                    upper.saturating_sub(lower).saturating_add(1),
+                    text("posições, índices de"),
+                    format!("{lower} {} {upper}", text("até"))
+                ),
+                _ => format!("; {}", text("vetor")),
+            }
+        }
+        dimensions => format!(
+            "; {} {dimensions} {}",
+            text("matriz com"),
+            text("dimensões")
+        ),
+    };
+    let type_explanation = match symbol.type_name.as_str() {
+        "cadeia" => format!(" ({})", text("tipo usado para guardar texto")),
+        "inteiro" => format!(" ({})", text("número sem parte decimal")),
+        "real" => format!(" ({})", text("número que pode ter parte decimal")),
+        "logico" => format!(" ({})", text("valor verdadeiro ou falso")),
+        "caracter" | "caractere" => format!(" ({})", text("um caractere")),
+        _ => String::new(),
+    };
+    let role = if parameter {
+        String::new()
+    } else if symbol.is_constant {
+        text("é uma constante do tipo")
+    } else {
+        text("é uma variável do tipo")
+    };
+    let reference = if symbol.by_reference {
+        format!(
+            "; {}",
+            text("passado por referência, pode alterar o valor original")
+        )
+    } else {
+        String::new()
+    };
+    let initial = symbol
+        .initializer
+        .as_ref()
+        .map_or_else(String::new, |value| {
+            format!("; {} `{value}`", text("valor inicial"))
+        });
+    if parameter {
+        format!(
+            "`{}`: `{}`{}{}{}{}",
+            symbol.name, symbol.type_name, type_explanation, dimensions, reference, initial
+        )
+    } else {
+        format!(
+            "`{}` {} `{}`{}{}{}{}.",
+            symbol.name,
+            role,
+            symbol.type_name,
+            type_explanation,
+            if symbol.is_constant {
+                format!("; {}", text("seu valor não muda durante a execução"))
+            } else {
+                format!("; {}", text("seu valor pode mudar durante a execução"))
+            },
+            dimensions,
+            initial
+        )
+    }
+}
+
 fn update_cursor_position(buffer: &gtk::TextBuffer, label: &gtk::Label, language: UiLanguage) {
     let cursor = buffer.iter_at_offset(buffer.cursor_position());
     label.set_text(&format!(
@@ -2619,6 +4268,24 @@ fn update_cursor_position(buffer: &gtk::TextBuffer, label: &gtk::Label, language
         tr(language, "Coluna"),
         cursor.line_offset() + 1
     ));
+}
+
+fn input_cancel_controller(
+    entry: &gtk::Entry,
+    on_cancel: impl Fn() + 'static,
+) -> gtk::EventControllerKey {
+    let controller = gtk::EventControllerKey::new();
+    let entry = entry.clone();
+    controller.connect_key_pressed(move |_, key, _, _| {
+        if key == gtk::gdk::Key::Escape {
+            entry.set_text("");
+            on_cancel();
+            gtk::glib::Propagation::Stop
+        } else {
+            gtk::glib::Propagation::Proceed
+        }
+    });
+    controller
 }
 
 fn build_window_content(
@@ -2704,6 +4371,13 @@ fn build_window_content(
     line_numbers.set_margin_end(12);
     content_panel::update_line_numbers(&code_buffer, &line_numbers);
 
+    let line_number_gutter = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    line_number_gutter.append(&line_numbers);
+    let line_numbers_separator = gtk::Separator::new(gtk::Orientation::Vertical);
+    line_numbers_separator.add_css_class("potoo-gutter-separator");
+    line_numbers_separator.set_visible(preferences.line_numbers_visible);
+    line_number_gutter.append(&line_numbers_separator);
+
     let code_view = gtk::TextView::builder()
         .buffer(&code_buffer)
         .monospace(true)
@@ -2717,6 +4391,7 @@ fn build_window_content(
         .top_margin(14)
         .bottom_margin(14)
         .build();
+    code_view.set_gutter(gtk::TextWindowType::Left, Some(&line_number_gutter));
     code_view.add_css_class("potoo-code-editor");
     code_view.add_css_class(&format!("potoo-font-{}", preferences.font_size));
 
@@ -2728,11 +4403,6 @@ fn build_window_content(
 
     let editor_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     editor_row.add_css_class("potoo-editor-row");
-    editor_row.append(&line_numbers);
-    let line_numbers_separator = gtk::Separator::new(gtk::Orientation::Vertical);
-    line_numbers_separator.add_css_class("potoo-gutter-separator");
-    line_numbers_separator.set_visible(preferences.line_numbers_visible);
-    editor_row.append(&line_numbers_separator);
     editor_row.append(&code_scroll);
 
     let editor_tabs = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -2766,8 +4436,34 @@ fn build_window_content(
     editor.append(&tab_bar);
     editor.append(&editor_row);
 
-    let (output_panel, output_buffer, output_tab_output, output_view) =
-        content_panel::build_output_panel(ui_language);
+    let output_ui: content_panel::OutputPanelUi =
+        content_panel::build_output_panel(ui_language, sender.clone());
+    let output_panel = output_ui.panel;
+    let debugger_page = output_ui.debugger_page;
+    let output_buffer = output_ui.output_buffer;
+    let output_tab_output = output_ui.output_tab;
+    let output_view = output_ui.output_view;
+    let problems_buffer = output_ui.problems_buffer;
+    let problems_view = output_ui.problems_view;
+    let problems_tab = output_ui.problems_tab;
+    let debugger_start = output_ui.debugger_start;
+    let debugger_continue = output_ui.debugger_continue;
+    let debugger_step = output_ui.debugger_step;
+    let debugger_stop = output_ui.debugger_stop;
+    let debugger_position = output_ui.debugger_position;
+    let debugger_variables = output_ui.debugger_variables;
+    let input_entry = gtk::Entry::new();
+    input_entry.add_css_class("potoo-program-input");
+    input_entry.set_placeholder_text(Some(tr(ui_language, "Digite um valor e pressione Enter")));
+    input_entry.set_tooltip_text(Some(tr(
+        ui_language,
+        "Pressione Esc para cancelar a execução.",
+    )));
+    input_entry.set_margin_start(12);
+    input_entry.set_margin_end(12);
+    input_entry.set_margin_top(6);
+    input_entry.set_margin_bottom(6);
+    input_entry.set_visible(false);
     let output_status = gtk::Label::new(Some(tr(ui_language, "Pronto para executar")));
     output_status.set_xalign(0.0);
     output_status.add_css_class("potoo-muted");
@@ -2782,6 +4478,7 @@ fn build_window_content(
     let output_area = gtk::Box::new(gtk::Orientation::Vertical, 0);
     output_area.add_css_class("potoo-output-area");
     output_area.append(&output_panel);
+    output_area.append(&input_entry);
     output_area.append(&output_status_row);
 
     let editor_output = gtk::Paned::new(gtk::Orientation::Vertical);
@@ -2790,7 +4487,7 @@ fn build_window_content(
     editor_output.set_end_child(Some(&output_area));
     editor_output.set_resize_start_child(true);
     editor_output.set_resize_end_child(false);
-    editor_output.set_shrink_start_child(false);
+    editor_output.set_shrink_start_child(true);
     editor_output.set_shrink_end_child(false);
     editor_output.set_position(570);
     let window_for_output = window.clone();
@@ -2808,32 +4505,53 @@ fn build_window_content(
         });
     });
 
-    let learning_panel = content_panel::build_learning_panel(ui_language);
-    let editor_and_learning = gtk::Paned::new(gtk::Orientation::Horizontal);
-    editor_and_learning.set_wide_handle(false);
-    editor_and_learning.set_start_child(Some(&editor_output));
-    editor_and_learning.set_end_child(Some(&learning_panel));
-    editor_and_learning.set_resize_start_child(true);
-    editor_and_learning.set_resize_end_child(false);
-    editor_and_learning.set_shrink_start_child(false);
-    editor_and_learning.set_shrink_end_child(false);
-    editor_and_learning.set_position(820);
-    editor_and_learning.connect_map(|paned| {
+    let learning_ui = content_panel::build_learning_panel(ui_language);
+    let tools_ui = content_panel::build_tool_panel(
+        learning_ui.panel.clone(),
+        debugger_page,
+        ui_language,
+        sender.clone(),
+    );
+    let tools_panel = tools_ui.panel.clone();
+    let editor_and_tools = gtk::Paned::new(gtk::Orientation::Horizontal);
+    editor_and_tools.set_wide_handle(false);
+    editor_and_tools.set_start_child(Some(&editor_output));
+    editor_and_tools.set_end_child(Some(&tools_panel));
+    editor_and_tools.set_resize_start_child(true);
+    editor_and_tools.set_resize_end_child(false);
+    editor_and_tools.set_shrink_start_child(false);
+    editor_and_tools.set_shrink_end_child(false);
+    editor_and_tools.set_position(820);
+    editor_and_tools.connect_map(|paned| {
         let paned = paned.clone();
         gtk::glib::idle_add_local(move || {
             let width = paned.width();
             if width <= 0 {
                 return gtk::glib::ControlFlow::Continue;
             }
-            paned.set_position(width.saturating_sub(306).max(440));
+            paned.set_position(width.saturating_sub(348).max(440));
             gtk::glib::ControlFlow::Break
         });
     });
+    let paned_for_tools = editor_and_tools.clone();
+    tools_ui
+        .revealer
+        .connect_child_revealed_notify(move |revealer| {
+            let width = paned_for_tools.width();
+            if width > 0 {
+                let panel_width = if revealer.is_child_revealed() {
+                    348
+                } else {
+                    42
+                };
+                paned_for_tools.set_position(width.saturating_sub(panel_width).max(440));
+            }
+        });
 
     let workspace = gtk::Paned::new(gtk::Orientation::Horizontal);
     workspace.set_wide_handle(false);
     workspace.set_start_child(Some(&sidebar_widget));
-    workspace.set_end_child(Some(&editor_and_learning));
+    workspace.set_end_child(Some(&editor_and_tools));
     workspace.set_resize_start_child(false);
     workspace.set_resize_end_child(true);
     workspace.set_shrink_start_child(false);
@@ -3051,6 +4769,17 @@ fn build_window_content(
         sender_for_run.input(MainWindowMsg::Run);
     });
 
+    let sender_for_program_input = sender.clone();
+    input_entry.connect_activate(move |entry| {
+        sender_for_program_input.input(MainWindowMsg::SubmitProgramInput(entry.text().to_string()));
+        entry.set_text("");
+    });
+
+    let sender_for_input_cancel = sender.clone();
+    input_entry.add_controller(input_cancel_controller(&input_entry, move || {
+        sender_for_input_cancel.input(MainWindowMsg::StopDebug);
+    }));
+
     let sender_for_source = sender.clone();
     code_buffer.connect_changed(move |buffer| {
         let contents = buffer.text(&buffer.start_iter(), &buffer.end_iter(), true);
@@ -3058,8 +4787,9 @@ fn build_window_content(
     });
 
     let sender_for_cursor = sender.clone();
-    code_buffer.connect_mark_set(move |_, _, _| {
-        sender_for_cursor.input(MainWindowMsg::CursorMoved);
+    code_buffer.connect_mark_set(move |buffer, _, _| {
+        let line = (buffer.iter_at_offset(buffer.cursor_position()).line() + 1) as usize;
+        sender_for_cursor.input(MainWindowMsg::CursorMoved(line));
     });
 
     let key_controller = gtk::EventControllerKey::new();
@@ -3137,7 +4867,30 @@ fn build_window_content(
         line_numbers_separator,
         output_buffer,
         output_view,
+        problems_buffer,
+        problems_view,
+        problems_tab,
+        input_entry,
         output_status,
+        debugger_start,
+        debugger_continue,
+        debugger_step,
+        debugger_stop,
+        debugger_position,
+        debugger_variables,
+        right_panel_revealer: tools_ui.revealer,
+        right_panel_stack: tools_ui.stack,
+        learning_tool_button: tools_ui.learning_button,
+        debugger_tool_button: tools_ui.debugger_button,
+        learning_spinner: learning_ui.spinner,
+        learning_analysis_stack: learning_ui.analysis_stack,
+        learning_line_title: learning_ui.line_title,
+        learning_explanation: learning_ui.explanation,
+        learning_experiment: learning_ui.experiment,
+        learning_concept_title: learning_ui.concept_title,
+        learning_concept_text: learning_ui.concept_text,
+        learning_problem_list: learning_ui.problem_list,
+        learning_problem_empty: learning_ui.problem_empty,
         displayed_language: Some(Language::Portugol),
         displayed_active_document_id: Some(0),
         displayed_project_name: String::new(),
@@ -3162,7 +4915,14 @@ fn build_window_content(
         displayed_settings_visible: false,
         displayed_output_text: tr(ui_language, "A saída aparecerá aqui após a execução.")
             .to_string(),
+        displayed_problem_text: tr(ui_language, "Nenhum problema detectado").to_string(),
+        displayed_input_requested: false,
         displayed_output_status: tr(ui_language, "Pronto para executar").to_string(),
+        displayed_debugger_snapshot: None,
+        displayed_learning_hint: None,
+        displayed_learning_loading: false,
+        displayed_right_panel_section: None,
+        displayed_right_panel_collapsed: true,
     }
 }
 
@@ -3662,6 +5422,91 @@ fn show_open_file_dialog(
                 "{}: {error}",
                 tr(language, "Não foi possível abrir o arquivo de código")
             ))),
+        },
+    );
+}
+
+fn show_portugol_file_selection_dialog(
+    parent: &gtk::ApplicationWindow,
+    language: UiLanguage,
+    project_root: Option<PathBuf>,
+    formats: Vec<String>,
+    allow_all_files: bool,
+    sender: ComponentSender<MainWindow>,
+) {
+    let Some(project_root) = project_root else {
+        sender.input(MainWindowMsg::FileOperationFailed(
+            tr(language, "Abra um projeto antes de selecionar um arquivo.").to_owned(),
+        ));
+        sender.input(MainWindowMsg::SubmitProgramInput(String::new()));
+        return;
+    };
+
+    let dialog = gtk::FileDialog::new();
+    dialog.set_title(tr(language, "Selecionar arquivo"));
+    let root_file = gtk::gio::File::for_path(&project_root);
+    dialog.set_initial_folder(Some(&root_file));
+    let filters = gtk::gio::ListStore::new::<gtk::FileFilter>();
+    for format in formats {
+        let (label, suffixes) = format
+            .split_once('|')
+            .map_or((format.as_str(), format.as_str()), |(label, suffixes)| {
+                (label, suffixes)
+            });
+        let filter = gtk::FileFilter::new();
+        filter.set_name(Some(label));
+        for suffix in suffixes.split(',') {
+            let raw_suffix = suffix.trim();
+            if raw_suffix == "*" || raw_suffix == "*.*" {
+                filter.add_pattern("*");
+            } else {
+                let suffix = raw_suffix.trim_start_matches('*').trim_start_matches('.');
+                if !suffix.is_empty() {
+                    filter.add_suffix(suffix);
+                }
+            }
+        }
+        filters.append(&filter);
+    }
+    if allow_all_files || filters.n_items() == 0 {
+        let all_files = gtk::FileFilter::new();
+        all_files.set_name(Some(tr(language, "Todos os arquivos")));
+        all_files.add_pattern("*");
+        filters.append(&all_files);
+    }
+    dialog.set_filters(Some(&filters));
+    dialog.open(
+        Some(parent),
+        None::<&gtk::gio::Cancellable>,
+        move |result| {
+            let selected = match result {
+                Ok(file) => file.path().map(|path| {
+                    let canonical_root = fs::canonicalize(&project_root).unwrap_or(project_root);
+                    let canonical_path = fs::canonicalize(&path).unwrap_or(path.clone());
+                    canonical_path
+                        .strip_prefix(&canonical_root)
+                        .map(|relative| relative.to_string_lossy().replace('\\', "/"))
+                        .unwrap_or_else(|_| canonical_path.to_string_lossy().into_owned())
+                }),
+                Err(error) if error.matches(gtk::gio::IOErrorEnum::Cancelled) => {
+                    Some(String::new())
+                }
+                Err(error) => {
+                    sender.input(MainWindowMsg::FileOperationFailed(format!(
+                        "{}: {error}",
+                        tr(language, "Não foi possível selecionar o arquivo")
+                    )));
+                    Some(String::new())
+                }
+            };
+            if let Some(path) = selected {
+                sender.input(MainWindowMsg::SubmitProgramInput(path));
+            } else {
+                sender.input(MainWindowMsg::FileOperationFailed(
+                    tr(language, "Selecione um arquivo local.").to_owned(),
+                ));
+                sender.input(MainWindowMsg::SubmitProgramInput(String::new()));
+            }
         },
     );
 }
@@ -4630,7 +6475,9 @@ fn scan_source_directory(
 
 #[cfg(test)]
 mod ui_language_tests {
-    use super::{UI_TRANSLATION_KEYS, UiLanguage, tr, translate_known_text};
+    use super::{UI_TRANSLATION_KEYS, UiLanguage, learning_copy, tr, translate_known_text};
+    use crate::components::content_panel::Language;
+    use crate::learning::{LearningTopic, learning_hint};
 
     #[test]
     fn detects_supported_system_locales() {
@@ -4703,4 +6550,80 @@ mod ui_language_tests {
             }
         }
     }
+
+    #[test]
+    fn learning_copy_teaches_dialect_types_and_array_shapes() {
+        let portugol = "programa {\n funcao vazio registrar(inteiro valor) {}\n funcao cadeia nome(inteiro valor) { retorne \"Ana\" }\n funcao vazio inicio() {\n  inteiro valores[3]\n  inteiro matriz[2][3]\n }\n}";
+        let void_function = learning_hint(portugol, 2, Language::Portugol);
+        let (void_text, _, _) = learning_copy(&void_function, UiLanguage::Portuguese);
+        assert!(void_text.contains("vazio"));
+        assert!(void_text.contains("não devolve um valor"));
+
+        let text_function = learning_hint(portugol, 3, Language::Portugol);
+        let (text_explanation, text_concept, _) =
+            learning_copy(&text_function, UiLanguage::English);
+        assert!(text_explanation.contains("cadeia"));
+        assert!(text_concept.contains("text"));
+
+        let vector = learning_hint(portugol, 5, Language::Portugol);
+        let (vector_text, _, _) = learning_copy(&vector, UiLanguage::Portuguese);
+        assert!(vector_text.contains("vetor com 3 posições"));
+
+        let matrix = learning_hint(portugol, 6, Language::Portugol);
+        let (matrix_text, _, _) = learning_copy(&matrix, UiLanguage::Portuguese);
+        assert!(matrix_text.contains("matriz com 2 dimensões"));
+        assert_eq!(matrix.topic, LearningTopic::Variable);
+
+        let visualg =
+            "algoritmo \"aula\"\nvar\ndados: vetor[2..5] de inteiro\ninicio\nfimalgoritmo\n";
+        let vector = learning_hint(visualg, 3, Language::Visualg);
+        let (visualg_text, _, _) = learning_copy(&vector, UiLanguage::Portuguese);
+        assert!(visualg_text.contains("índices de 2 até 5"));
+    }
 }
+
+#[cfg(test)]
+mod input_cancel_tests {
+    use super::input_cancel_controller;
+    use gtk::prelude::*;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    #[test]
+    #[ignore = "requires a GTK display; run with xvfb-run"]
+    fn escape_clears_pending_input_and_requests_cancellation() {
+        gtk::init().expect("GTK should initialize under Xvfb");
+        let entry = gtk::Entry::new();
+        entry.set_text("entrada não enviada");
+        let cancel_count = Rc::new(Cell::new(0));
+        let cancel_count_for_callback = cancel_count.clone();
+        let controller = input_cancel_controller(&entry, move || {
+            cancel_count_for_callback.set(cancel_count_for_callback.get() + 1);
+        });
+        entry.add_controller(controller.clone());
+
+        let normal_key = controller.emit_by_name::<bool>(
+            "key-pressed",
+            &[&gtk::gdk::Key::a, &0_u32, &gtk::gdk::ModifierType::empty()],
+        );
+        assert!(!normal_key);
+        assert_eq!(entry.text(), "entrada não enviada");
+        assert_eq!(cancel_count.get(), 0);
+
+        let escape_key = controller.emit_by_name::<bool>(
+            "key-pressed",
+            &[
+                &gtk::gdk::Key::Escape,
+                &0_u32,
+                &gtk::gdk::ModifierType::empty(),
+            ],
+        );
+        assert!(escape_key);
+        assert_eq!(entry.text(), "");
+        assert_eq!(cancel_count.get(), 1);
+    }
+}
+
+#[cfg(test)]
+#[path = "../tests/learning/app_state_tests.rs"]
+mod learning_state_tests;

@@ -15,6 +15,9 @@ window.potoo-window {
   --potoo-accent-hover: #076642;
   --potoo-accent-soft-bg: #e2f1e8;
   --potoo-accent-text: #096744;
+  --potoo-learning-problem-bg: #fff3f1;
+  --potoo-learning-problem-border: #e6b5af;
+  --potoo-learning-problem-text: #8b3028;
   --potoo-selection-bg: #b9ddc9;
   --potoo-selection-text: #111111;
   --potoo-control-bg: #dfe5e1;
@@ -81,7 +84,6 @@ button.potoo-start-recent-open {
   border: 0;
   border-radius: 0;
   color: var(--potoo-text-secondary);
-  text-align: left;
   box-shadow: none;
 }
 
@@ -153,7 +155,6 @@ button.potoo-start-open-file {
   border: 1px solid var(--potoo-border);
   border-radius: 0;
   color: var(--potoo-text-secondary);
-  text-align: left;
   box-shadow: none;
 }
 
@@ -209,6 +210,9 @@ window.potoo-window.potoo-dark {
   --potoo-accent-hover: #2c9868;
   --potoo-accent-soft-bg: #2d3e35;
   --potoo-accent-text: #8ad3a9;
+  --potoo-learning-problem-bg: #3c292a;
+  --potoo-learning-problem-border: #785052;
+  --potoo-learning-problem-text: #ffb9b2;
   --potoo-selection-bg: #356247;
   --potoo-selection-text: #ffffff;
   --potoo-control-bg: #363e44;
@@ -840,6 +844,20 @@ textview.potoo-output-view {
   color: var(--potoo-text);
 }
 
+entry.potoo-program-input {
+  min-height: 28px;
+  padding: 4px 8px;
+  background-color: var(--potoo-editor-bg);
+  border: 1px solid var(--potoo-border);
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--potoo-text);
+}
+
+entry.potoo-program-input:focus {
+  border-color: var(--potoo-accent);
+}
+
 .potoo-line-numbers {
   background-color: var(--potoo-gutter-bg);
   color: var(--potoo-text-muted);
@@ -944,6 +962,38 @@ button.potoo-output-tab-selected:focus {
   font-size: 13px;
 }
 
+.potoo-debugger-page {
+  background-color: var(--potoo-surface-bg);
+  color: var(--potoo-text-secondary);
+}
+
+button.potoo-debugger-action {
+  min-height: 30px;
+  padding: 0 10px;
+  background-color: var(--potoo-control-bg);
+  background-image: none;
+  border: 1px solid var(--potoo-border);
+  border-radius: 0;
+  color: var(--potoo-text-secondary);
+  box-shadow: none;
+}
+
+button.potoo-debugger-action:hover {
+  background-color: var(--potoo-control-hover-bg);
+  color: var(--potoo-text);
+}
+
+.potoo-debugger-position {
+  color: var(--potoo-text);
+  font-weight: 650;
+}
+
+textview.potoo-debugger-variables {
+  background-color: var(--potoo-panel-bg);
+  color: var(--potoo-text-secondary);
+  font-size: 13px;
+}
+
 textview.potoo-output-view {
   font-size: 13px;
 }
@@ -963,10 +1013,61 @@ textview.potoo-output-placeholder-text {
   font-size: 12px;
 }
 
+.potoo-tool-panel {
+  min-width: 40px;
+  background-color: var(--potoo-window-bg);
+  border-left: 1px solid var(--potoo-border);
+}
+
 .potoo-learning-panel {
   min-width: 306px;
   background-color: var(--potoo-window-bg);
-  border-left: 0;
+}
+
+.potoo-tool-rail {
+  background-color: var(--potoo-panel-bg);
+}
+
+button.potoo-tool-rail-button {
+  min-width: 32px;
+  min-height: 32px;
+  margin: 2px;
+  padding: 4px;
+  background-color: transparent;
+  background-image: none;
+  border: 2px solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--potoo-text-muted);
+}
+
+button.potoo-tool-rail-button:hover,
+button.potoo-tool-rail-button:focus-visible {
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
+}
+
+button.potoo-tool-rail-button-selected {
+  background-color: var(--potoo-accent-soft-bg);
+  border-left-color: var(--potoo-accent);
+  color: var(--potoo-accent-text);
+}
+
+button.potoo-tool-rail-button-selected:hover,
+button.potoo-tool-rail-button-selected:focus-visible {
+  background-color: var(--potoo-accent-soft-bg);
+  color: var(--potoo-accent-text);
+}
+
+.potoo-learning-spinner {
+  min-width: 14px;
+  min-height: 14px;
+  color: var(--potoo-accent);
+}
+
+.potoo-learning-loading {
+  color: var(--potoo-text-muted);
+  font-size: 13px;
 }
 
 .potoo-learning-panel separator {
@@ -1005,6 +1106,44 @@ textview.potoo-output-placeholder-text {
   background-color: var(--potoo-accent-soft-bg);
   border-left: 2px solid var(--potoo-accent);
   color: var(--potoo-accent-text);
+}
+
+button.potoo-learning-problem-card {
+  padding: 12px;
+  background-color: var(--potoo-learning-problem-bg);
+  background-image: none;
+  border: 1px solid var(--potoo-learning-problem-border);
+  border-left: 2px solid var(--potoo-learning-problem-text);
+  border-radius: 0;
+  color: var(--potoo-learning-problem-text);
+  box-shadow: none;
+}
+
+button.potoo-learning-problem-card:hover,
+button.potoo-learning-problem-card:focus-visible {
+  background-color: var(--potoo-learning-problem-bg);
+  border-color: var(--potoo-learning-problem-text);
+}
+
+button.potoo-learning-problem-warning {
+  border-left-style: dashed;
+}
+
+.potoo-learning-problem-title {
+  color: var(--potoo-learning-problem-text);
+  font-weight: 650;
+}
+
+.potoo-learning-problem-location,
+.potoo-learning-problem-empty {
+  color: var(--potoo-text-muted);
+  font-size: 12px;
+}
+
+.potoo-learning-problem-message,
+.potoo-learning-problem-suggestion {
+  color: var(--potoo-text-secondary);
+  font-size: 13px;
 }
 
 .potoo-statusbar {
@@ -1637,6 +1776,19 @@ window.potoo-window.potoo-dark .potoo-concept-card {
   background-color: var(--potoo-accent-soft-bg);
   border-left-color: var(--potoo-accent);
   color: var(--potoo-accent-text);
+}
+
+window.potoo-window.potoo-dark button.potoo-learning-problem-card {
+  color: var(--potoo-learning-problem-text);
+}
+
+window.potoo-window.potoo-dark .potoo-learning-problem-title {
+  color: var(--potoo-learning-problem-text);
+}
+
+window.potoo-window.potoo-dark .potoo-learning-problem-message,
+window.potoo-window.potoo-dark .potoo-learning-problem-suggestion {
+  color: var(--potoo-text-secondary);
 }
 
 window.potoo-window.potoo-dark .potoo-statusbar {

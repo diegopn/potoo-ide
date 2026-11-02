@@ -17,8 +17,17 @@ path = "src/main.rs"
 [dependencies]
 gtk = { package = "gtk4", version = "=0.11.3", features = ["v4_20"] }
 relm4 = { version = "=0.11.0", default-features = false }
+potoo-portugol-interpreter = { path = "crates/potoo-portugol-interpreter" }
+potoo-visualg-interpreter = { path = "crates/potoo-visualg-interpreter" }
 
 [profile.release]
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
+
+[workspace]
+members = [
+    "crates/potoo-portugol-interpreter",
+    "crates/potoo-visualg-interpreter",
+]
+resolver = "3"

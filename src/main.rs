@@ -1,5 +1,9 @@
 mod app;
+mod audio;
 mod components;
+mod execution;
+mod graphics;
+mod learning;
 
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -14,6 +18,7 @@ use std::{
 unsafe extern "C" {
     fn FcInit() -> i32;
     fn FcConfigAppFontAddDir(config: *mut c_void, dir: *const u8) -> i32;
+    fn FcConfigAppFontAddFile(config: *mut c_void, file: *const u8) -> i32;
     fn FcConfigBuildFonts(config: *mut c_void) -> i32;
 }
 
@@ -155,6 +160,80 @@ fn register_app_fonts() {
 
 #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
 fn register_app_fonts() {}
+
+fn register_program_font(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::ffi::CString;
+        use std::os::unix::ffi::OsStrExt;
+
+        let path = CString::new(path.as_os_str().as_bytes())
+            .map_err(|_| "o caminho da fonte contém um caractere inválido".to_owned())?;
+        let registered = unsafe {
+            FcInit() != 0 && FcConfigAppFontAddFile(std::ptr::null_mut(), path.as_ptr().cast()) != 0
+        };
+        if registered {
+            unsafe {
+                FcConfigBuildFonts(std::ptr::null_mut());
+            }
+            Ok(())
+        } else {
+            Err("não foi possível registrar a fonte".to_owned())
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::ffi::OsStrExt;
+
+        let mut path = path.as_os_str().encode_wide().collect::<Vec<_>>();
+        path.push(0);
+        let registered = unsafe { AddFontResourceExW(path.as_ptr(), 0x10, std::ptr::null_mut()) };
+        if registered > 0 {
+            Ok(())
+        } else {
+            Err("não foi possível registrar a fonte".to_owned())
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::unix::ffi::OsStrExt;
+
+        let bytes = path.as_os_str().as_bytes();
+        let url = unsafe {
+            CFURLCreateFromFileSystemRepresentation(
+                std::ptr::null(),
+                bytes.as_ptr(),
+                bytes.len() as isize,
+                0,
+            )
+        };
+        if url.is_null() {
+            return Err("não foi possível abrir a fonte".to_owned());
+        }
+        let mut error = std::ptr::null();
+        let registered = unsafe {
+            let registered = CTFontManagerRegisterFontsForURL(url, 1, &mut error) != 0;
+            CFRelease(url);
+            if !error.is_null() {
+                CFRelease(error);
+            }
+            registered
+        };
+        if registered {
+            Ok(())
+        } else {
+            Err("não foi possível registrar a fonte".to_owned())
+        }
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    {
+        let _ = path;
+        Err("carregamento de fontes não é compatível com esta plataforma".to_owned())
+    }
+}
 
 fn register_app_icons() {
     let Some(display) = gtk::gdk::Display::default() else {
