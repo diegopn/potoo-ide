@@ -4385,23 +4385,24 @@ impl SimpleComponent for MainWindow {
         if ui.displayed_run_active != execution_active
             || ui.displayed_run_language != self.ui_language
         {
-            let (icon_name, label) = if execution_active {
+            let (icon_name, label) = if execution_active && !self.debugging_active {
                 ("potoo-stop-symbolic", "Parar")
             } else {
                 ("potoo-play-symbolic", "Executar")
             };
             ui.run_icon.set_icon_name(Some(icon_name));
             ui.run_label.set_text(self.text(label));
-            ui.run_button
-                .set_tooltip_text(Some(self.text(if execution_active {
+            ui.run_button.set_tooltip_text(Some(self.text(
+                if execution_active && !self.debugging_active {
                     "Parar"
                 } else {
                     "Executar o programa atual"
-                })));
+                },
+            )));
             ui.displayed_run_active = execution_active;
             ui.displayed_run_language = self.ui_language;
         }
-        ui.run_button.set_sensitive(true);
+        ui.run_button.set_sensitive(!self.debugging_active);
 
         content_panel::update_line_numbers(&ui.code_buffer, &ui.line_numbers);
         content_panel::highlight_buffer(

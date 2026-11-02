@@ -380,6 +380,13 @@ button.potoo-run-button:hover {
   color: #ffffff;
 }
 
+button.potoo-run-button:disabled,
+button.potoo-run-button:disabled:hover {
+  background-color: var(--potoo-panel-deep-bg);
+  border-color: var(--potoo-border);
+  color: var(--potoo-text-muted);
+}
+
 headerbar.potoo-linux-titlebar button.potoo-run-button,
 .potoo-header button.potoo-run-button {
   min-height: 32px;
@@ -1775,6 +1782,13 @@ window.potoo-window.potoo-dark .potoo-run-button {
 window.potoo-window.potoo-dark .potoo-run-button:hover {
   background-color: var(--potoo-accent-hover);
   border-color: var(--potoo-accent-hover);
+}
+
+window.potoo-window.potoo-dark button.potoo-run-button:disabled,
+window.potoo-window.potoo-dark button.potoo-run-button:disabled:hover {
+  background-color: var(--potoo-panel-deep-bg);
+  border-color: var(--potoo-border);
+  color: var(--potoo-text-muted);
 }
 
 window.potoo-window.potoo-dark .potoo-file-sidebar {
