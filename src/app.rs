@@ -3543,7 +3543,9 @@ impl SimpleComponent for MainWindow {
             }
             MainWindowMsg::ContinueDebug => {
                 if let Some(control) = &self.execution_control {
-                    let _ = control.send(ControlAction::Continue);
+                    if control.send(ControlAction::Continue).is_ok() {
+                        self.output_status = self.text("Executando o programa…").to_string();
+                    }
                 }
                 self.debugger_snapshot = None;
             }
@@ -4404,7 +4406,7 @@ impl SimpleComponent for MainWindow {
             if loading {
                 ui.debugger_learning.loading_label.set_text(self.text(
                     if debugger_analysis_state == "waiting" {
-                        "Aguardando a próxima linha…"
+                        "Executando o programa…"
                     } else {
                         "Analisando linha…"
                     },

@@ -1013,9 +1013,9 @@ button.potoo-debugger-action,
 button.potoo-debugger-stop {
   min-height: 36px;
   padding: 4px 10px;
-  background-color: transparent;
+  background-color: var(--potoo-control-bg);
   background-image: none;
-  border: 1px solid var(--potoo-border);
+  border: 0;
   border-radius: 0;
   color: var(--potoo-text-secondary);
   box-shadow: none;
@@ -1024,16 +1024,14 @@ button.potoo-debugger-stop {
 button.potoo-debugger-start:hover,
 button.potoo-debugger-action:hover,
 button.potoo-debugger-stop:hover {
-  background-color: transparent;
-  border-color: var(--potoo-accent);
+  background-color: var(--potoo-control-hover-bg);
   color: var(--potoo-text);
 }
 
 button.potoo-debugger-start:focus-visible,
 button.potoo-debugger-action:focus-visible,
 button.potoo-debugger-stop:focus-visible {
-  background-color: transparent;
-  border-color: var(--potoo-accent);
+  background-color: var(--potoo-control-hover-bg);
   color: var(--potoo-text);
 }
 
@@ -1063,11 +1061,6 @@ textview.potoo-debugger-variables {
 
 .potoo-debugger-analysis {
   color: var(--potoo-text-secondary);
-}
-
-.potoo-debugger-analysis .potoo-concept-card,
-window.potoo-window.potoo-dark .potoo-debugger-analysis .potoo-concept-card {
-  background-color: transparent;
 }
 
 .potoo-debugger-analysis separator {

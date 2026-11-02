@@ -1302,6 +1302,9 @@ impl portugol::RuntimeIo for WorkerIo {
                 .map(|variable| (variable.name.clone(), variable.value.clone())),
             None,
         ))?;
+        if action == ControlAction::Continue {
+            self.debugging = false;
+        }
         Ok(match action {
             ControlAction::Continue => portugol::ControlAction::Continue,
             ControlAction::Step => portugol::ControlAction::Step,
@@ -1655,6 +1658,20 @@ mod tests {
     };
     use crate::components::content_panel::Language;
 
+    const PORTUGOL_VOTING_SAMPLE: &str = r#"programa {
+  funcao inicio() {
+    inteiro idade
+
+    escreva("Qual é sua idade? ")
+    leia(idade)
+    se (idade >= 21) {
+      escreva("Pode votar.")
+    } senao {
+      escreva("Ainda não pode votar.")
+    }
+  }
+}"#;
+
     fn local_http_server(
         responses: Vec<String>,
     ) -> (String, mpsc::Receiver<String>, thread::JoinHandle<()>) {
@@ -1999,6 +2016,80 @@ mod tests {
                 &[],
             );
             assert_eq!(output, expected);
+        }
+    }
+
+    #[test]
+    fn debugger_runs_portugol_if_after_typed_input_for_both_branches() {
+        for (input, expected) in [
+            ("21", "Qual é sua idade? Pode votar."),
+            ("16", "Qual é sua idade? Ainda não pode votar."),
+        ] {
+            let (output, events) = collect(
+                start(
+                    PORTUGOL_VOTING_SAMPLE.into(),
+                    Language::Portugol,
+                    None,
+                    None,
+                    true,
+                ),
+                &[input],
+                &[ControlAction::Step; 32],
+            );
+            assert_eq!(output, expected);
+            assert!(events.iter().any(|event| matches!(
+                event,
+                ExecutionEvent::Debugger(snapshot) if snapshot.line == 7
+            )));
+        }
+    }
+
+    #[test]
+    fn continuing_from_a_portugol_if_runs_without_pausing_on_each_branch_line() {
+        for (input, expected) in [
+            ("21", "Qual é sua idade? Pode votar."),
+            ("16", "Qual é sua idade? Ainda não pode votar."),
+        ] {
+            let program = start(
+                PORTUGOL_VOTING_SAMPLE.into(),
+                Language::Portugol,
+                None,
+                None,
+                true,
+            );
+            let mut output = String::new();
+            let mut debugger_lines = Vec::new();
+
+            loop {
+                match program
+                    .events
+                    .recv_timeout(Duration::from_secs(2))
+                    .expect("the debug session should produce an event")
+                {
+                    ExecutionEvent::Output(text) => output.push_str(&text),
+                    ExecutionEvent::InputRequested(_) => program.input.send(input.into()).unwrap(),
+                    ExecutionEvent::Debugger(snapshot) => {
+                        debugger_lines.push(snapshot.line);
+                        program
+                            .control
+                            .send(if snapshot.line == 7 {
+                                ControlAction::Continue
+                            } else {
+                                ControlAction::Step
+                            })
+                            .unwrap();
+                    }
+                    ExecutionEvent::Finished { result, stopped } => {
+                        result.expect("the conditional should execute successfully");
+                        assert!(!stopped);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+
+            assert_eq!(output, expected);
+            assert_eq!(debugger_lines.last(), Some(&7));
         }
     }
 
