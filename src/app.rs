@@ -472,6 +472,10 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Avançar um passo" => "Step",
             "Parar" => "Stop",
             "Aguardando depuração" => "Waiting for debugging",
+            "A explicação da linha pausada aparecerá aqui." => {
+                "The explanation for the paused line will appear here."
+            }
+            "Analisando linha…" => "Analyzing line…",
             "Os valores das variáveis aparecerão durante a execução passo a passo." => {
                 "Variable values will appear while stepping through the program."
             }
@@ -1003,6 +1007,10 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Avançar um passo" => "Avanzar un paso",
             "Parar" => "Detener",
             "Aguardando depuração" => "Esperando depuración",
+            "A explicação da linha pausada aparecerá aqui." => {
+                "La explicación de la línea pausada aparecerá aquí."
+            }
+            "Analisando linha…" => "Analizando línea…",
             "Os valores das variáveis aparecerão durante a execução passo a passo." => {
                 "Los valores de las variables aparecerán al recorrer el programa paso a paso."
             }
@@ -1239,6 +1247,8 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Criar programa inicial (.por)",
     "Criar programa inicial (.alg)",
     "Pressione Esc para cancelar a execução.",
+    "A explicação da linha pausada aparecerá aqui.",
+    "Analisando linha…",
     "Selecionar uma pasta",
     "Abra um projeto que não aparece na lista.",
     "Abra um arquivo .por ou .alg diretamente no editor.",
@@ -1818,12 +1828,15 @@ pub(crate) struct MainWindow {
     problem_text: String,
     next_execution_id: u64,
     active_execution_id: Option<u64>,
+    debugging_active: bool,
     execution_document_id: Option<u64>,
+    debugger_document_id: Option<u64>,
     execution_input: Option<Sender<String>>,
     execution_control: Option<Sender<ControlAction>>,
     input_requested: bool,
     input_prompt: Option<InputPrompt>,
     debugger_snapshot: Option<DebuggerSnapshot>,
+    debugger_learning_hint: Option<LearningHint>,
     execution_diagnostics: Vec<execution::ExecutionDiagnostic>,
     execution_diagnostics_document_id: Option<u64>,
     execution_source_fingerprint: Option<u64>,
@@ -2337,6 +2350,8 @@ impl MainWindow {
         self.input_requested = false;
         self.input_prompt = None;
         self.debugger_snapshot = None;
+        self.debugger_learning_hint = None;
+        self.debugging_active = debugging;
         self.execution_diagnostics.clear();
         self.execution_diagnostics_document_id = None;
         self.schedule_learning_refresh(sender.clone(), Duration::from_millis(20));
@@ -2352,6 +2367,7 @@ impl MainWindow {
         self.next_execution_id = self.next_execution_id.wrapping_add(1).max(1);
         self.active_execution_id = Some(execution_id);
         self.execution_document_id = Some(document.id);
+        self.debugger_document_id = debugging.then_some(document.id);
 
         let running = execution::start(
             document.contents,
@@ -2901,11 +2917,13 @@ pub struct MainUi {
     input_entry: gtk::Entry,
     output_status: gtk::Label,
     debugger_start: gtk::Button,
+    debugger_controls: gtk::Stack,
     debugger_continue: gtk::Button,
     debugger_step: gtk::Button,
     debugger_stop: gtk::Button,
     debugger_position: gtk::Label,
     debugger_variables: gtk::TextBuffer,
+    debugger_learning: content_panel::DebuggerLearningUi,
     right_panel_revealer: gtk::Revealer,
     right_panel_stack: gtk::Stack,
     learning_tool_button: gtk::Button,
@@ -2946,6 +2964,9 @@ pub struct MainUi {
     displayed_input_requested: bool,
     displayed_output_status: String,
     displayed_debugger_snapshot: Option<DebuggerSnapshot>,
+    displayed_debugger_learning_hint: Option<LearningHint>,
+    displayed_debugger_analysis_state: &'static str,
+    displayed_debugging_active: bool,
     displayed_learning_hint: Option<LearningHint>,
     displayed_learning_loading: bool,
     displayed_right_panel_section: Option<RightPanelSection>,
@@ -3118,12 +3139,15 @@ impl SimpleComponent for MainWindow {
             problem_text: tr(preferences.ui_language, "Nenhum problema detectado").to_string(),
             next_execution_id: 1,
             active_execution_id: None,
+            debugging_active: false,
             execution_document_id: None,
+            debugger_document_id: None,
             execution_input: None,
             execution_control: None,
             input_requested: false,
             input_prompt: None,
             debugger_snapshot: None,
+            debugger_learning_hint: None,
             execution_diagnostics: Vec::new(),
             execution_diagnostics_document_id: None,
             execution_source_fingerprint: None,
@@ -3324,6 +3348,11 @@ impl SimpleComponent for MainWindow {
             MainWindowMsg::ActivateDocument(id) => {
                 if self.documents.iter().any(|doc| doc.id == id) {
                     self.active_document_id = Some(id);
+                    if self.debugger_document_id == Some(id)
+                        && let Some(snapshot) = &self.debugger_snapshot
+                    {
+                        self.learning_cursor_line = snapshot.line;
+                    }
                 }
             }
             MainWindowMsg::CloseDocument(id) => {
@@ -3542,6 +3571,25 @@ impl SimpleComponent for MainWindow {
                         ExecutionEvent::Debugger(snapshot) => {
                             self.output_status =
                                 format!("{} {}", self.text("Pausado na linha"), snapshot.line);
+                            if self.execution_document_id == self.active_document_id {
+                                self.debugger_learning_hint = self
+                                    .learning_hint
+                                    .as_ref()
+                                    .filter(|hint| hint.line == snapshot.line)
+                                    .cloned();
+                                if self.learning_cursor_line != snapshot.line
+                                    || (self.debugger_learning_hint.is_none()
+                                        && !self.learning_loading)
+                                {
+                                    self.learning_cursor_line = snapshot.line;
+                                    self.schedule_learning_refresh(
+                                        sender.clone(),
+                                        Duration::from_millis(40),
+                                    );
+                                }
+                            } else {
+                                self.debugger_learning_hint = None;
+                            }
                             self.debugger_snapshot = Some(snapshot);
                         }
                         ExecutionEvent::Finished { result, stopped } => {
@@ -3557,6 +3605,7 @@ impl SimpleComponent for MainWindow {
                                         == Some(Self::source_fingerprint(&document.contents))
                                 });
                             self.active_execution_id = None;
+                            self.debugging_active = false;
                             self.execution_document_id = None;
                             self.execution_source_fingerprint = None;
                             self.execution_input = None;
@@ -3598,6 +3647,7 @@ impl SimpleComponent for MainWindow {
             MainWindowMsg::ExecutionLost(execution_id) => {
                 if self.active_execution_id == Some(execution_id) {
                     self.active_execution_id = None;
+                    self.debugging_active = false;
                     self.execution_document_id = None;
                     self.execution_source_fingerprint = None;
                     self.execution_input = None;
@@ -3710,6 +3760,15 @@ impl SimpleComponent for MainWindow {
                     language,
                 };
                 if current.accepts(result) {
+                    if self.debugger_document_id == Some(document_id)
+                        && self.active_document_id == Some(document_id)
+                        && self
+                            .debugger_snapshot
+                            .as_ref()
+                            .is_some_and(|snapshot| snapshot.line == line)
+                    {
+                        self.debugger_learning_hint = Some(hint.clone());
+                    }
                     self.learning_hint = Some(hint);
                     self.learning_loading = false;
                 }
@@ -4141,14 +4200,29 @@ impl SimpleComponent for MainWindow {
             }
             ui.displayed_input_requested = self.input_requested;
         }
+        if ui.displayed_debugging_active != self.debugging_active {
+            ui.debugger_controls
+                .set_visible_child_name(if self.debugging_active {
+                    "controls"
+                } else {
+                    "start"
+                });
+            ui.displayed_debugging_active = self.debugging_active;
+        }
         ui.debugger_start
             .set_sensitive(self.active_execution_id.is_none());
-        ui.debugger_continue
-            .set_sensitive(self.active_execution_id.is_some() && self.debugger_snapshot.is_some());
-        ui.debugger_step
-            .set_sensitive(self.active_execution_id.is_some() && self.debugger_snapshot.is_some());
+        ui.debugger_continue.set_sensitive(
+            self.debugging_active
+                && self.active_execution_id.is_some()
+                && self.debugger_snapshot.is_some(),
+        );
+        ui.debugger_step.set_sensitive(
+            self.debugging_active
+                && self.active_execution_id.is_some()
+                && self.debugger_snapshot.is_some(),
+        );
         ui.debugger_stop
-            .set_sensitive(self.active_execution_id.is_some());
+            .set_sensitive(self.debugging_active && self.active_execution_id.is_some());
         if ui.displayed_debugger_snapshot != self.debugger_snapshot {
             if let Some(snapshot) = &self.debugger_snapshot {
                 let reason = match snapshot.pause_reason {
@@ -4191,6 +4265,81 @@ impl SimpleComponent for MainWindow {
             }
             ui.displayed_debugger_snapshot
                 .clone_from(&self.debugger_snapshot);
+        }
+        let current_debugger_hint = self
+            .debugger_learning_hint
+            .as_ref()
+            .filter(|hint| {
+                self.debugger_document_id == self.active_document_id
+                    && self
+                        .debugger_snapshot
+                        .as_ref()
+                        .is_some_and(|snapshot| snapshot.line == hint.line)
+            })
+            .cloned();
+        if ui.displayed_debugger_learning_hint != current_debugger_hint {
+            if let Some(hint) = &current_debugger_hint {
+                let topic_name = learning_topic_label(hint.topic, self.ui_language);
+                ui.debugger_learning.line_title.set_text(&format!(
+                    "{} {} · {topic_name}",
+                    self.text("Linha"),
+                    hint.line
+                ));
+                let (explanation, concept, _) = learning_copy(hint, self.ui_language);
+                ui.debugger_learning.explanation.set_text(&explanation);
+                ui.debugger_learning
+                    .concept_title
+                    .set_text(&format!("{} {topic_name}", self.text("Conceito:")));
+                ui.debugger_learning.concept_text.set_text(&concept);
+                content_panel::show_learning_problems(
+                    &ui.debugger_learning.problem_list,
+                    &ui.debugger_learning.problem_empty,
+                    &hint.problems,
+                    self.ui_language,
+                    &ui.code_buffer,
+                    &ui.code_view,
+                );
+            } else {
+                ui.debugger_learning
+                    .line_title
+                    .set_text(self.text("Linha 1 · programa"));
+                ui.debugger_learning.explanation.set_text("");
+                ui.debugger_learning
+                    .concept_title
+                    .set_text(self.text("Conceito: programa"));
+                ui.debugger_learning.concept_text.set_text("");
+                content_panel::show_learning_problems(
+                    &ui.debugger_learning.problem_list,
+                    &ui.debugger_learning.problem_empty,
+                    &[],
+                    self.ui_language,
+                    &ui.code_buffer,
+                    &ui.code_view,
+                );
+            }
+            ui.displayed_debugger_learning_hint
+                .clone_from(&current_debugger_hint);
+        }
+        let debugger_analysis_state = if self.debugger_snapshot.is_none()
+            || self.debugger_document_id != self.active_document_id
+        {
+            "waiting"
+        } else if current_debugger_hint.is_some() {
+            "content"
+        } else {
+            "loading"
+        };
+        if ui.displayed_debugger_analysis_state != debugger_analysis_state {
+            ui.debugger_learning
+                .spinner
+                .set_spinning(debugger_analysis_state == "loading");
+            ui.debugger_learning
+                .spinner
+                .set_visible(debugger_analysis_state == "loading");
+            ui.debugger_learning
+                .analysis_stack
+                .set_visible_child_name(debugger_analysis_state);
+            ui.displayed_debugger_analysis_state = debugger_analysis_state;
         }
         ui.run_button
             .set_sensitive(self.active_execution_id.is_none());
@@ -4710,12 +4859,14 @@ fn build_window_content(
     let problems_buffer = output_ui.problems_buffer;
     let problems_view = output_ui.problems_view;
     let problems_tab = output_ui.problems_tab;
+    let debugger_controls = output_ui.debugger_controls;
     let debugger_start = output_ui.debugger_start;
     let debugger_continue = output_ui.debugger_continue;
     let debugger_step = output_ui.debugger_step;
     let debugger_stop = output_ui.debugger_stop;
     let debugger_position = output_ui.debugger_position;
     let debugger_variables = output_ui.debugger_variables;
+    let debugger_learning = output_ui.debugger_learning;
     let input_entry = gtk::Entry::new();
     input_entry.add_css_class("potoo-program-input");
     input_entry.set_placeholder_text(Some(tr(ui_language, "Digite um valor e pressione Enter")));
@@ -5137,11 +5288,13 @@ fn build_window_content(
         input_entry,
         output_status,
         debugger_start,
+        debugger_controls,
         debugger_continue,
         debugger_step,
         debugger_stop,
         debugger_position,
         debugger_variables,
+        debugger_learning,
         right_panel_revealer: tools_ui.revealer,
         right_panel_stack: tools_ui.stack,
         learning_tool_button: tools_ui.learning_button,
@@ -5183,6 +5336,9 @@ fn build_window_content(
         displayed_input_requested: false,
         displayed_output_status: tr(ui_language, "Pronto para executar").to_string(),
         displayed_debugger_snapshot: None,
+        displayed_debugger_learning_hint: None,
+        displayed_debugger_analysis_state: "waiting",
+        displayed_debugging_active: false,
         displayed_learning_hint: None,
         displayed_learning_loading: false,
         displayed_right_panel_section: None,

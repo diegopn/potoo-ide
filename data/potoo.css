@@ -1013,14 +1013,36 @@ button.potoo-debugger-action:hover {
   color: var(--potoo-text);
 }
 
+button.potoo-debugger-icon-action {
+  min-width: 36px;
+  min-height: 34px;
+  padding: 4px;
+}
+
 .potoo-debugger-position {
   color: var(--potoo-text);
   font-weight: 650;
 }
 
+.potoo-debugger-output,
+.potoo-debugger-output viewport,
 textview.potoo-debugger-variables {
   background-color: var(--potoo-panel-bg);
   color: var(--potoo-text-secondary);
+  font-size: 13px;
+}
+
+.potoo-debugger-analysis {
+  color: var(--potoo-text-secondary);
+}
+
+.potoo-debugger-analysis separator {
+  min-height: 1px;
+  background-color: var(--potoo-border);
+}
+
+.potoo-debugger-analysis label.potoo-learning-line-title {
+  color: var(--potoo-text);
   font-size: 13px;
 }
 
