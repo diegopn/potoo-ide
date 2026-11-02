@@ -821,7 +821,9 @@ impl Checker {
                 ValueType::BigInteger
             }
             "leia_inteiros" => self.check_input_list(arguments, ValueType::Integer, span)?,
-            "leia_reais" => self.check_input_list(arguments, ValueType::Real, span)?,
+            "leia_reais" | "leia_numeros" | "leia_números" => {
+                self.check_input_list(arguments, ValueType::Real, span)?
+            }
             "leia_textos" => self.check_input_list(arguments, ValueType::Text, span)?,
             "min" | "menor" | "max" | "maior" => {
                 if arguments.len() != 2 {
@@ -937,7 +939,7 @@ impl Checker {
         let lower = name.to_lowercase();
         let builtin = match lower.as_str() {
             "leia_inteiro" => Some(ValueType::Integer),
-            "leia_real" => Some(ValueType::Real),
+            "leia_real" | "leia_numero" | "leia_número" => Some(ValueType::Real),
             "leia_texto" => Some(ValueType::Text),
             "leia_caractere" => Some(ValueType::Character),
             "leia_logico" => Some(ValueType::Logical),
@@ -2632,7 +2634,7 @@ impl Checker {
 fn input_type(name: &str) -> Option<ValueType> {
     match name {
         "leia_inteiro" => Some(ValueType::Integer),
-        "leia_real" => Some(ValueType::Real),
+        "leia_real" | "leia_numero" | "leia_número" => Some(ValueType::Real),
         "leia_texto" => Some(ValueType::Text),
         "leia_caractere" => Some(ValueType::Character),
         "leia_logico" => Some(ValueType::Logical),

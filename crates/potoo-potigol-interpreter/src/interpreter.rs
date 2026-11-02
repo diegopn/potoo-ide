@@ -1162,7 +1162,7 @@ impl<'a> Interpreter<'a> {
                     .read_input_list(arguments, DataType::Integer, span)
                     .map(Some);
             }
-            "leia_reais" => {
+            "leia_reais" | "leia_numeros" | "leia_números" => {
                 return self
                     .read_input_list(arguments, DataType::Real, span)
                     .map(Some);
@@ -3742,7 +3742,7 @@ fn count_generator_placeholders(generator: &ForGenerator) -> usize {
 fn input_data_type(name: &str) -> Option<DataType> {
     match name {
         "leia_inteiro" => Some(DataType::Integer),
-        "leia_real" => Some(DataType::Real),
+        "leia_real" | "leia_numero" | "leia_número" => Some(DataType::Real),
         "leia_texto" => Some(DataType::Text),
         "leia_caractere" => Some(DataType::Character),
         "leia_logico" => Some(DataType::Logical),
