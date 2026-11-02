@@ -37,6 +37,7 @@ pub(crate) struct OutputPanelUi {
 
 pub(crate) struct DebuggerLearningUi {
     pub(crate) spinner: gtk::Spinner,
+    pub(crate) waiting: gtk::Label,
     pub(crate) analysis_stack: gtk::Stack,
     pub(crate) content_scroll: gtk::ScrolledWindow,
     pub(crate) line_title: gtk::Label,
@@ -928,6 +929,7 @@ pub(crate) fn build_output_panel(
     variables_scroll.set_vexpand(false);
     debugger.append(&variables_scroll);
     let debugger_learning = build_debugger_learning(language);
+    debugger.append(&debugger_learning.waiting);
     debugger.append(&debugger_learning.analysis_stack);
     debugger.append(&debugger_stop);
     stack.set_visible_child_name("output");
@@ -983,12 +985,6 @@ fn build_debugger_learning(language: UiLanguage) -> DebuggerLearningUi {
     waiting.set_wrap(true);
     waiting.set_valign(gtk::Align::Start);
     waiting.add_css_class("potoo-learning-loading");
-    let waiting_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    waiting_box.set_halign(gtk::Align::Fill);
-    waiting_box.set_valign(gtk::Align::Start);
-    waiting_box.set_margin_top(8);
-    waiting_box.append(&waiting);
-    analysis_stack.add_named(&waiting_box, Some("waiting"));
 
     let spinner = gtk::Spinner::new();
     spinner.add_css_class("potoo-learning-spinner");
@@ -1061,10 +1057,12 @@ fn build_debugger_learning(language: UiLanguage) -> DebuggerLearningUi {
         .build();
     content_scroll.set_propagate_natural_height(false);
     analysis_stack.add_named(&content_scroll, Some("content"));
-    analysis_stack.set_visible_child_name("waiting");
+    analysis_stack.set_visible_child_name("loading");
+    analysis_stack.set_visible(false);
 
     DebuggerLearningUi {
         spinner,
+        waiting,
         analysis_stack,
         content_scroll,
         line_title,

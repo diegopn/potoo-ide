@@ -4401,15 +4401,20 @@ impl SimpleComponent for MainWindow {
             "loading"
         };
         if ui.displayed_debugger_analysis_state != debugger_analysis_state {
+            let waiting = debugger_analysis_state == "waiting";
             ui.debugger_learning
                 .spinner
                 .set_spinning(debugger_analysis_state == "loading");
             ui.debugger_learning
                 .spinner
                 .set_visible(debugger_analysis_state == "loading");
-            ui.debugger_learning
-                .analysis_stack
-                .set_visible_child_name(debugger_analysis_state);
+            ui.debugger_learning.waiting.set_visible(waiting);
+            ui.debugger_learning.analysis_stack.set_visible(!waiting);
+            if !waiting {
+                ui.debugger_learning
+                    .analysis_stack
+                    .set_visible_child_name(debugger_analysis_state);
+            }
             ui.displayed_debugger_analysis_state = debugger_analysis_state;
         }
         let execution_active = self.active_execution_id.is_some();
