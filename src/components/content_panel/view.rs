@@ -139,7 +139,6 @@ pub(crate) fn build_learning_panel(language: UiLanguage) -> LearningPanelUi {
     spinner.add_css_class("potoo-learning-spinner");
     spinner.set_visible(false);
     heading.append(&title);
-    heading.append(&spinner);
     panel.append(&heading);
 
     let scroll = gtk::ScrolledWindow::builder()
@@ -228,18 +227,19 @@ pub(crate) fn build_learning_panel(language: UiLanguage) -> LearningPanelUi {
 
     let analysis_stack = gtk::Stack::new();
     analysis_stack.set_transition_type(gtk::StackTransitionType::Crossfade);
-    analysis_stack.set_transition_duration(120);
+    analysis_stack.set_transition_duration(180);
     analysis_stack.set_vexpand(true);
     analysis_stack.add_named(&scroll, Some("content"));
+    let loading = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    loading.set_halign(gtk::Align::Center);
+    loading.set_valign(gtk::Align::Center);
     let loading_message = gtk::Label::new(Some(tr(language, "Analisando a linha selecionada…")));
     loading_message.set_xalign(0.0);
     loading_message.set_wrap(true);
-    loading_message.set_valign(gtk::Align::Start);
-    loading_message.set_margin_start(18);
-    loading_message.set_margin_end(18);
-    loading_message.set_margin_top(12);
     loading_message.add_css_class("potoo-learning-loading");
-    analysis_stack.add_named(&loading_message, Some("loading"));
+    loading.append(&spinner);
+    loading.append(&loading_message);
+    analysis_stack.add_named(&loading, Some("loading"));
     panel.append(&analysis_stack);
 
     LearningPanelUi {

@@ -3784,7 +3784,11 @@ impl SimpleComponent for MainWindow {
         let active_document = self.active_document();
         let active_document_id = active_document.map(|document| document.id);
         let active_language = active_document.map(|document| document.language);
-        let current_learning_hint = self.learning_hint.clone();
+        let current_learning_hint = if self.learning_loading {
+            ui.displayed_learning_hint.clone()
+        } else {
+            self.learning_hint.clone()
+        };
         if ui.displayed_learning_hint != current_learning_hint {
             if let Some(hint) = &current_learning_hint {
                 let topic_name = learning_topic_label(hint.topic, self.ui_language);
