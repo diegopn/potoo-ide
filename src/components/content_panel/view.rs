@@ -181,7 +181,6 @@ pub(crate) fn build_learning_panel(language: UiLanguage) -> LearningPanelUi {
     explanation.set_selectable(true);
     explanation.add_css_class("potoo-learning-description");
     content.append(&explanation);
-    content.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
 
     let concept = gtk::Box::new(gtk::Orientation::Vertical, 8);
     concept.add_css_class("potoo-card");
@@ -203,20 +202,24 @@ pub(crate) fn build_learning_panel(language: UiLanguage) -> LearningPanelUi {
     concept.append(&concept_title);
     concept.append(&concept_text);
     content.append(&concept);
+    content.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
 
+    let problems = gtk::Box::new(gtk::Orientation::Vertical, 6);
     let problems_title = gtk::Label::new(Some(tr(language, "Problemas nesta linha")));
     problems_title.set_xalign(0.0);
     problems_title.add_css_class("heading");
-    content.append(&problems_title);
+    problems.append(&problems_title);
 
     let problem_list = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    content.append(&problem_list);
+    problems.append(&problem_list);
     let problem_empty =
         gtk::Label::new(Some(tr(language, "Nenhum problema conhecido nesta linha.")));
     problem_empty.set_xalign(0.0);
     problem_empty.set_wrap(true);
     problem_empty.add_css_class("potoo-learning-problem-empty");
-    content.append(&problem_empty);
+    problems.append(&problem_empty);
+    content.append(&problems);
+    content.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
 
     let experiment_title = gtk::Label::new(Some(tr(language, "Experimente")));
     experiment_title.set_xalign(0.0);
