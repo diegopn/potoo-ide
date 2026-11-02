@@ -28,7 +28,6 @@ pub(crate) struct OutputPanelUi {
     pub(crate) debugger_start: gtk::Button,
     pub(crate) debugger_continue: gtk::Button,
     pub(crate) debugger_step: gtk::Button,
-    pub(crate) debugger_stop_top: gtk::Button,
     pub(crate) debugger_stop: gtk::Button,
     pub(crate) debugger_position: gtk::Label,
     pub(crate) debugger_variables: gtk::TextBuffer,
@@ -37,7 +36,7 @@ pub(crate) struct OutputPanelUi {
 
 pub(crate) struct DebuggerLearningUi {
     pub(crate) spinner: gtk::Spinner,
-    pub(crate) waiting: gtk::Label,
+    pub(crate) loading_label: gtk::Label,
     pub(crate) analysis_stack: gtk::Stack,
     pub(crate) content_scroll: gtk::ScrolledWindow,
     pub(crate) line_title: gtk::Label,
@@ -852,13 +851,6 @@ pub(crate) fn build_output_panel(
         language,
         "Avançar um passo",
     ))]);
-    let debugger_stop_top = gtk::Button::new();
-    debugger_stop_top.set_child(Some(&icon("stop")));
-    debugger_stop_top.set_tooltip_text(Some(tr(language, "Parar depuração")));
-    debugger_stop_top.update_property(&[gtk::accessible::Property::Label(tr(
-        language,
-        "Parar depuração",
-    ))]);
     let debugger_stop = gtk::Button::new();
     let stop_content = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     stop_content.set_halign(gtk::Align::Center);
@@ -873,13 +865,12 @@ pub(crate) fn build_output_panel(
     debugger_stop.add_css_class("potoo-debugger-stop");
     debugger_stop.set_hexpand(true);
     debugger_stop.set_visible(false);
-    for button in [&debugger_continue, &debugger_step, &debugger_stop_top] {
+    for button in [&debugger_continue, &debugger_step] {
         button.add_css_class("potoo-debugger-action");
         button.set_hexpand(true);
     }
     controls.append(&debugger_continue);
     controls.append(&debugger_step);
-    controls.append(&debugger_stop_top);
     let sender_for_start = sender.clone();
     connect_debugger_start(&debugger_start, &debugger_controls, move || {
         sender_for_start.input(MainWindowMsg::StartDebug);
@@ -889,8 +880,6 @@ pub(crate) fn build_output_panel(
         .connect_clicked(move |_| sender_for_continue.input(MainWindowMsg::ContinueDebug));
     let sender_for_step = sender.clone();
     debugger_step.connect_clicked(move |_| sender_for_step.input(MainWindowMsg::StepDebug));
-    let sender_for_stop_top = sender.clone();
-    debugger_stop_top.connect_clicked(move |_| sender_for_stop_top.input(MainWindowMsg::StopDebug));
     debugger_stop.connect_clicked(move |_| sender.input(MainWindowMsg::StopDebug));
     debugger_controls.add_named(&debugger_start, Some("start"));
     debugger_controls.add_named(&controls, Some("controls"));
@@ -898,7 +887,7 @@ pub(crate) fn build_output_panel(
     debugger.append(&debugger_controls);
     let debugger_position = gtk::Label::new(Some(tr(language, "Aguardando depuração")));
     debugger_position.set_xalign(0.0);
-    debugger_position.set_margin_top(12);
+    debugger_position.set_margin_top(16);
     debugger_position.add_css_class("potoo-debugger-position");
     debugger.append(&debugger_position);
     let debugger_variables = gtk::TextBuffer::new(None);
@@ -925,11 +914,12 @@ pub(crate) fn build_output_panel(
     variables_scroll.add_css_class("potoo-debugger-output");
     variables_scroll.set_size_request(-1, 96);
     variables_scroll.set_propagate_natural_height(false);
-    variables_scroll.set_margin_top(4);
+    variables_scroll.set_hscrollbar_policy(gtk::PolicyType::Never);
+    variables_scroll.set_vscrollbar_policy(gtk::PolicyType::Automatic);
+    variables_scroll.set_margin_top(8);
     variables_scroll.set_vexpand(false);
     debugger.append(&variables_scroll);
     let debugger_learning = build_debugger_learning(language);
-    debugger.append(&debugger_learning.waiting);
     debugger.append(&debugger_learning.analysis_stack);
     debugger.append(&debugger_stop);
     stack.set_visible_child_name("output");
@@ -962,7 +952,6 @@ pub(crate) fn build_output_panel(
         debugger_start,
         debugger_continue,
         debugger_step,
-        debugger_stop_top,
         debugger_stop,
         debugger_position,
         debugger_variables,
@@ -977,15 +966,6 @@ fn build_debugger_learning(language: UiLanguage) -> DebuggerLearningUi {
     analysis_stack.set_vexpand(true);
     analysis_stack.add_css_class("potoo-debugger-analysis");
 
-    let waiting = gtk::Label::new(Some(tr(
-        language,
-        "A explicação da linha pausada aparecerá aqui.",
-    )));
-    waiting.set_xalign(0.0);
-    waiting.set_wrap(true);
-    waiting.set_valign(gtk::Align::Start);
-    waiting.add_css_class("potoo-learning-loading");
-
     let spinner = gtk::Spinner::new();
     spinner.add_css_class("potoo-learning-spinner");
     let loading = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -993,7 +973,8 @@ fn build_debugger_learning(language: UiLanguage) -> DebuggerLearningUi {
     loading.set_valign(gtk::Align::Start);
     loading.set_margin_top(16);
     loading.append(&spinner);
-    loading.append(&gtk::Label::new(Some(tr(language, "Analisando linha…"))));
+    let loading_label = gtk::Label::new(Some(tr(language, "Analisando linha…")));
+    loading.append(&loading_label);
     analysis_stack.add_named(&loading, Some("loading"));
 
     let content = gtk::Box::new(gtk::Orientation::Vertical, 10);
@@ -1062,7 +1043,7 @@ fn build_debugger_learning(language: UiLanguage) -> DebuggerLearningUi {
 
     DebuggerLearningUi {
         spinner,
-        waiting,
+        loading_label,
         analysis_stack,
         content_scroll,
         line_title,

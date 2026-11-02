@@ -1004,7 +1004,7 @@ button.potoo-output-tab-selected:focus {
 }
 
 .potoo-debugger-page {
-  background-color: var(--potoo-window-bg);
+  background-color: transparent;
   color: var(--potoo-text-secondary);
 }
 
@@ -1013,7 +1013,7 @@ button.potoo-debugger-action,
 button.potoo-debugger-stop {
   min-height: 36px;
   padding: 4px 10px;
-  background-color: var(--potoo-window-bg);
+  background-color: transparent;
   background-image: none;
   border: 1px solid var(--potoo-border);
   border-radius: 0;
@@ -1024,7 +1024,7 @@ button.potoo-debugger-stop {
 button.potoo-debugger-start:hover,
 button.potoo-debugger-action:hover,
 button.potoo-debugger-stop:hover {
-  background-color: var(--potoo-window-bg);
+  background-color: transparent;
   border-color: var(--potoo-accent);
   color: var(--potoo-text);
 }
@@ -1032,7 +1032,7 @@ button.potoo-debugger-stop:hover {
 button.potoo-debugger-start:focus-visible,
 button.potoo-debugger-action:focus-visible,
 button.potoo-debugger-stop:focus-visible {
-  background-color: var(--potoo-window-bg);
+  background-color: transparent;
   border-color: var(--potoo-accent);
   color: var(--potoo-text);
 }

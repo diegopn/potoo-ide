@@ -488,10 +488,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Parar" => "Stop",
             "Parar depuração" => "Stop debugging",
             "Aguardando depuração" => "Waiting for debugging",
-            "A explicação da linha pausada aparecerá aqui." => {
-                "The explanation for the paused line will appear here."
-            }
             "Analisando linha…" => "Analyzing line…",
+            "Aguardando a próxima linha…" => "Waiting for the next line…",
             "Os valores das variáveis aparecerão durante a execução passo a passo." => {
                 "Variable values will appear while stepping through the program."
             }
@@ -1041,10 +1039,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Parar" => "Detener",
             "Parar depuração" => "Detener depuración",
             "Aguardando depuração" => "Esperando depuración",
-            "A explicação da linha pausada aparecerá aqui." => {
-                "La explicación de la línea pausada aparecerá aquí."
-            }
             "Analisando linha…" => "Analizando línea…",
+            "Aguardando a próxima linha…" => "Esperando la siguiente línea…",
             "Os valores das variáveis aparecerão durante a execução passo a passo." => {
                 "Los valores de las variables aparecerán al recorrer el programa paso a paso."
             }
@@ -1285,8 +1281,8 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Criar programa inicial (.alg)",
     "Criar programa inicial (.poti)",
     "Pressione Esc para cancelar a execução.",
-    "A explicação da linha pausada aparecerá aqui.",
     "Analisando linha…",
+    "Aguardando a próxima linha…",
     "Selecionar uma pasta",
     "Abra um projeto que não aparece na lista.",
     "Abra um arquivo .por, .alg ou .poti diretamente no editor.",
@@ -2965,7 +2961,6 @@ pub struct MainUi {
     debugger_controls: gtk::Stack,
     debugger_continue: gtk::Button,
     debugger_step: gtk::Button,
-    debugger_stop_top: gtk::Button,
     debugger_stop: gtk::Button,
     debugger_position: gtk::Label,
     debugger_variables: gtk::TextBuffer,
@@ -4275,6 +4270,8 @@ impl SimpleComponent for MainWindow {
                 "Iniciar depuração"
             },
         )));
+        ui.debugger_start
+            .set_sensitive(self.active_execution_id.is_none());
         ui.debugger_continue.set_sensitive(
             self.debugging_active
                 && self.active_execution_id.is_some()
@@ -4285,8 +4282,6 @@ impl SimpleComponent for MainWindow {
                 && self.active_execution_id.is_some()
                 && self.debugger_snapshot.is_some(),
         );
-        ui.debugger_stop_top
-            .set_sensitive(self.debugging_active && self.active_execution_id.is_some());
         ui.debugger_stop.set_visible(self.debugging_active);
         ui.debugger_stop
             .set_sensitive(self.debugging_active && self.active_execution_id.is_some());
@@ -4391,7 +4386,9 @@ impl SimpleComponent for MainWindow {
             ui.displayed_debugger_learning_hint
                 .clone_from(&current_debugger_hint);
         }
-        let debugger_analysis_state = if self.debugger_snapshot.is_none()
+        let debugger_analysis_state = if !self.debugging_active {
+            "idle"
+        } else if self.debugger_snapshot.is_none()
             || self.debugger_document_id != self.active_document_id
         {
             "waiting"
@@ -4401,19 +4398,28 @@ impl SimpleComponent for MainWindow {
             "loading"
         };
         if ui.displayed_debugger_analysis_state != debugger_analysis_state {
-            let waiting = debugger_analysis_state == "waiting";
-            ui.debugger_learning
-                .spinner
-                .set_spinning(debugger_analysis_state == "loading");
-            ui.debugger_learning
-                .spinner
-                .set_visible(debugger_analysis_state == "loading");
-            ui.debugger_learning.waiting.set_visible(waiting);
-            ui.debugger_learning.analysis_stack.set_visible(!waiting);
-            if !waiting {
-                ui.debugger_learning
-                    .analysis_stack
-                    .set_visible_child_name(debugger_analysis_state);
+            let loading = matches!(debugger_analysis_state, "waiting" | "loading");
+            ui.debugger_learning.spinner.set_spinning(loading);
+            ui.debugger_learning.spinner.set_visible(loading);
+            if loading {
+                ui.debugger_learning.loading_label.set_text(self.text(
+                    if debugger_analysis_state == "waiting" {
+                        "Aguardando a próxima linha…"
+                    } else {
+                        "Analisando linha…"
+                    },
+                ));
+            }
+            let idle = debugger_analysis_state == "idle";
+            ui.debugger_learning.analysis_stack.set_visible(!idle);
+            if !idle {
+                ui.debugger_learning.analysis_stack.set_visible_child_name(
+                    if debugger_analysis_state == "content" {
+                        "content"
+                    } else {
+                        "loading"
+                    },
+                );
             }
             ui.displayed_debugger_analysis_state = debugger_analysis_state;
         }
@@ -4963,7 +4969,6 @@ fn build_window_content(
     let debugger_start = output_ui.debugger_start;
     let debugger_continue = output_ui.debugger_continue;
     let debugger_step = output_ui.debugger_step;
-    let debugger_stop_top = output_ui.debugger_stop_top;
     let debugger_stop = output_ui.debugger_stop;
     let debugger_position = output_ui.debugger_position;
     let debugger_variables = output_ui.debugger_variables;
@@ -5409,7 +5414,6 @@ fn build_window_content(
         debugger_controls,
         debugger_continue,
         debugger_step,
-        debugger_stop_top,
         debugger_stop,
         debugger_position,
         debugger_variables,
@@ -5458,7 +5462,7 @@ fn build_window_content(
         displayed_output_status: tr(ui_language, "Pronto para executar").to_string(),
         displayed_debugger_snapshot: None,
         displayed_debugger_learning_hint: None,
-        displayed_debugger_analysis_state: "waiting",
+        displayed_debugger_analysis_state: "idle",
         displayed_learning_hint: None,
         displayed_learning_loading: false,
         displayed_right_panel_section: None,
