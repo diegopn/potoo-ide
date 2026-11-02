@@ -255,10 +255,15 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Quebra automática" => "Word wrap",
             "Ajusta linhas longas à largura do editor." => "Wrap long lines to fit the editor.",
             "Idioma da interface" => "Interface language",
-            "As alterações de idioma são aplicadas imediatamente." => {
-                "Language changes take effect immediately."
+            "A alteração de idioma será aplicada após salvar e reiniciar o aplicativo." => {
+                "The language change will be applied after saving and restarting the app."
             }
-            "Idioma da interface atualizado." => "Interface language updated.",
+            "Salve este arquivo antes de alterar o idioma." => {
+                "Save this file before changing the language."
+            }
+            "A alteração de idioma foi cancelada." => "The language change was canceled.",
+            "Não foi possível reiniciar o aplicativo" => "Could not restart the app",
+            "Não foi possível restaurar as configurações" => "Could not restore the settings",
             "Recuo" => "Indentation",
             "Espaços por nível de recuo." => "Spaces inserted for each indentation level.",
             "2 espaços" => "2 spaces",
@@ -530,10 +535,17 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
                 "Ajusta las líneas largas al ancho del editor."
             }
             "Idioma da interface" => "Idioma de la interfaz",
-            "As alterações de idioma são aplicadas imediatamente." => {
-                "Los cambios de idioma se aplican de inmediato."
+            "A alteração de idioma será aplicada após salvar e reiniciar o aplicativo." => {
+                "El cambio de idioma se aplicará después de guardar y reiniciar la aplicación."
             }
-            "Idioma da interface atualizado." => "Idioma de la interfaz actualizado.",
+            "Salve este arquivo antes de alterar o idioma." => {
+                "Guarda este archivo antes de cambiar el idioma."
+            }
+            "A alteração de idioma foi cancelada." => "Se canceló el cambio de idioma.",
+            "Não foi possível reiniciar o aplicativo" => "No se pudo reiniciar la aplicación",
+            "Não foi possível restaurar as configurações" => {
+                "No se pudo restaurar la configuración"
+            }
             "Recuo" => "Sangría",
             "Espaços por nível de recuo." => "Espacios insertados por cada nivel de sangría.",
             "2 espaços" => "2 espacios",
@@ -687,6 +699,7 @@ impl ThemePreference {
     }
 }
 
+#[cfg(test)]
 const UI_TRANSLATION_KEYS: &[&str] = &[
     "Meu primeiro programa",
     "Início",
@@ -812,8 +825,11 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Quebra automática",
     "Ajusta linhas longas à largura do editor.",
     "Idioma da interface",
-    "As alterações de idioma são aplicadas imediatamente.",
-    "Idioma da interface atualizado.",
+    "A alteração de idioma será aplicada após salvar e reiniciar o aplicativo.",
+    "Salve este arquivo antes de alterar o idioma.",
+    "A alteração de idioma foi cancelada.",
+    "Não foi possível reiniciar o aplicativo",
+    "Não foi possível restaurar as configurações",
     "Recuo",
     "Espaços por nível de recuo.",
     "2 espaços",
@@ -877,46 +893,11 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "dark",
 ];
 
+#[cfg(test)]
 fn translate_known_text(from: UiLanguage, to: UiLanguage, text: &str) -> Option<String> {
     UI_TRANSLATION_KEYS
         .iter()
         .find_map(|key| (tr(from, key) == text).then(|| tr(to, key).to_string()))
-}
-
-fn translate_widget_tree(widget: &gtk::Widget, from: UiLanguage, to: UiLanguage) {
-    if let Some(label) = widget.downcast_ref::<gtk::Label>() {
-        if let Some(translated) = translate_known_text(from, to, label.text().as_str()) {
-            label.set_text(&translated);
-        }
-    }
-
-    if let Some(tooltip) = widget.tooltip_text() {
-        if let Some(translated) = translate_known_text(from, to, tooltip.as_str()) {
-            widget.set_tooltip_text(Some(&translated));
-        }
-    }
-
-    if let Some(entry) = widget.downcast_ref::<gtk::Entry>() {
-        if let Some(placeholder) = entry.placeholder_text() {
-            if let Some(translated) = translate_known_text(from, to, placeholder.as_str()) {
-                entry.set_placeholder_text(Some(&translated));
-            }
-        }
-    }
-
-    if let Some(window) = widget.downcast_ref::<gtk::Window>() {
-        if let Some(title) = window.title() {
-            if let Some(translated) = translate_known_text(from, to, title.as_str()) {
-                window.set_title(Some(&translated));
-            }
-        }
-    }
-
-    let mut child = widget.first_child();
-    while let Some(current) = child {
-        child = current.next_sibling();
-        translate_widget_tree(&current, from, to);
-    }
 }
 
 fn system_theme_is_dark() -> bool {
@@ -1022,6 +1003,9 @@ pub(crate) struct MainWindow {
     pending_close_document_id: Option<u64>,
     pending_close_after_save_id: Option<u64>,
     pending_save_as_id: Option<u64>,
+    pending_ui_language: Option<UiLanguage>,
+    pending_language_save_as_id: Option<u64>,
+    reopen_settings_after_language_restart: bool,
     pending_close_app: bool,
     close_app_ready: bool,
     ui_language: UiLanguage,
@@ -1045,16 +1029,20 @@ impl MainWindow {
         tr(self.ui_language, portuguese)
     }
 
-    fn save_preferences(&mut self) {
-        let preferences = Preferences {
+    fn preferences(&self, ui_language: UiLanguage) -> Preferences {
+        Preferences {
             theme: self.theme,
             font_size: self.font_size,
             line_numbers_visible: self.line_numbers_visible,
             word_wrap: self.word_wrap,
             indent_width: self.indent_width,
             default_language: self.new_file_language,
-            ui_language: self.preferred_ui_language,
-        };
+            ui_language,
+        }
+    }
+
+    fn save_preferences(&mut self) {
+        let preferences = self.preferences(self.preferred_ui_language);
         if let Err(error) = persist_preferences(preferences) {
             self.output_status = format!(
                 "{}: {error}",
@@ -1088,6 +1076,96 @@ impl MainWindow {
     fn forget_recent(&mut self, path: &Path) {
         self.recent_paths.retain(|recent| recent != path);
         let _ = persist_recent_paths(&self.recent_paths);
+    }
+
+    fn finish_language_change(&mut self) {
+        let Some(language) = self.pending_ui_language else {
+            return;
+        };
+
+        if let Some(document_id) = self
+            .documents
+            .iter()
+            .find(|document| document.is_dirty() && document.path.is_none())
+            .map(|document| document.id)
+        {
+            self.pending_language_save_as_id = Some(document_id);
+            self.pending_save_as_id = Some(document_id);
+            self.output_status = self
+                .text("Salve este arquivo antes de alterar o idioma.")
+                .to_string();
+            return;
+        }
+
+        let dirty_files = self
+            .documents
+            .iter()
+            .filter(|document| document.is_dirty())
+            .filter_map(|document| document.path.clone().map(|path| (document.id, path)))
+            .collect::<Vec<_>>();
+        for (id, path) in dirty_files {
+            if !self.save_document(id, path) {
+                self.abort_language_change(false);
+                return;
+            }
+        }
+
+        if let Err(error) = persist_session(self, false, false) {
+            self.output_status =
+                format!("{}: {error}", self.text("Não foi possível salvar a sessão"));
+            self.abort_language_change(false);
+            return;
+        }
+        if let Err(error) = persist_preferences(self.preferences(language)) {
+            self.output_status = format!(
+                "{}: {error}",
+                self.text("Não foi possível salvar as configurações")
+            );
+            self.abort_language_change(false);
+            return;
+        }
+
+        self.preferred_ui_language = language;
+        match crate::restart_application() {
+            Ok(()) => {
+                #[cfg(windows)]
+                {
+                    self.pending_ui_language = None;
+                    self.reopen_settings_after_language_restart = false;
+                    self.close_app_ready = true;
+                }
+            }
+            Err(error) => {
+                self.preferred_ui_language = self.ui_language;
+                if let Err(rollback_error) = persist_preferences(self.preferences(self.ui_language))
+                {
+                    self.output_status = format!(
+                        "{}: {error}; {}: {rollback_error}",
+                        self.text("Não foi possível reiniciar o aplicativo"),
+                        self.text("Não foi possível restaurar as configurações")
+                    );
+                } else {
+                    self.output_status = format!(
+                        "{}: {error}",
+                        self.text("Não foi possível reiniciar o aplicativo")
+                    );
+                }
+                self.abort_language_change(false);
+            }
+        }
+    }
+
+    fn abort_language_change(&mut self, canceled: bool) {
+        self.pending_ui_language = None;
+        self.pending_language_save_as_id = None;
+        self.pending_save_as_id = None;
+        self.preferred_ui_language = self.ui_language;
+        if canceled {
+            self.output_status = self
+                .text("A alteração de idioma foi cancelada.")
+                .to_string();
+        }
+        self.settings_visible = std::mem::take(&mut self.reopen_settings_after_language_restart);
     }
 }
 
@@ -1531,16 +1609,16 @@ impl MainWindow {
         }
     }
 
-    fn save_document(&mut self, id: u64, path: PathBuf) {
+    fn save_document(&mut self, id: u64, path: PathBuf) -> bool {
         let Some(index) = self.documents.iter().position(|doc| doc.id == id) else {
-            return;
+            return false;
         };
         let (path, language) =
             match supported_save_path(path, self.documents[index].language, self.ui_language) {
                 Ok(path) => path,
                 Err(error) => {
                     self.output_status = error;
-                    return;
+                    return false;
                 }
             };
         let standalone = self
@@ -1575,12 +1653,14 @@ impl MainWindow {
                     self.remember_recent(path.clone());
                 }
                 self.output_status = self.text("Arquivo salvo").to_string();
+                true
             }
             Err(error) => {
                 self.output_status = format!(
                     "{}: {error}",
                     self.text("Não foi possível salvar o arquivo")
                 );
+                false
             }
         }
     }
@@ -1734,7 +1814,9 @@ impl MainWindow {
             .active_document()
             .map(|document| (document.id, document.path.clone()))
         {
-            Some((id, Some(path))) => self.save_document(id, path),
+            Some((id, Some(path))) => {
+                self.save_document(id, path);
+            }
             Some((id, _)) => self.pending_save_as_id = Some(id),
             None => {
                 self.output_status = self
@@ -1758,10 +1840,8 @@ struct SettingsUi {
 pub struct MainUi {
     window: gtk::ApplicationWindow,
     content: gtk::Box,
-    header_root: gtk::Widget,
     main_stack: gtk::Stack,
     dark_theme: Rc<Cell<bool>>,
-    ui_language_state: Rc<Cell<UiLanguage>>,
     default_new_language: Rc<Cell<Language>>,
     project_root_for_new_items: Rc<RefCell<Option<PathBuf>>>,
     settings: SettingsUi,
@@ -1807,7 +1887,6 @@ pub struct MainUi {
     displayed_line_numbers_visible: bool,
     displayed_word_wrap: bool,
     displayed_indent_width: u32,
-    displayed_ui_language: UiLanguage,
     displayed_preferred_ui_language: UiLanguage,
     displayed_settings_visible: bool,
     displayed_output_text: String,
@@ -1913,6 +1992,9 @@ impl SimpleComponent for MainWindow {
             pending_close_document_id: None,
             pending_close_after_save_id: None,
             pending_save_as_id: None,
+            pending_ui_language: None,
+            pending_language_save_as_id: None,
+            reopen_settings_after_language_restart: false,
             pending_close_app: false,
             close_app_ready: false,
             ui_language: preferences.ui_language,
@@ -2016,18 +2098,16 @@ impl SimpleComponent for MainWindow {
         );
         match message {
             MainWindowMsg::InterfaceLanguageSelected(language) => {
-                if self.ui_language != language {
-                    let previous_language = self.ui_language;
-                    self.output_text =
-                        translate_known_text(previous_language, language, &self.output_text)
-                            .unwrap_or_else(|| self.output_text.clone());
-                    self.output_status =
-                        translate_known_text(previous_language, language, &self.output_status)
-                            .unwrap_or_else(|| self.output_status.clone());
-                    self.ui_language = language;
-                    self.preferred_ui_language = language;
-                    self.output_status = self.text("Idioma da interface atualizado.").to_string();
-                    self.save_preferences();
+                if self.ui_language != language
+                    && self.preferred_ui_language != language
+                    && self.pending_ui_language.is_none()
+                    && self.pending_save_as_id.is_none()
+                    && self.pending_close_after_save_id.is_none()
+                {
+                    self.pending_ui_language = Some(language);
+                    self.reopen_settings_after_language_restart = self.settings_visible;
+                    self.settings_visible = false;
+                    self.finish_language_change();
                 }
             }
             MainWindowMsg::ProjectSelected(path) => {
@@ -2126,8 +2206,17 @@ impl SimpleComponent for MainWindow {
             }
             MainWindowMsg::SaveCurrent => self.request_save(),
             MainWindowMsg::SaveAsSelected(id, path) => {
+                let language_save = self.pending_language_save_as_id == Some(id);
                 self.pending_save_as_id = None;
-                self.save_document(id, path);
+                let saved = self.save_document(id, path);
+                if language_save {
+                    self.pending_language_save_as_id = None;
+                    if saved {
+                        self.finish_language_change();
+                    } else {
+                        self.abort_language_change(false);
+                    }
+                }
                 if self.pending_close_after_save_id == Some(id) {
                     self.pending_close_after_save_id = None;
                     if self
@@ -2141,8 +2230,12 @@ impl SimpleComponent for MainWindow {
                 }
             }
             MainWindowMsg::SaveAsCanceled(id) => {
+                let language_save = self.pending_language_save_as_id == Some(id);
                 if self.pending_save_as_id == Some(id) {
                     self.pending_save_as_id = None;
+                }
+                if language_save {
+                    self.abort_language_change(true);
                 }
                 if self.pending_close_after_save_id == Some(id) {
                     self.pending_close_after_save_id = None;
@@ -2226,95 +2319,6 @@ impl SimpleComponent for MainWindow {
 
     fn update_view(&self, widgets: &mut Self::Widgets, sender: ComponentSender<Self>) {
         let ui = widgets;
-        if ui.displayed_ui_language != self.ui_language {
-            let previous_language = ui.displayed_ui_language;
-            ui.ui_language_state.set(self.ui_language);
-            translate_widget_tree(&ui.header_root, previous_language, self.ui_language);
-            let content_root = ui.content.clone().upcast::<gtk::Widget>();
-            translate_widget_tree(&content_root, previous_language, self.ui_language);
-            let settings_root = ui.settings.window.clone().upcast::<gtk::Widget>();
-            translate_widget_tree(&settings_root, previous_language, self.ui_language);
-
-            let indent_width_index = ui.settings.indent_width_picker.selected();
-            let indent_width_options = gtk::StringList::new(&[
-                tr(self.ui_language, "2 espaços"),
-                tr(self.ui_language, "4 espaços"),
-            ]);
-            ui.settings
-                .indent_width_picker
-                .set_model(Some(&indent_width_options));
-            ui.settings
-                .indent_width_picker
-                .set_selected(indent_width_index);
-
-            ui.status_details.set_text(&format!(
-                "UTF-8  ·  {}: {}",
-                tr(self.ui_language, "Espaços"),
-                self.indent_width
-            ));
-            ui.project_title.set_text(if self.start_page_visible {
-                tr(self.ui_language, "Início")
-            } else {
-                &self.project_name
-            });
-            if self.project_root.is_some() {
-                ui.project_label.set_text(&self.project_name);
-            }
-
-            start_page::rebuild_recent_items(
-                &ui.start_page.recent_section,
-                &ui.start_page.recent_list,
-                &self.recent_paths,
-                self.ui_language,
-                sender.clone(),
-            );
-            ui.displayed_recent_paths.clone_from(&self.recent_paths);
-
-            let active_path = self
-                .active_document()
-                .and_then(|document| document.path.as_ref());
-            sidebar::rebuild_file_list(
-                &ui.file_list,
-                &self.project_files,
-                active_path,
-                self.project_root.is_some(),
-                self.project_root.as_deref(),
-                &ui.empty_state,
-                self.ui_language,
-                &ui.expanded_folders,
-                sender.clone(),
-            );
-            ui.displayed_project_files = self
-                .project_files
-                .iter()
-                .map(|file| (file.path.clone(), active_path == Some(&file.path)))
-                .collect();
-            ui.displayed_project_open = self.project_root.is_some();
-            ui.project_row.set_visible(ui.displayed_project_open);
-            ui.new_file_button.set_sensitive(ui.displayed_project_open);
-
-            content_panel::rebuild_editor_tabs(
-                &ui.editor_tabs,
-                &self.documents,
-                self.active_document_id,
-                self.ui_language,
-                sender.clone(),
-            );
-            ui.displayed_tabs = self
-                .documents
-                .iter()
-                .map(|document| {
-                    (
-                        document.id,
-                        document.name.clone(),
-                        document.is_dirty(),
-                        Some(document.id) == self.active_document_id,
-                    )
-                })
-                .collect();
-
-            ui.displayed_ui_language = self.ui_language;
-        }
         ui.project_root_for_new_items
             .replace(self.project_root.clone());
 
@@ -2350,11 +2354,14 @@ impl SimpleComponent for MainWindow {
             ui.displayed_indent_width = self.indent_width;
         }
 
-        if ui.displayed_preferred_ui_language != self.preferred_ui_language {
+        let displayed_preferred_ui_language = self
+            .pending_ui_language
+            .unwrap_or(self.preferred_ui_language);
+        if ui.displayed_preferred_ui_language != displayed_preferred_ui_language {
             ui.settings
                 .ui_language_picker
-                .set_selected(self.preferred_ui_language.selected_index());
-            ui.displayed_preferred_ui_language = self.preferred_ui_language;
+                .set_selected(displayed_preferred_ui_language.selected_index());
+            ui.displayed_preferred_ui_language = displayed_preferred_ui_language;
         }
 
         if ui.displayed_dark != self.dark {
@@ -2618,7 +2625,6 @@ fn build_window_content(
     });
 
     let header = header::build_header(&window, ui_language_state.clone());
-    let header_root = header.language_root.clone();
     let project_title = header.project_title.clone();
     let run_button = header.run_button.clone();
     project_title.set_text(if initial_start_page {
@@ -3085,10 +3091,8 @@ fn build_window_content(
     MainUi {
         window,
         content: content_root,
-        header_root,
         main_stack,
         dark_theme,
-        ui_language_state,
         default_new_language,
         project_root_for_new_items,
         settings,
@@ -3134,7 +3138,6 @@ fn build_window_content(
         displayed_line_numbers_visible: preferences.line_numbers_visible,
         displayed_word_wrap: preferences.word_wrap,
         displayed_indent_width: preferences.indent_width,
-        displayed_ui_language: preferences.ui_language,
         displayed_preferred_ui_language: preferences.ui_language,
         displayed_settings_visible: false,
         displayed_output_text: tr(ui_language, "A saída aparecerá aqui após a execução.")
@@ -3273,7 +3276,7 @@ fn build_settings_window(
         tr(language, "Idioma da interface"),
         tr(
             language,
-            "As alterações de idioma são aplicadas imediatamente.",
+            "A alteração de idioma será aplicada após salvar e reiniciar o aplicativo.",
         ),
         &ui_language_picker,
     ));

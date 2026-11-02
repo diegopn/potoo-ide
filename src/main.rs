@@ -6,6 +6,7 @@ use relm4::prelude::*;
 use std::{
     ffi::c_void,
     path::{Path, PathBuf},
+    process::Command,
 };
 
 #[cfg(target_os = "linux")]
@@ -183,6 +184,32 @@ fn app_icon_search_paths(executable_directory: Option<&Path>) -> Vec<PathBuf> {
         ]);
     }
     paths
+}
+
+#[cfg(unix)]
+pub(crate) fn restart_application() -> Result<(), String> {
+    use std::os::unix::process::CommandExt;
+
+    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+    let error = Command::new(executable)
+        .args(std::env::args_os().skip(1))
+        .exec();
+    Err(error.to_string())
+}
+
+#[cfg(windows)]
+pub(crate) fn restart_application() -> Result<(), String> {
+    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+    Command::new(executable)
+        .args(std::env::args_os().skip(1))
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(not(any(unix, windows)))]
+pub(crate) fn restart_application() -> Result<(), String> {
+    Err("reinicialização não suportada nesta plataforma".to_string())
 }
 
 fn main() {

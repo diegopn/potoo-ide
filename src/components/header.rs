@@ -16,7 +16,6 @@ pub(crate) fn app_icon() -> gtk::Image {
 
 pub(crate) struct HeaderUi {
     pub(crate) widget: Option<gtk::Widget>,
-    pub(crate) language_root: gtk::Widget,
     pub(crate) project_title: gtk::Label,
     pub(crate) run_button: gtk::Button,
 }
@@ -100,7 +99,7 @@ pub(crate) fn build_header(
     header_actions.set_margin_end(8);
 
     #[cfg(target_os = "linux")]
-    let (widget, language_root) = {
+    let widget = {
         let titlebar = gtk::HeaderBar::new();
         titlebar.add_css_class("potoo-linux-titlebar");
         titlebar.set_show_title_buttons(false);
@@ -108,11 +107,11 @@ pub(crate) fn build_header(
         titlebar.set_title_widget(Some(&project_title));
         titlebar.pack_end(&header_actions);
         window.set_titlebar(Some(&titlebar));
-        (None, titlebar.upcast::<gtk::Widget>())
+        None
     };
 
     #[cfg(not(target_os = "linux"))]
-    let (widget, language_root) = {
+    let widget = {
         let header = gtk::CenterBox::new();
         header.add_css_class("potoo-header");
         header.set_margin_start(14);
@@ -120,13 +119,11 @@ pub(crate) fn build_header(
         header.set_start_widget(Some(&brand));
         header.set_center_widget(Some(&project_title));
         header.set_end_widget(Some(&header_actions));
-        let language_root = header.clone().upcast::<gtk::Widget>();
-        (Some(language_root.clone()), language_root)
+        Some(header.upcast::<gtk::Widget>())
     };
 
     HeaderUi {
         widget,
-        language_root,
         project_title,
         run_button,
     }
