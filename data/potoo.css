@@ -745,6 +745,7 @@ menubutton.potoo-sidebar-action > button:checked {
   border-radius: 0;
   color: var(--potoo-text-secondary);
   font-size: 13px;
+  font-weight: 500;
   box-shadow: none;
 }
 
@@ -786,7 +787,7 @@ menubutton.potoo-sidebar-action > button:checked {
   background-color: var(--potoo-surface-bg);
   border-top-color: var(--potoo-accent);
   color: var(--potoo-text);
-  font-weight: 680;
+  font-weight: 500;
 }
 
 .potoo-tab-modified {
