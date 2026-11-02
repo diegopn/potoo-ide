@@ -6781,7 +6781,7 @@ fn show_potoo_confirmation(
 ) {
     let dialog = gtk::Window::new();
     dialog.set_title(Some(tr(language, title)));
-    dialog.set_default_size(520, 240);
+    dialog.set_default_size(520, -1);
     dialog.set_resizable(false);
     dialog.set_transient_for(Some(parent));
     dialog.set_modal(true);
