@@ -2958,6 +2958,7 @@ pub struct MainUi {
     debugger_controls: gtk::Stack,
     debugger_continue: gtk::Button,
     debugger_step: gtk::Button,
+    debugger_stop_top: gtk::Button,
     debugger_stop: gtk::Button,
     debugger_position: gtk::Label,
     debugger_variables: gtk::TextBuffer,
@@ -4270,6 +4271,8 @@ impl SimpleComponent for MainWindow {
                 && self.active_execution_id.is_some()
                 && self.debugger_snapshot.is_some(),
         );
+        ui.debugger_stop_top
+            .set_sensitive(self.debugging_active && self.active_execution_id.is_some());
         ui.debugger_stop.set_visible(self.debugging_active);
         ui.debugger_stop
             .set_sensitive(self.debugging_active && self.active_execution_id.is_some());
@@ -4328,6 +4331,10 @@ impl SimpleComponent for MainWindow {
             })
             .cloned();
         if ui.displayed_debugger_learning_hint != current_debugger_hint {
+            ui.debugger_learning
+                .content_scroll
+                .vadjustment()
+                .set_value(0.0);
             if let Some(hint) = &current_debugger_hint {
                 let topic_name = learning_topic_label(hint.topic, self.ui_language);
                 ui.debugger_learning.line_title.set_text(&format!(
@@ -4380,15 +4387,22 @@ impl SimpleComponent for MainWindow {
             "loading"
         };
         if ui.displayed_debugger_analysis_state != debugger_analysis_state {
+            let waiting = debugger_analysis_state == "waiting";
+            ui.debugger_learning
+                .waiting_revealer
+                .set_reveal_child(waiting);
+            ui.debugger_learning.analysis_stack.set_visible(!waiting);
             ui.debugger_learning
                 .spinner
                 .set_spinning(debugger_analysis_state == "loading");
             ui.debugger_learning
                 .spinner
                 .set_visible(debugger_analysis_state == "loading");
-            ui.debugger_learning
-                .analysis_stack
-                .set_visible_child_name(debugger_analysis_state);
+            if !waiting {
+                ui.debugger_learning
+                    .analysis_stack
+                    .set_visible_child_name(debugger_analysis_state);
+            }
             ui.displayed_debugger_analysis_state = debugger_analysis_state;
         }
         let execution_active = self.active_execution_id.is_some();
@@ -4937,6 +4951,7 @@ fn build_window_content(
     let debugger_start = output_ui.debugger_start;
     let debugger_continue = output_ui.debugger_continue;
     let debugger_step = output_ui.debugger_step;
+    let debugger_stop_top = output_ui.debugger_stop_top;
     let debugger_stop = output_ui.debugger_stop;
     let debugger_position = output_ui.debugger_position;
     let debugger_variables = output_ui.debugger_variables;
@@ -5382,6 +5397,7 @@ fn build_window_content(
         debugger_controls,
         debugger_continue,
         debugger_step,
+        debugger_stop_top,
         debugger_stop,
         debugger_position,
         debugger_variables,
