@@ -2654,9 +2654,6 @@ fn build_window_content(
     let open_file_menu_button = file_sidebar.open_file_menu_button;
     let new_folder_button = file_sidebar.new_folder_button;
     let new_item_popover = file_sidebar.new_item_popover;
-    let open_project_button = file_sidebar.open_project_button;
-    let open_file_button = file_sidebar.open_file_button;
-    let open_popover = file_sidebar.open_popover;
     let settings_button = file_sidebar.settings_button;
     let default_new_language = Rc::new(Cell::new(preferences.default_language));
     let project_root_for_new_items = Rc::new(RefCell::new(initial_project_root));
@@ -2863,33 +2860,6 @@ fn build_window_content(
     if initial_dark {
         window.add_css_class("potoo-dark");
     }
-
-    let sender_for_open_project = sender.clone();
-    let window_for_open_project = window.clone();
-    let open_popover_for_project = open_popover.clone();
-    let language_for_open_project = ui_language_state.clone();
-    open_project_button.connect_clicked(move |_| {
-        open_popover_for_project.popdown();
-        show_open_project_dialog(
-            &window_for_open_project,
-            language_for_open_project.get(),
-            sender_for_open_project.clone(),
-            None,
-        );
-    });
-
-    let sender_for_open_file = sender.clone();
-    let window_for_open_file = window.clone();
-    let open_popover_for_file = open_popover.clone();
-    let language_for_open_file = ui_language_state.clone();
-    open_file_button.connect_clicked(move |_| {
-        open_popover_for_file.popdown();
-        show_open_file_dialog(
-            &window_for_open_file,
-            language_for_open_file.get(),
-            sender_for_open_file.clone(),
-        );
-    });
 
     let sender_for_empty_open_project = sender.clone();
     let window_for_empty_open_project = window.clone();

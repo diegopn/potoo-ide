@@ -31,9 +31,6 @@ pub(crate) struct SidebarUi {
     pub(crate) open_file_menu_button: gtk::Button,
     pub(crate) new_folder_button: gtk::Button,
     pub(crate) new_item_popover: gtk::Popover,
-    pub(crate) open_popover: gtk::Popover,
-    pub(crate) open_project_button: gtk::Button,
-    pub(crate) open_file_button: gtk::Button,
     pub(crate) empty_state: gtk::Widget,
     pub(crate) empty_open_project_button: gtk::Button,
     pub(crate) empty_open_file_button: gtk::Button,
@@ -56,11 +53,6 @@ pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
     heading.add_css_class("heading");
     heading.set_hexpand(true);
     heading.set_ellipsize(gtk::pango::EllipsizeMode::End);
-
-    let open_menu = gtk::MenuButton::new();
-    open_menu.set_child(Some(&icon("folder-open")));
-    open_menu.set_tooltip_text(Some(tr(language, "Abrir projeto ou programa")));
-    open_menu.add_css_class("potoo-sidebar-action");
 
     let new_file_button = gtk::MenuButton::new();
     new_file_button.set_child(Some(&icon("add")));
@@ -99,29 +91,7 @@ pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
     new_item_popover.set_child(Some(&new_item_menu));
     new_file_button.set_popover(Some(&new_item_popover));
 
-    let open_popover = gtk::Popover::new();
-    open_popover.add_css_class("potoo-sidebar-popover");
-    let open_menu_content = gtk::Box::new(gtk::Orientation::Vertical, 2);
-    open_menu_content.set_size_request(172, -1);
-    let open_project_button = icon_label_button(
-        "folder-open",
-        tr(language, "Abrir pasta"),
-        tr(language, "Abrir pasta de projeto"),
-        "potoo-sidebar-menu-item",
-    );
-    let open_file_button = icon_label_button(
-        "open-document",
-        tr(language, "Abrir arquivo"),
-        tr(language, "Abrir arquivo de código"),
-        "potoo-sidebar-menu-item",
-    );
-    open_menu_content.append(&open_project_button);
-    open_menu_content.append(&open_file_button);
-    open_popover.set_child(Some(&open_menu_content));
-    open_menu.set_popover(Some(&open_popover));
-
     heading_row.append(&heading);
-    heading_row.append(&open_menu);
     heading_row.append(&new_file_button);
     sidebar.append(&heading_row);
 
@@ -184,9 +154,6 @@ pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
         open_file_menu_button,
         new_folder_button,
         new_item_popover,
-        open_popover,
-        open_project_button,
-        open_file_button,
         empty_state,
         empty_open_project_button,
         empty_open_file_button,
