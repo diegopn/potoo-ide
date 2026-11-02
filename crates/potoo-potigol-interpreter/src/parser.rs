@@ -493,16 +493,25 @@ impl Parser {
                     self.error_here("esperava 'de' ou 'em' no gerador do laço"),
                 ]);
             };
+            let condition = if self.consume_keyword("se").is_some() {
+                Some(self.parse_expression(0)?)
+            } else {
+                None
+            };
             let end = match &source {
                 ForSource::Range { step, end, .. } => {
                     step.as_ref().map_or(end.span.end, |step| step.span.end)
                 }
                 ForSource::Iterable(iterable) => iterable.span.end,
             };
+            let end = condition
+                .as_ref()
+                .map_or(end, |condition| condition.span.end);
             generators.push(ForGenerator {
                 id: self.id(),
                 pattern,
                 source,
+                condition,
                 span: SourceSpan { start, end },
             });
             if self.consume_symbol(',').is_none() {
@@ -651,7 +660,7 @@ impl Parser {
                 self.parse_comprehension(token.span.start)
             }
             TokenKind::Identifier(word) if matches!(word.as_str(), "não" | "nao") => {
-                let operand = self.parse_expression(8)?;
+                let operand = self.parse_expression(3)?;
                 let span = SourceSpan {
                     start: token.span.start,
                     end: operand.span.end,
@@ -665,7 +674,7 @@ impl Parser {
                 ))
             }
             TokenKind::Operator(operator) if matches!(operator.as_str(), "-" | "+") => {
-                let operand = self.parse_expression(8)?;
+                let operand = self.parse_expression(7)?;
                 let span = SourceSpan {
                     start: token.span.start,
                     end: operand.span.end,

@@ -212,18 +212,27 @@ impl Checker {
                 mutable,
                 value,
             } => {
-                let value_type = self.check_expression(value)?;
-                if let Some(annotation) = annotation {
+                let value_type = if let (PatternKind::Tuple(_), ExprKind::Identifier(name)) =
+                    (&pattern.kind, &value.kind)
+                    && let Some(input_type) = input_type(name)
+                {
+                    self.input_pattern_type(pattern, input_type)
+                } else {
+                    self.check_expression(value)?
+                };
+                let binding_type = if let Some(annotation) = annotation {
                     let annotation_type = self.type_from_annotation(annotation)?;
-                    self.unify(&annotation_type, &value_type, value.span)?;
-                }
-                self.bind_pattern(pattern, value_type, *mutable)?;
+                    self.annotated_pattern_type(pattern, &annotation_type, &value_type, value.span)?
+                } else {
+                    value_type
+                };
+                self.bind_pattern(pattern, binding_type, *mutable)?;
                 ValueType::Nothing
             }
             StmtKind::Assignment { target, value } => {
                 let target_type = self.check_assignment_target(target)?;
                 let value_type = self.check_expression(value)?;
-                self.unify(&target_type, &value_type, value.span)?;
+                self.check_assignment_types(&target_type, &value_type, value.span)?;
                 ValueType::Nothing
             }
             StmtKind::Function(function) => {
@@ -250,7 +259,7 @@ impl Checker {
                 } else {
                     ValueType::Nothing
                 };
-                self.unify(&expected, &actual, statement.span)?;
+                self.unify_assignable(&expected, &actual, statement.span)?;
                 actual
             }
             StmtKind::While { condition, body } => {
@@ -271,6 +280,86 @@ impl Checker {
             .node_types
             .insert(statement.id, value_type.clone());
         Ok(value_type)
+    }
+
+    fn input_pattern_type(&self, pattern: &Pattern, input: ValueType) -> ValueType {
+        match &pattern.kind {
+            PatternKind::Tuple(patterns) => ValueType::Tuple(
+                patterns
+                    .iter()
+                    .map(|pattern| self.input_pattern_type(pattern, input.clone()))
+                    .collect(),
+            ),
+            _ => input,
+        }
+    }
+
+    fn annotated_pattern_type(
+        &mut self,
+        pattern: &Pattern,
+        annotation: &ValueType,
+        actual: &ValueType,
+        span: SourceSpan,
+    ) -> Result<ValueType, Vec<Diagnostic>> {
+        if let PatternKind::Tuple(patterns) = &pattern.kind {
+            let annotations = match self.resolve(annotation.clone()) {
+                ValueType::Tuple(types) if types.len() == patterns.len() => Some(types),
+                _ => None,
+            };
+            let actuals = match self.resolve(actual.clone()) {
+                ValueType::Tuple(types) if types.len() == patterns.len() => Some(types),
+                ValueType::Variable(_) => {
+                    let types = patterns.iter().map(|_| self.fresh()).collect::<Vec<_>>();
+                    self.unify(actual, &ValueType::Tuple(types.clone()), pattern.span)?;
+                    Some(types)
+                }
+                _ => None,
+            };
+            if matches!(self.resolve(annotation.clone()), ValueType::Tuple(_))
+                && annotations.is_none()
+            {
+                return Err(vec![self.error(
+                    "a quantidade de tipos da tupla não corresponde ao padrão",
+                    pattern.span,
+                )]);
+            }
+            let mut types = Vec::with_capacity(patterns.len());
+            for index in 0..patterns.len() {
+                let expected = annotations
+                    .as_ref()
+                    .map_or(annotation, |annotations| &annotations[index]);
+                let value = actuals.as_ref().map_or(actual, |actuals| &actuals[index]);
+                types.push(self.annotated_pattern_type(&patterns[index], expected, value, span)?);
+            }
+            return Ok(ValueType::Tuple(types));
+        }
+        self.unify_assignable(annotation, actual, span)?;
+        Ok(annotation.clone())
+    }
+
+    fn check_assignment_types(
+        &mut self,
+        target: &ValueType,
+        value: &ValueType,
+        span: SourceSpan,
+    ) -> Result<(), Vec<Diagnostic>> {
+        if let ValueType::Tuple(targets) = self.resolve(target.clone()) {
+            if let ValueType::Tuple(values) = self.resolve(value.clone()) {
+                if targets.len() != values.len() {
+                    return self.unify(&ValueType::Tuple(targets), &ValueType::Tuple(values), span);
+                }
+                for (target, value) in targets.iter().zip(&values) {
+                    self.unify_assignable(target, value, span)?;
+                }
+            } else {
+                for target in &targets {
+                    self.unify_assignable(target, value, span)?;
+                }
+            }
+            Ok(())
+        } else {
+            self.unify_assignable(target, value, span)
+        }
     }
 
     fn check_function(
@@ -313,6 +402,15 @@ impl Checker {
                         function.span,
                     )?;
                 }
+                for (name, method) in class.methods {
+                    self.define(
+                        name,
+                        ValueType::Function(method.parameters, Box::new(method.return_type)),
+                        false,
+                        Vec::new(),
+                        function.span,
+                    )?;
+                }
             }
         }
         for (parameter, parameter_type) in function.parameters.iter().zip(parameter_types.iter()) {
@@ -332,7 +430,7 @@ impl Checker {
             FunctionBody::Expression(expression) => self.check_expression(expression)?,
             FunctionBody::Block(block) => self.check_block(block)?,
         };
-        self.unify(&return_type, &body_type, function.span)?;
+        self.unify_assignable(&return_type, &body_type, function.span)?;
         self.return_types.pop();
         self.pop_scope();
         if owner.is_some() {
@@ -375,7 +473,7 @@ impl Checker {
                         .find(|item| item.name == field.name)
                         .map(|field| field.value_type.clone())
                     {
-                        self.unify(&field_type, &value_type, default_value.span)?;
+                        self.unify_assignable(&field_type, &value_type, default_value.span)?;
                     }
                 }
             }
@@ -437,12 +535,16 @@ impl Checker {
                     .collect::<Result<Vec<_>, _>>()?,
             ),
             ExprKind::List(elements) => {
-                let element_type = self.fresh();
+                let mut element_type = None;
                 for element in elements {
                     let actual = self.check_expression(element)?;
-                    self.unify(&element_type, &actual, element.span)?;
+                    element_type = Some(if let Some(current) = element_type {
+                        self.merge_types(&current, &actual, element.span)?
+                    } else {
+                        actual
+                    });
                 }
-                ValueType::List(Box::new(element_type))
+                ValueType::List(Box::new(element_type.unwrap_or_else(|| self.fresh())))
             }
             ExprKind::Unary { operator, operand } => {
                 let operand_type = self.check_expression(operand)?;
@@ -453,7 +555,11 @@ impl Checker {
                     }
                     "+" | "-" => {
                         self.require_numeric(&operand_type, operand.span)?;
-                        operand_type
+                        if matches!(self.resolve(operand_type.clone()), ValueType::Character) {
+                            ValueType::Integer
+                        } else {
+                            operand_type
+                        }
                     }
                     _ => {
                         return Err(vec![self.error(
@@ -527,15 +633,14 @@ impl Checker {
                 let then_type = self.check_block(then_branch)?;
                 if let Some(else_branch) = else_branch {
                     let else_type = self.check_block(else_branch)?;
-                    self.unify(&then_type, &else_type, expression.span)?;
-                    then_type
+                    self.merge_types(&then_type, &else_type, expression.span)?
                 } else {
                     ValueType::Nothing
                 }
             }
             ExprKind::Match { value, cases } => {
                 let value_type = self.check_expression(value)?;
-                let result_type = self.fresh();
+                let mut result_type = None;
                 for case in cases {
                     self.push_scope();
                     self.bind_pattern(&case.pattern, value_type.clone(), false)?;
@@ -544,11 +649,15 @@ impl Checker {
                         self.unify(&ValueType::Logical, &guard_type, guard.span)?;
                     }
                     let branch_type = self.check_block(&case.value)?;
-                    self.unify(&result_type, &branch_type, case.span)?;
+                    result_type = Some(if let Some(current) = result_type {
+                        self.merge_types(&current, &branch_type, case.span)?
+                    } else {
+                        branch_type.clone()
+                    });
                     self.pop_scope();
                     self.info.node_types.insert(case.id, branch_type);
                 }
-                result_type
+                result_type.unwrap_or(ValueType::Nothing)
             }
             ExprKind::Comprehension { generators, value } => {
                 self.check_generators(generators)?;
@@ -722,10 +831,10 @@ impl Checker {
                 }
                 let first = self.check_expression(&arguments[0])?;
                 let second = self.check_expression(&arguments[1])?;
-                self.unify(&first, &second, span)?;
-                first
+                self.merge_types(&first, &second, span)?
             }
-            "abs" | "raiz" | "sqrt" | "sen" | "cos" | "tan" => {
+            "abs" | "raiz" | "sqrt" | "sen" | "cos" | "tan" | "tg" | "arcsen" | "arccos"
+            | "arctg" | "log" | "log10" => {
                 if arguments.len() != 1 {
                     return Err(vec![
                         self.error(format!("{name} recebe um argumento"), span),
@@ -733,11 +842,61 @@ impl Checker {
                 }
                 let argument_type = self.check_expression(&arguments[0])?;
                 self.require_numeric(&argument_type, arguments[0].span)?;
-                if matches!(name, "raiz" | "sqrt" | "sen" | "cos" | "tan") {
+                if matches!(
+                    name,
+                    "raiz"
+                        | "sqrt"
+                        | "sen"
+                        | "cos"
+                        | "tan"
+                        | "tg"
+                        | "arcsen"
+                        | "arccos"
+                        | "arctg"
+                        | "log"
+                        | "log10"
+                ) {
                     ValueType::Real
                 } else {
                     argument_type
                 }
+            }
+            "aleatório" | "aleatorio" => match arguments {
+                [] => ValueType::Real,
+                [argument] => {
+                    let argument_type = self.check_expression(argument)?;
+                    match self.resolve(argument_type.clone()) {
+                        ValueType::List(element) | ValueType::MutableList(element) => *element,
+                        ValueType::Integer => ValueType::Integer,
+                        other => {
+                            return Err(vec![
+                                self.error(format!("aleatório não aceita {other}"), argument.span),
+                            ]);
+                        }
+                    }
+                }
+                [minimum, maximum] => {
+                    for argument in [minimum, maximum] {
+                        let argument_type = self.check_expression(argument)?;
+                        self.unify(&ValueType::Integer, &argument_type, argument.span)?;
+                    }
+                    ValueType::Integer
+                }
+                _ => {
+                    return Err(vec![
+                        self.error("aleatório aceita zero, um ou dois argumentos", span),
+                    ]);
+                }
+            },
+            "espera" => {
+                if arguments.len() != 1 {
+                    return Err(vec![
+                        self.error("espera recebe um número de segundos", span),
+                    ]);
+                }
+                let argument_type = self.check_expression(&arguments[0])?;
+                self.require_numeric(&argument_type, arguments[0].span)?;
+                ValueType::Nothing
             }
             _ => return Ok(None),
         };
@@ -816,28 +975,42 @@ impl Checker {
                 ValueType::Logical
             }
             "==" | "<>" => {
-                self.unify(&left_resolved, &right_resolved, span)?;
+                if matches!(left_resolved, ValueType::Variable(_))
+                    || matches!(right_resolved, ValueType::Variable(_))
+                {
+                    self.unify(&left_resolved, &right_resolved, span)?;
+                }
                 ValueType::Logical
             }
             "<" | "<=" | ">" | ">=" => {
-                self.unify(&left_resolved, &right_resolved, span)?;
-                if !left_resolved.is_numeric()
-                    && !matches!(
-                        left_resolved,
-                        ValueType::Character | ValueType::Text | ValueType::Variable(_)
-                    )
+                if matches!(left_resolved, ValueType::Variable(_))
+                    || matches!(right_resolved, ValueType::Variable(_))
                 {
+                    self.unify(&left_resolved, &right_resolved, span)?;
+                } else if !compatible_comparison_types(&left_resolved, &right_resolved) {
+                    return Err(vec![
+                        self.error("tipos incompatíveis para comparação", span),
+                    ]);
+                }
+                if !self.is_orderable(&left_resolved) {
                     return Err(vec![self.error("valores não podem ser ordenados", span)]);
                 }
                 ValueType::Logical
             }
             "::" => {
                 let element = self.fresh();
-                self.unify(
-                    &ValueType::List(Box::new(element.clone())),
-                    &right_resolved,
-                    span,
-                )?;
+                match &right_resolved {
+                    ValueType::List(value) | ValueType::MutableList(value) => {
+                        self.unify(&element, value, span)?;
+                    }
+                    _ => {
+                        self.unify(
+                            &ValueType::List(Box::new(element.clone())),
+                            &right_resolved,
+                            span,
+                        )?;
+                    }
+                }
                 self.unify(&element, &left_resolved, span)?;
                 ValueType::List(Box::new(element))
             }
@@ -846,22 +1019,26 @@ impl Checker {
                 ValueType::Text
             }
             "+" => {
-                if matches!(left_resolved, ValueType::Text)
+                if matches!(left_resolved, ValueType::Text) {
+                    self.ensure_displayable(&right_resolved, span)?;
+                    ValueType::Text
+                } else {
+                    match (&left_resolved, &right_resolved) {
+                        (
+                            ValueType::List(left) | ValueType::MutableList(left),
+                            ValueType::List(right) | ValueType::MutableList(right),
+                        ) => ValueType::List(Box::new(self.merge_types(left, right, span)?)),
+                        _ => self.numeric_result(&left_resolved, &right_resolved, span)?,
+                    }
+                }
+            }
+            "-" | "*" => {
+                if operator == "-"
+                    && matches!(left_resolved, ValueType::Text)
                     && matches!(right_resolved, ValueType::Text)
                 {
                     ValueType::Text
-                } else if matches!(
-                    left_resolved,
-                    ValueType::List(_) | ValueType::MutableList(_)
-                ) {
-                    self.unify(&left_resolved, &right_resolved, span)?;
-                    left_resolved
-                } else {
-                    self.numeric_result(&left_resolved, &right_resolved, span)?
-                }
-            }
-            "-" | "*" | "^" => {
-                if operator == "-"
+                } else if operator == "-"
                     && matches!(left_resolved, ValueType::Character)
                     && matches!(right_resolved, ValueType::Integer)
                 {
@@ -873,16 +1050,52 @@ impl Checker {
                     self.numeric_result(&left_resolved, &right_resolved, span)?
                 }
             }
+            "^" => {
+                if matches!(left_resolved, ValueType::BigInteger)
+                    || matches!(right_resolved, ValueType::BigInteger)
+                {
+                    if !matches!(
+                        left_resolved,
+                        ValueType::Integer | ValueType::Character | ValueType::BigInteger
+                    ) || !matches!(
+                        right_resolved,
+                        ValueType::Integer | ValueType::Character | ValueType::BigInteger
+                    ) {
+                        return Err(vec![self.error("potência de BigInt exige inteiros", span)]);
+                    }
+                    ValueType::BigInteger
+                } else {
+                    self.require_numeric(&left_resolved, span)?;
+                    self.require_numeric(&right_resolved, span)?;
+                    ValueType::Real
+                }
+            }
             "/" => {
                 self.require_numeric(&left_resolved, span)?;
                 self.require_numeric(&right_resolved, span)?;
                 ValueType::Real
             }
-            "div" | "mod" => {
-                self.unify(&ValueType::Integer, &left_resolved, span)?;
-                self.unify(&ValueType::Integer, &right_resolved, span)?;
-                ValueType::Integer
+            "div" => {
+                let left = self.resolve(left_resolved);
+                let right = self.resolve(right_resolved);
+                if matches!(left, ValueType::BigInteger) || matches!(right, ValueType::BigInteger) {
+                    if !matches!(
+                        left,
+                        ValueType::Integer | ValueType::Character | ValueType::BigInteger
+                    ) || !matches!(
+                        right,
+                        ValueType::Integer | ValueType::Character | ValueType::BigInteger
+                    ) {
+                        return Err(vec![self.error("div exige inteiros", span)]);
+                    }
+                    ValueType::BigInteger
+                } else {
+                    self.require_integer_like(&left, span)?;
+                    self.require_integer_like(&right, span)?;
+                    ValueType::Integer
+                }
             }
+            "mod" => self.numeric_result(&left_resolved, &right_resolved, span)?,
             _ => {
                 return Err(vec![
                     self.error(format!("operador '{operator}' desconhecido"), span),
@@ -893,7 +1106,7 @@ impl Checker {
     }
 
     fn check_assignment_target(&mut self, target: &Expr) -> Result<ValueType, Vec<Diagnostic>> {
-        match &target.kind {
+        let value_type = match &target.kind {
             ExprKind::Identifier(name) => {
                 let Some(binding) = self.lookup(name) else {
                     return Err(vec![self.error(
@@ -921,13 +1134,17 @@ impl Checker {
                         self.error("um acesso aceita exatamente um índice", target.span),
                     ]);
                 }
-                let receiver_type = self.check_assignment_target(receiver)?;
+                let receiver_type = self.check_expression(receiver)?;
                 for index in indices {
                     let index_type = self.check_expression(index)?;
                     self.unify(&ValueType::Integer, &index_type, index.span)?;
                 }
                 match self.resolve(receiver_type.clone()) {
-                    ValueType::List(element) | ValueType::MutableList(element) => Ok(*element),
+                    ValueType::List(element) => {
+                        self.check_assignment_target(receiver)?;
+                        Ok(*element)
+                    }
+                    ValueType::MutableList(element) => Ok(*element),
                     ValueType::Variable(_) => {
                         let element = self.fresh();
                         self.unify(
@@ -969,7 +1186,9 @@ impl Checker {
                 Ok(field.value_type.clone())
             }
             _ => Err(vec![self.error("alvo de atribuição inválido", target.span)]),
-        }
+        }?;
+        self.info.node_types.insert(target.id, value_type.clone());
+        Ok(value_type)
     }
 
     fn bind_pattern(
@@ -1006,35 +1225,69 @@ impl Checker {
             PatternKind::Logical(_) => {
                 self.unify(&ValueType::Logical, &value_type, pattern.span)?
             }
-            PatternKind::Tuple(patterns) => {
-                let elements = patterns.iter().map(|_| self.fresh()).collect::<Vec<_>>();
-                self.unify(
-                    &ValueType::Tuple(elements.clone()),
-                    &value_type,
-                    pattern.span,
-                )?;
-                for (pattern, element_type) in patterns.iter().zip(elements) {
-                    self.bind_pattern(pattern, element_type, mutable)?;
+            PatternKind::Tuple(patterns) => match &value_type {
+                ValueType::Tuple(elements) if elements.len() == patterns.len() => {
+                    for (pattern, element_type) in patterns.iter().zip(elements) {
+                        self.bind_pattern(pattern, element_type.clone(), mutable)?;
+                    }
                 }
-            }
+                ValueType::Tuple(_) => {
+                    return Err(vec![self.error(
+                        "quantidades diferentes na atribuição paralela",
+                        pattern.span,
+                    )]);
+                }
+                ValueType::Variable(_) => {
+                    let elements = patterns.iter().map(|_| self.fresh()).collect::<Vec<_>>();
+                    self.unify(
+                        &ValueType::Tuple(elements.clone()),
+                        &value_type,
+                        pattern.span,
+                    )?;
+                    for (pattern, element_type) in patterns.iter().zip(elements) {
+                        self.bind_pattern(pattern, element_type, mutable)?;
+                    }
+                }
+                _ => {
+                    for pattern in patterns {
+                        self.bind_pattern(pattern, value_type.clone(), mutable)?;
+                    }
+                }
+            },
             PatternKind::List(patterns) => {
-                let element_type = self.fresh();
-                self.unify(
-                    &ValueType::List(Box::new(element_type.clone())),
-                    &value_type,
-                    pattern.span,
-                )?;
+                let element_type = match &value_type {
+                    ValueType::List(element) | ValueType::MutableList(element) => {
+                        (**element).clone()
+                    }
+                    _ => {
+                        let element_type = self.fresh();
+                        self.unify(
+                            &ValueType::List(Box::new(element_type.clone())),
+                            &value_type,
+                            pattern.span,
+                        )?;
+                        element_type
+                    }
+                };
                 for pattern in patterns {
                     self.bind_pattern(pattern, element_type.clone(), mutable)?;
                 }
             }
             PatternKind::Cons(head, tail) => {
-                let element_type = self.fresh();
-                self.unify(
-                    &ValueType::List(Box::new(element_type.clone())),
-                    &value_type,
-                    pattern.span,
-                )?;
+                let element_type = match &value_type {
+                    ValueType::List(element) | ValueType::MutableList(element) => {
+                        (**element).clone()
+                    }
+                    _ => {
+                        let element_type = self.fresh();
+                        self.unify(
+                            &ValueType::List(Box::new(element_type.clone())),
+                            &value_type,
+                            pattern.span,
+                        )?;
+                        element_type
+                    }
+                };
                 self.bind_pattern(head, element_type.clone(), mutable)?;
                 self.bind_pattern(tail, ValueType::List(Box::new(element_type)), mutable)?;
             }
@@ -1115,6 +1368,10 @@ impl Checker {
                 }
             };
             self.bind_pattern(&generator.pattern, element_type, false)?;
+            if let Some(condition) = &generator.condition {
+                let condition_type = self.check_expression(condition)?;
+                self.unify(&ValueType::Logical, &condition_type, condition.span)?;
+            }
             self.info
                 .node_types
                 .insert(generator.id, ValueType::Nothing);
@@ -1171,11 +1428,15 @@ impl Checker {
         name: &str,
         span: SourceSpan,
     ) -> Result<ValueType, Vec<Diagnostic>> {
-        match self.resolve(receiver_type.clone()) {
+        let receiver_resolved = self.resolve(receiver_type.clone());
+        if matches!(name, "qual_tipo" | "texto") {
+            return Ok(ValueType::Text);
+        }
+        match receiver_resolved {
             ValueType::List(element) => self.list_member_type(*element, name, false, span),
             ValueType::MutableList(element) => self.list_member_type(*element, name, true, span),
             ValueType::Text => self.text_member_type(name, span),
-            ValueType::Integer | ValueType::BigInteger => match name {
+            ValueType::Integer => match name {
                 "inteiro" => Ok(ValueType::Integer),
                 "real" => Ok(ValueType::Real),
                 "caractere" | "caracter" => Ok(ValueType::Character),
@@ -1184,10 +1445,27 @@ impl Checker {
                     span,
                 )]),
             },
+            ValueType::BigInteger => match name {
+                "inteiro" => Ok(ValueType::Integer),
+                "real" => Ok(ValueType::Real),
+                "caractere" | "caracter" => Ok(ValueType::Character),
+                "pow" => Ok(ValueType::Function(
+                    vec![ValueType::Integer],
+                    Box::new(ValueType::BigInteger),
+                )),
+                _ => {
+                    Err(vec![self.error(
+                        format!("tipo BigInt não possui membro '{name}'"),
+                        span,
+                    )])
+                }
+            },
             ValueType::Real => match name {
                 "inteiro" => Ok(ValueType::Integer),
                 "real" => Ok(ValueType::Real),
                 "caractere" | "caracter" => Ok(ValueType::Character),
+                "piso" | "teto" => Ok(ValueType::Real),
+                "arredonde" => Ok(ValueType::Integer),
                 _ => {
                     Err(vec![self.error(
                         format!("tipo Real não possui membro '{name}'"),
@@ -1295,6 +1573,9 @@ impl Checker {
                 self.check_list_method(*element, name, arguments, true, span)
             }
             ValueType::Text => self.check_text_method(name, arguments, span),
+            ValueType::Integer | ValueType::Real | ValueType::BigInteger | ValueType::Character => {
+                self.check_numeric_method(&receiver_type, name, arguments, span)
+            }
             ValueType::Named(type_name)
                 if matches!(type_name.as_str(), "Lista" | "Matriz" | "Cubo") =>
             {
@@ -1403,13 +1684,10 @@ impl Checker {
             "contém" | "contem" => {
                 ValueType::Function(vec![element], Box::new(ValueType::Logical))
             }
-            "remova" => ValueType::Function(
-                vec![ValueType::Integer],
-                Box::new(ValueType::List(Box::new(element))),
-            ),
+            "remova" => ValueType::Function(vec![ValueType::Integer], Box::new(list_type.clone())),
             "insira" | "atualize" => ValueType::Function(
                 vec![ValueType::Integer, element.clone()],
-                Box::new(ValueType::List(Box::new(element))),
+                Box::new(list_type.clone()),
             ),
             "divida_quando" => ValueType::Function(
                 vec![ValueType::Function(
@@ -1446,8 +1724,10 @@ impl Checker {
             return self.check_inject_types(element, &argument_types, span);
         }
         if name == "junte" {
-            if arguments.len() > 3 {
-                return Err(vec![self.error("junte aceita até três argumentos", span)]);
+            if !matches!(arguments.len(), 0 | 1 | 3) {
+                return Err(vec![
+                    self.error("junte recebe zero, um ou três argumentos", span),
+                ]);
             }
             for argument_type in &argument_types {
                 self.unify(&ValueType::Text, argument_type, span)?;
@@ -1456,12 +1736,42 @@ impl Checker {
         }
         if name == "ordene" {
             if argument_types.len() > 1 {
-                return Err(vec![
-                    self.error("ordene aceita no máximo uma função de chave", span),
-                ]);
+                return Err(vec![self.error("ordene aceita no máximo uma função", span)]);
             }
             if let Some(key_function) = argument_types.first() {
-                self.apply_type(key_function.clone(), &[element.clone()], span)?;
+                match self.resolve(key_function.clone()) {
+                    ValueType::Function(parameters, _) if parameters.len() == 2 => {
+                        let result = self.apply_type(
+                            key_function.clone(),
+                            &[element.clone(), element.clone()],
+                            span,
+                        )?;
+                        self.unify(&ValueType::Logical, &result, span)?;
+                    }
+                    ValueType::Function(parameters, _) if parameters.len() == 1 => {
+                        let key =
+                            self.apply_type(key_function.clone(), &[element.clone()], span)?;
+                        if !self.is_orderable(&key) {
+                            return Err(vec![
+                                self.error("a chave de ordenação deve ser ordenável", span),
+                            ]);
+                        }
+                    }
+                    ValueType::Variable(_) => {
+                        let key =
+                            self.apply_type(key_function.clone(), &[element.clone()], span)?;
+                        if !self.is_orderable(&key) {
+                            return Err(vec![
+                                self.error("a chave de ordenação deve ser ordenável", span),
+                            ]);
+                        }
+                    }
+                    _ => {
+                        return Err(vec![
+                            self.error("ordene espera uma função de chave ou comparadora", span),
+                        ]);
+                    }
+                }
             }
             return Ok(if mutable {
                 ValueType::MutableList(Box::new(element))
@@ -1474,6 +1784,23 @@ impl Checker {
         }
         let function = self.list_member_type(element, name, mutable, span)?;
         self.apply_type(function, &argument_types, span)
+    }
+
+    fn is_orderable(&mut self, value_type: &ValueType) -> bool {
+        match self.resolve(value_type.clone()) {
+            ValueType::Integer
+            | ValueType::Real
+            | ValueType::BigInteger
+            | ValueType::Text
+            | ValueType::Character
+            | ValueType::Logical
+            | ValueType::Variable(_) => true,
+            ValueType::Tuple(elements) => elements.iter().all(|element| self.is_orderable(element)),
+            ValueType::List(element) | ValueType::MutableList(element) => {
+                self.is_orderable(&element)
+            }
+            _ => false,
+        }
     }
 
     fn check_inject_types(
@@ -1516,6 +1843,9 @@ impl Checker {
             "maiúsculo" | "maiusculo" | "minúsculo" | "minusculo" | "inverta" => ValueType::Text,
             "inteiro" => ValueType::Integer,
             "real" => ValueType::Real,
+            "lista" => ValueType::List(Box::new(ValueType::Character)),
+            "cabeça" | "cabeca" | "último" | "ultimo" => ValueType::Character,
+            "cauda" | "ordene" | "qual_tipo" => ValueType::Text,
             "divida" => ValueType::List(Box::new(ValueType::Text)),
             _ => {
                 return Err(vec![
@@ -1555,7 +1885,74 @@ impl Checker {
                 self.unify(&ValueType::Integer, &argument_types[0], span)?;
                 Ok(ValueType::Text)
             }
+            "posição" | "posicao" | "contém" | "contem" => {
+                if argument_types.len() != 1
+                    || !matches!(
+                        self.resolve(argument_types[0].clone()),
+                        ValueType::Character | ValueType::Text | ValueType::Variable(_)
+                    )
+                {
+                    return Err(vec![
+                        self.error(format!("{name} recebe um caractere ou texto"), span),
+                    ]);
+                }
+                Ok(if matches!(name, "posição" | "posicao") {
+                    ValueType::Integer
+                } else {
+                    ValueType::Logical
+                })
+            }
+            "selecione" | "pegue_enquanto" | "descarte_enquanto" => {
+                if argument_types.len() != 1 {
+                    return Err(vec![self.error(format!("{name} recebe uma função"), span)]);
+                }
+                let result =
+                    self.apply_type(argument_types[0].clone(), &[ValueType::Character], span)?;
+                self.unify(&ValueType::Logical, &result, span)?;
+                Ok(ValueType::Text)
+            }
+            "injete" => {
+                if argument_types.len() != 1 {
+                    return Err(vec![
+                        self.error("injete recebe um acumulador antes da função", span),
+                    ]);
+                }
+                let accumulator = argument_types[0].clone();
+                Ok(ValueType::Function(
+                    vec![ValueType::Function(
+                        vec![accumulator.clone(), ValueType::Character],
+                        Box::new(accumulator.clone()),
+                    )],
+                    Box::new(accumulator),
+                ))
+            }
+            "remova" => {
+                if argument_types.len() != 1 {
+                    return Err(vec![self.error("remova recebe uma posição", span)]);
+                }
+                self.unify(&ValueType::Integer, &argument_types[0], span)?;
+                Ok(ValueType::Text)
+            }
+            "insira" => {
+                if argument_types.len() != 2 {
+                    return Err(vec![self.error("insira recebe posição e valor", span)]);
+                }
+                self.unify(&ValueType::Integer, &argument_types[0], span)?;
+                if !matches!(
+                    self.resolve(argument_types[1].clone()),
+                    ValueType::Character | ValueType::Text | ValueType::Variable(_)
+                ) {
+                    return Err(vec![self.error("insira espera Caractere ou Texto", span)]);
+                }
+                Ok(ValueType::Text)
+            }
             "junte" => {
+                if !matches!(argument_types.len(), 1 | 3) {
+                    return Err(vec![self.error(
+                        "junte recebe um separador ou prefixo, separador e sufixo",
+                        span,
+                    )]);
+                }
                 for argument in &argument_types {
                     self.unify(&ValueType::Text, argument, span)?;
                 }
@@ -1570,6 +1967,39 @@ impl Checker {
                 self.text_member_type(name, span)
             }
         }
+    }
+
+    fn check_numeric_method(
+        &mut self,
+        receiver_type: &ValueType,
+        name: &str,
+        arguments: &[Expr],
+        span: SourceSpan,
+    ) -> Result<ValueType, Vec<Diagnostic>> {
+        if name == "arredonde" && matches!(self.resolve(receiver_type.clone()), ValueType::Real) {
+            return match arguments {
+                [] => Ok(ValueType::Integer),
+                [digits] => {
+                    let digits_type = self.check_expression(digits)?;
+                    self.unify(&ValueType::Integer, &digits_type, digits.span)?;
+                    Ok(ValueType::Real)
+                }
+                _ => Err(vec![
+                    self.error("arredonde recebe no máximo uma precisão", span),
+                ]),
+            };
+        }
+        let member = self.member_type(receiver_type, name, span)?;
+        if arguments.is_empty() {
+            return Err(vec![
+                self.error(format!("'{name}' é uma propriedade"), span),
+            ]);
+        }
+        let argument_types = arguments
+            .iter()
+            .map(|argument| self.check_argument(argument))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.apply_type(member, &argument_types, span)
     }
 
     fn list_factory_member(
@@ -1647,7 +2077,7 @@ impl Checker {
             ValueType::Function(parameters, result) => {
                 let applied = arguments.len().min(parameters.len());
                 for (parameter, argument) in parameters.iter().zip(arguments.iter()).take(applied) {
-                    self.unify(parameter, argument, span)?;
+                    self.unify_assignable(parameter, argument, span)?;
                 }
                 if arguments.len() < parameters.len() {
                     return Ok(ValueType::Function(
@@ -1775,8 +2205,14 @@ impl Checker {
         right: &ValueType,
         span: SourceSpan,
     ) -> Result<ValueType, Vec<Diagnostic>> {
-        let left = self.resolve(left.clone());
-        let right = self.resolve(right.clone());
+        let left = match self.resolve(left.clone()) {
+            ValueType::Character => ValueType::Integer,
+            value_type => value_type,
+        };
+        let right = match self.resolve(right.clone()) {
+            ValueType::Character => ValueType::Integer,
+            value_type => value_type,
+        };
         if let ValueType::Variable(_) = left {
             if right.is_numeric() {
                 self.unify(&left, &right, span)?;
@@ -1810,13 +2246,34 @@ impl Checker {
         span: SourceSpan,
     ) -> Result<(), Vec<Diagnostic>> {
         let value_type = self.resolve(value_type.clone());
-        if value_type.is_numeric() {
+        if value_type.is_numeric() || matches!(value_type, ValueType::Character) {
             Ok(())
         } else if matches!(value_type, ValueType::Variable(_)) {
             self.unify(&value_type, &ValueType::Integer, span)
         } else {
             Err(vec![self.error(
                 format!("esperava um número, recebeu {value_type}"),
+                span,
+            )])
+        }
+    }
+
+    fn require_integer_like(
+        &mut self,
+        value_type: &ValueType,
+        span: SourceSpan,
+    ) -> Result<(), Vec<Diagnostic>> {
+        let value_type = self.resolve(value_type.clone());
+        if matches!(
+            value_type,
+            ValueType::Integer | ValueType::Character | ValueType::BigInteger
+        ) {
+            Ok(())
+        } else if matches!(value_type, ValueType::Variable(_)) {
+            self.unify(&value_type, &ValueType::Integer, span)
+        } else {
+            Err(vec![self.error(
+                format!("esperava um inteiro, recebeu {value_type}"),
                 span,
             )])
         }
@@ -1915,6 +2372,42 @@ impl Checker {
                 format!("tipos incompatíveis: esperava {left}, recebeu {right}"),
                 span,
             )]),
+        }
+    }
+
+    fn unify_assignable(
+        &mut self,
+        expected: &ValueType,
+        actual: &ValueType,
+        span: SourceSpan,
+    ) -> Result<(), Vec<Diagnostic>> {
+        let expected = self.resolve(expected.clone());
+        let actual = self.resolve(actual.clone());
+        if matches!(expected, ValueType::Variable(_)) || matches!(actual, ValueType::Variable(_)) {
+            self.unify(&expected, &actual, span)
+        } else if expected == actual || can_implicitly_convert(&actual, &expected) {
+            Ok(())
+        } else {
+            Err(vec![self.error(
+                format!("tipos incompatíveis: esperava {expected}, recebeu {actual}"),
+                span,
+            )])
+        }
+    }
+
+    fn merge_types(
+        &mut self,
+        left: &ValueType,
+        right: &ValueType,
+        span: SourceSpan,
+    ) -> Result<ValueType, Vec<Diagnostic>> {
+        let left = self.resolve(left.clone());
+        let right = self.resolve(right.clone());
+        if let Some(common) = common_value_type(&left, &right) {
+            Ok(common)
+        } else {
+            self.unify(&left, &right, span)?;
+            Ok(self.resolve(left))
         }
     }
 
@@ -2133,5 +2626,83 @@ impl Checker {
 
     fn error(&self, message: impl Into<String>, span: SourceSpan) -> Diagnostic {
         Diagnostic::new(DiagnosticKind::Type, message, span)
+    }
+}
+
+fn input_type(name: &str) -> Option<ValueType> {
+    match name {
+        "leia_inteiro" => Some(ValueType::Integer),
+        "leia_real" => Some(ValueType::Real),
+        "leia_texto" => Some(ValueType::Text),
+        "leia_caractere" => Some(ValueType::Character),
+        "leia_logico" => Some(ValueType::Logical),
+        _ => None,
+    }
+}
+
+fn compatible_comparison_types(left: &ValueType, right: &ValueType) -> bool {
+    let numeric = |value_type: &ValueType| {
+        matches!(
+            value_type,
+            ValueType::Integer | ValueType::Real | ValueType::BigInteger | ValueType::Character
+        )
+    };
+    left == right || (numeric(left) && numeric(right))
+}
+
+fn can_implicitly_convert(actual: &ValueType, expected: &ValueType) -> bool {
+    matches!(
+        (actual, expected),
+        (
+            ValueType::Character,
+            ValueType::Integer | ValueType::Real | ValueType::Text
+        ) | (ValueType::Integer, ValueType::Real | ValueType::Text)
+            | (
+                ValueType::Real | ValueType::Logical | ValueType::BigInteger,
+                ValueType::Text
+            )
+    )
+}
+
+fn common_value_type(left: &ValueType, right: &ValueType) -> Option<ValueType> {
+    if left == right {
+        return Some(left.clone());
+    }
+    let numeric = |value_type: &ValueType| {
+        matches!(
+            value_type,
+            ValueType::Integer | ValueType::Real | ValueType::BigInteger | ValueType::Character
+        )
+    };
+    if numeric(left) && numeric(right) {
+        if matches!(left, ValueType::Real) || matches!(right, ValueType::Real) {
+            return Some(ValueType::Real);
+        }
+        if matches!(left, ValueType::BigInteger) || matches!(right, ValueType::BigInteger) {
+            return Some(ValueType::BigInteger);
+        }
+        return Some(ValueType::Integer);
+    }
+    if (matches!(left, ValueType::Text) && can_implicitly_convert(right, left))
+        || (matches!(right, ValueType::Text) && can_implicitly_convert(left, right))
+    {
+        return Some(ValueType::Text);
+    }
+    match (left, right) {
+        (ValueType::List(left), ValueType::List(right)) => {
+            common_value_type(left, right).map(|element| ValueType::List(Box::new(element)))
+        }
+        (ValueType::MutableList(left), ValueType::MutableList(right)) => {
+            common_value_type(left, right).map(|element| ValueType::MutableList(Box::new(element)))
+        }
+        (ValueType::Tuple(left), ValueType::Tuple(right)) if left.len() == right.len() => {
+            Some(ValueType::Tuple(
+                left.iter()
+                    .zip(right)
+                    .map(|(left, right)| common_value_type(left, right))
+                    .collect::<Option<Vec<_>>>()?,
+            ))
+        }
+        _ => None,
     }
 }

@@ -108,6 +108,7 @@ pub struct ForGenerator {
     pub id: NodeId,
     pub pattern: Pattern,
     pub source: ForSource,
+    pub condition: Option<Expr>,
     pub span: SourceSpan,
 }
 

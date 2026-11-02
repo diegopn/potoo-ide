@@ -132,6 +132,10 @@ pub trait RuntimeIo {
     fn write(&mut self, text: &str);
     fn read_line(&mut self, prompt: &InputPrompt) -> Result<String, String>;
 
+    fn is_eof(&self) -> bool {
+        false
+    }
+
     fn should_stop(&mut self) -> bool {
         false
     }
