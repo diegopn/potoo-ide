@@ -696,6 +696,7 @@ menubutton.potoo-sidebar-action > button:checked {
   background-color: transparent;
   background-image: none;
   border: 0;
+  border-left: 3px solid var(--potoo-panel-bg);
   border-radius: 0;
   color: var(--potoo-text-secondary);
   box-shadow: none;
@@ -707,7 +708,7 @@ menubutton.potoo-sidebar-action > button:checked {
 
 .potoo-file-row-selected {
   background-color: var(--potoo-accent-soft-bg);
-  border-left: 3px solid var(--potoo-accent);
+  border-left-color: var(--potoo-accent);
   color: var(--potoo-accent-text);
 }
 
