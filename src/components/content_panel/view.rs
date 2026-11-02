@@ -37,7 +37,6 @@ pub(crate) struct OutputPanelUi {
 
 pub(crate) struct DebuggerLearningUi {
     pub(crate) spinner: gtk::Spinner,
-    pub(crate) waiting_revealer: gtk::Revealer,
     pub(crate) analysis_stack: gtk::Stack,
     pub(crate) content_scroll: gtk::ScrolledWindow,
     pub(crate) line_title: gtk::Label,
@@ -881,7 +880,7 @@ pub(crate) fn build_output_panel(
     controls.append(&debugger_step);
     controls.append(&debugger_stop_top);
     let sender_for_start = sender.clone();
-    debugger_start.connect_clicked(move |_| {
+    connect_debugger_start(&debugger_start, &debugger_controls, move || {
         sender_for_start.input(MainWindowMsg::StartDebug);
     });
     let sender_for_continue = sender.clone();
@@ -898,7 +897,7 @@ pub(crate) fn build_output_panel(
     debugger.append(&debugger_controls);
     let debugger_position = gtk::Label::new(Some(tr(language, "Aguardando depuração")));
     debugger_position.set_xalign(0.0);
-    debugger_position.set_margin_top(8);
+    debugger_position.set_margin_top(12);
     debugger_position.add_css_class("potoo-debugger-position");
     debugger.append(&debugger_position);
     let debugger_variables = gtk::TextBuffer::new(None);
@@ -923,12 +922,12 @@ pub(crate) fn build_output_panel(
         .child(&variables_view)
         .build();
     variables_scroll.add_css_class("potoo-debugger-output");
-    variables_scroll.set_size_request(-1, 112);
+    variables_scroll.set_size_request(-1, 96);
     variables_scroll.set_propagate_natural_height(false);
     variables_scroll.set_margin_top(4);
+    variables_scroll.set_vexpand(false);
     debugger.append(&variables_scroll);
     let debugger_learning = build_debugger_learning(language);
-    debugger.append(&debugger_learning.waiting_revealer);
     debugger.append(&debugger_learning.analysis_stack);
     debugger.append(&debugger_stop);
     stack.set_visible_child_name("output");
@@ -982,16 +981,14 @@ fn build_debugger_learning(language: UiLanguage) -> DebuggerLearningUi {
     )));
     waiting.set_xalign(0.0);
     waiting.set_wrap(true);
+    waiting.set_valign(gtk::Align::Start);
     waiting.add_css_class("potoo-learning-loading");
     let waiting_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
     waiting_box.set_halign(gtk::Align::Fill);
+    waiting_box.set_valign(gtk::Align::Start);
     waiting_box.set_margin_top(8);
     waiting_box.append(&waiting);
-    let waiting_revealer = gtk::Revealer::new();
-    waiting_revealer.set_transition_type(gtk::RevealerTransitionType::Crossfade);
-    waiting_revealer.set_transition_duration(140);
-    waiting_revealer.set_reveal_child(true);
-    waiting_revealer.set_child(Some(&waiting_box));
+    analysis_stack.add_named(&waiting_box, Some("waiting"));
 
     let spinner = gtk::Spinner::new();
     spinner.add_css_class("potoo-learning-spinner");
@@ -1064,11 +1061,10 @@ fn build_debugger_learning(language: UiLanguage) -> DebuggerLearningUi {
         .build();
     content_scroll.set_propagate_natural_height(false);
     analysis_stack.add_named(&content_scroll, Some("content"));
-    analysis_stack.set_visible(false);
+    analysis_stack.set_visible_child_name("waiting");
 
     DebuggerLearningUi {
         spinner,
-        waiting_revealer,
         analysis_stack,
         content_scroll,
         line_title,
@@ -1078,6 +1074,18 @@ fn build_debugger_learning(language: UiLanguage) -> DebuggerLearningUi {
         problem_list,
         problem_empty,
     }
+}
+
+fn connect_debugger_start(
+    button: &gtk::Button,
+    controls: &gtk::Stack,
+    on_start: impl Fn() + 'static,
+) {
+    let controls = controls.clone();
+    button.connect_clicked(move |_| {
+        controls.set_visible_child_name("controls");
+        on_start();
+    });
 }
 
 pub(crate) fn make_syntax_tags(buffer: &gtk::TextBuffer) -> SyntaxTags {
@@ -1313,3 +1321,29 @@ pub(crate) fn update_line_numbers(buffer: &gtk::TextBuffer, gutter: &gtk::Label)
 #[cfg(test)]
 #[path = "../../../tests/learning/problem_localization_tests.rs"]
 mod problem_localization_tests;
+
+#[cfg(test)]
+mod debugger_ui_tests {
+    use super::connect_debugger_start;
+    use gtk::prelude::*;
+    use std::{cell::Cell, rc::Rc};
+
+    #[test]
+    #[ignore = "requires a GTK display; run with xvfb-run"]
+    fn starting_debugging_reveals_controls_before_execution_events() {
+        gtk::init().expect("GTK should initialize under Xvfb");
+        let stack = gtk::Stack::new();
+        stack.add_named(&gtk::Label::new(Some("start")), Some("start"));
+        stack.add_named(&gtk::Label::new(Some("controls")), Some("controls"));
+        stack.set_visible_child_name("start");
+        let start = gtk::Button::new();
+        let sent = Rc::new(Cell::new(false));
+        let sent_by_callback = sent.clone();
+
+        connect_debugger_start(&start, &stack, move || sent_by_callback.set(true));
+        start.emit_clicked();
+
+        assert_eq!(stack.visible_child_name().as_deref(), Some("controls"));
+        assert!(sent.get());
+    }
+}

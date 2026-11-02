@@ -474,6 +474,9 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Execução concluída." => "Execution finished.",
             "O programa terminou com um erro." => "The program ended with an error.",
             "Abra um programa antes de executar." => "Open a program before running it.",
+            "Interrompa a execução atual antes de iniciar a depuração." => {
+                "Stop the current execution before starting the debugger."
+            }
             "Depuração iniciada…" => "Debugging started…",
             "Execução interrompida." => "Execution stopped.",
             "Entrada solicitada:" => "Input requested:",
@@ -1024,6 +1027,9 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Execução concluída." => "Ejecución finalizada.",
             "O programa terminou com um erro." => "El programa terminó con un error.",
             "Abra um programa antes de executar." => "Abre un programa antes de ejecutarlo.",
+            "Interrompa a execução atual antes de iniciar a depuração." => {
+                "Detén la ejecución actual antes de iniciar el depurador."
+            }
             "Depuração iniciada…" => "Depuración iniciada…",
             "Execução interrompida." => "Ejecución detenida.",
             "Entrada solicitada:" => "Entrada solicitada:",
@@ -1466,6 +1472,7 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Pronto para executar",
     "Executar o programa atual",
     "Executando o programa…",
+    "Interrompa a execução atual antes de iniciar a depuração.",
     "Execução concluída.",
     "Parar depuração",
     "O programa terminou com um erro.",
@@ -3007,7 +3014,6 @@ pub struct MainUi {
     displayed_debugger_snapshot: Option<DebuggerSnapshot>,
     displayed_debugger_learning_hint: Option<LearningHint>,
     displayed_debugger_analysis_state: &'static str,
-    displayed_debugging_active: bool,
     displayed_learning_hint: Option<LearningHint>,
     displayed_learning_loading: bool,
     displayed_right_panel_section: Option<RightPanelSection>,
@@ -3532,7 +3538,13 @@ impl SimpleComponent for MainWindow {
                 }
             }
             MainWindowMsg::StartDebug => {
-                self.start_execution(sender.clone(), true);
+                if self.active_execution_id.is_some() {
+                    self.output_status = self
+                        .text("Interrompa a execução atual antes de iniciar a depuração.")
+                        .to_string();
+                } else {
+                    self.start_execution(sender.clone(), true);
+                }
             }
             MainWindowMsg::ContinueDebug => {
                 if let Some(control) = &self.execution_control {
@@ -4250,17 +4262,19 @@ impl SimpleComponent for MainWindow {
             }
             ui.displayed_input_requested = self.input_requested;
         }
-        if ui.displayed_debugging_active != self.debugging_active {
-            ui.debugger_controls
-                .set_visible_child_name(if self.debugging_active {
-                    "controls"
-                } else {
-                    "start"
-                });
-            ui.displayed_debugging_active = self.debugging_active;
-        }
-        ui.debugger_start
-            .set_sensitive(self.active_execution_id.is_none());
+        ui.debugger_controls
+            .set_visible_child_name(if self.debugging_active {
+                "controls"
+            } else {
+                "start"
+            });
+        ui.debugger_start.set_tooltip_text(Some(self.text(
+            if self.active_execution_id.is_some() {
+                "Interrompa a execução atual antes de iniciar a depuração."
+            } else {
+                "Iniciar depuração"
+            },
+        )));
         ui.debugger_continue.set_sensitive(
             self.debugging_active
                 && self.active_execution_id.is_some()
@@ -4387,22 +4401,15 @@ impl SimpleComponent for MainWindow {
             "loading"
         };
         if ui.displayed_debugger_analysis_state != debugger_analysis_state {
-            let waiting = debugger_analysis_state == "waiting";
-            ui.debugger_learning
-                .waiting_revealer
-                .set_reveal_child(waiting);
-            ui.debugger_learning.analysis_stack.set_visible(!waiting);
             ui.debugger_learning
                 .spinner
                 .set_spinning(debugger_analysis_state == "loading");
             ui.debugger_learning
                 .spinner
                 .set_visible(debugger_analysis_state == "loading");
-            if !waiting {
-                ui.debugger_learning
-                    .analysis_stack
-                    .set_visible_child_name(debugger_analysis_state);
-            }
+            ui.debugger_learning
+                .analysis_stack
+                .set_visible_child_name(debugger_analysis_state);
             ui.displayed_debugger_analysis_state = debugger_analysis_state;
         }
         let execution_active = self.active_execution_id.is_some();
@@ -5447,7 +5454,6 @@ fn build_window_content(
         displayed_debugger_snapshot: None,
         displayed_debugger_learning_hint: None,
         displayed_debugger_analysis_state: "waiting",
-        displayed_debugging_active: false,
         displayed_learning_hint: None,
         displayed_learning_loading: false,
         displayed_right_panel_section: None,
