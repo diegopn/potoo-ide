@@ -898,7 +898,8 @@ entry.potoo-program-input:focus {
 .potoo-line-numbers {
   background-color: var(--potoo-gutter-bg);
   color: var(--potoo-text-muted);
-  font-size: 13px;
+  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+  font-size: 14px;
 }
 
 .potoo-line-number-gutter {

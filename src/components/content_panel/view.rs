@@ -1327,3 +1327,44 @@ mod debugger_ui_tests {
         assert!(sent.get());
     }
 }
+
+#[cfg(test)]
+mod line_number_ui_tests {
+    use gtk::prelude::*;
+
+    #[test]
+    #[ignore = "requires a GTK display; run with xvfb-run"]
+    fn line_numbers_use_the_same_font_metrics_as_editor_text() {
+        gtk::init().expect("GTK should initialize under Xvfb");
+        let display = gtk::gdk::Display::default().expect("a GTK display should be available");
+        let provider = gtk::CssProvider::new();
+        provider.load_from_string(include_str!("../../../data/potoo.css"));
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+
+        let window = gtk::Window::new();
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        let line_numbers = gtk::Label::new(Some("1\n2\n3"));
+        line_numbers.add_css_class("dim-label");
+        line_numbers.add_css_class("monospace");
+        line_numbers.add_css_class("potoo-line-numbers");
+        let editor = gtk::TextView::new();
+        editor.add_css_class("potoo-code-editor");
+        row.append(&line_numbers);
+        row.append(&editor);
+        window.set_child(Some(&row));
+        window.present();
+
+        while gtk::glib::MainContext::default().iteration(false) {}
+
+        assert_eq!(
+            line_numbers.pango_context().font_description().as_ref(),
+            editor.pango_context().font_description().as_ref(),
+            "the gutter and editor must use identical font metrics to keep each row aligned"
+        );
+        window.close();
+    }
+}
