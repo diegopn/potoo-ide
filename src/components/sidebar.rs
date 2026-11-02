@@ -333,15 +333,19 @@ fn attach_project_item_context_menu(
     menu.set_margin_start(4);
     menu.set_margin_end(4);
 
-    let rename = gtk::Button::with_label(tr(language, "Renomear"));
-    rename.add_css_class("potoo-sidebar-menu-item");
-    rename.set_halign(gtk::Align::Fill);
-    rename.set_hexpand(true);
-    let delete = gtk::Button::with_label(tr(language, "Excluir"));
-    delete.add_css_class("potoo-sidebar-menu-item");
+    let rename = icon_label_button(
+        "edit",
+        tr(language, "Renomear"),
+        tr(language, "Renomear"),
+        "potoo-sidebar-menu-item",
+    );
+    let delete = icon_label_button(
+        "delete",
+        tr(language, "Excluir"),
+        tr(language, "Excluir"),
+        "potoo-sidebar-menu-item",
+    );
     delete.add_css_class("potoo-sidebar-menu-danger");
-    delete.set_halign(gtk::Align::Fill);
-    delete.set_hexpand(true);
     menu.append(&rename);
     menu.append(&delete);
     popover.set_child(Some(&menu));
