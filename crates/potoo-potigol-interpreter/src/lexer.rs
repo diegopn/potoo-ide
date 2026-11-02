@@ -122,7 +122,12 @@ impl Scanner {
             raw.push(self.advance().unwrap_or_default());
         }
 
-        if !is_real && self.current() == Some('.') && self.peek(1) != Some('.') {
+        if !is_real
+            && self.current() == Some('.')
+            && self
+                .peek(1)
+                .is_some_and(|character| character.is_ascii_digit())
+        {
             is_real = true;
             raw.push(self.advance().unwrap_or('.'));
             while self

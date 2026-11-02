@@ -108,6 +108,9 @@ pub struct ExecutionOptions {
     pub max_output_bytes: usize,
     pub max_string_bytes: usize,
     pub max_collection_elements: usize,
+    /// shortcut: cumulative payload estimate, not a live heap ceiling; replace with tracked
+    /// storage accounting if the host needs a strict memory cap.
+    pub max_collection_bytes: usize,
     pub max_wait_millis: u64,
     pub max_call_depth: usize,
     pub max_parse_depth: usize,
@@ -120,6 +123,7 @@ impl Default for ExecutionOptions {
             max_output_bytes: 1024 * 1024,
             max_string_bytes: 1024 * 1024,
             max_collection_elements: 100_000,
+            max_collection_bytes: 64 * 1024 * 1024,
             max_wait_millis: 30_000,
             max_call_depth: 128,
             max_parse_depth: 128,

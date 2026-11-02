@@ -36,6 +36,7 @@ struct Interpreter<'a> {
     class_environments: HashMap<String, EnvironmentRef>,
     steps: u64,
     allocated_elements: usize,
+    allocated_collection_bytes: usize,
     output_bytes: usize,
     waited: Duration,
     call_depth: usize,
@@ -99,6 +100,7 @@ impl<'a> Interpreter<'a> {
             class_environments,
             steps: 0,
             allocated_elements: 0,
+            allocated_collection_bytes: 0,
             output_bytes: 0,
             waited: Duration::ZERO,
             call_depth: 0,
@@ -322,8 +324,9 @@ impl<'a> Interpreter<'a> {
                 match iterable {
                     Value::List(values) => Ok(values),
                     Value::MutableList(values) => {
-                        let values = values.borrow().clone();
-                        self.reserve_elements(values.len(), expression.span)?;
+                        let values = values.borrow();
+                        self.reserve_value_vec_copy(&values, expression.span)?;
+                        let values = values.clone();
                         Ok(values)
                     }
                     Value::Tuple(values) => Ok(values),
@@ -545,7 +548,7 @@ impl<'a> Interpreter<'a> {
     }
 
     fn collect_pattern_bindings(
-        &self,
+        &mut self,
         pattern: &Pattern,
         value: &Value,
         bindings: &mut Vec<(String, Value)>,
@@ -595,39 +598,47 @@ impl<'a> Interpreter<'a> {
                 }
             }
             (PatternKind::Cons(head, tail), Value::List(values)) if !values.is_empty() => {
-                self.collect_pattern_bindings(head, &values[0], bindings)?
-                    && self.collect_pattern_bindings(
-                        tail,
-                        &Value::List(values[1..].to_vec()),
-                        bindings,
-                    )?
+                if !self.collect_pattern_bindings(head, &values[0], bindings)? {
+                    false
+                } else {
+                    let tail_values = &values[1..];
+                    self.reserve_elements(tail_values.len(), pattern.span)?;
+                    self.reserve_cloned_values_payload(tail_values, pattern.span)?;
+                    let tail_value = Value::List(tail_values.to_vec());
+                    self.collect_pattern_bindings(tail, &tail_value, bindings)?
+                }
             }
             (PatternKind::Cons(head, tail), Value::MutableList(values)) => {
                 let values = values.borrow();
-                !values.is_empty()
-                    && self.collect_pattern_bindings(head, &values[0], bindings)?
-                    && self.collect_pattern_bindings(
-                        tail,
-                        &Value::List(values[1..].to_vec()),
-                        bindings,
-                    )?
+                if values.is_empty() {
+                    false
+                } else if !self.collect_pattern_bindings(head, &values[0], bindings)? {
+                    false
+                } else {
+                    let tail_values = &values[1..];
+                    self.reserve_elements(tail_values.len(), pattern.span)?;
+                    self.reserve_cloned_values_payload(tail_values, pattern.span)?;
+                    let tail_value = Value::List(tail_values.to_vec());
+                    self.collect_pattern_bindings(tail, &tail_value, bindings)?
+                }
             }
             (PatternKind::Constructor { name, fields }, Value::Object(object)) => {
                 let object = object.borrow();
                 if &object.class_name != name {
                     false
-                } else if let Some(declaration) = self.classes.get(name) {
-                    let field_names = declaration
+                } else if let Some(field_names) = self.classes.get(name).map(|declaration| {
+                    declaration
                         .fields
                         .iter()
                         .filter(|field| field.constructor_parameter)
-                        .map(|field| field.name.as_str())
-                        .collect::<Vec<_>>();
+                        .map(|field| field.name.clone())
+                        .collect::<Vec<_>>()
+                }) {
                     if fields.len() != field_names.len() {
                         false
                     } else {
                         for (pattern, field_name) in fields.iter().zip(field_names) {
-                            let Some(value) = object.fields.get(field_name) else {
+                            let Some(value) = object.fields.get(&field_name) else {
                                 return Ok(false);
                             };
                             if !self.collect_pattern_bindings(pattern, value, bindings)? {
@@ -800,11 +811,92 @@ impl<'a> Interpreter<'a> {
     }
 
     fn reserve_elements(&mut self, count: usize, span: SourceSpan) -> RuntimeResult<()> {
-        self.allocated_elements = self.allocated_elements.saturating_add(count);
-        if self.allocated_elements > self.options.max_collection_elements {
+        let elements = self
+            .allocated_elements
+            .checked_add(count)
+            .ok_or_else(|| vec![self.error("limite de elementos excedido", span)])?;
+        if elements > self.options.max_collection_elements {
             return Err(vec![self.error("limite de elementos excedido", span)]);
         }
+        let bytes = count
+            .checked_mul(std::mem::size_of::<Value>())
+            .ok_or_else(|| vec![self.error("limite de memória de coleções excedido", span)])?;
+        self.reserve_collection_bytes(bytes, span)?;
+        self.allocated_elements = elements;
         Ok(())
+    }
+
+    fn reserve_collection_bytes(&mut self, bytes: usize, span: SourceSpan) -> RuntimeResult<()> {
+        let allocated = self
+            .allocated_collection_bytes
+            .checked_add(bytes)
+            .ok_or_else(|| vec![self.error("limite de memória de coleções excedido", span)])?;
+        if allocated > self.options.max_collection_bytes {
+            return Err(vec![
+                self.error("limite de memória de coleções excedido", span),
+            ]);
+        }
+        self.allocated_collection_bytes = allocated;
+        Ok(())
+    }
+
+    fn reserve_value_payload(&mut self, value: &Value, span: SourceSpan) -> RuntimeResult<()> {
+        let bytes = value_direct_payload_bytes(value);
+        self.reserve_collection_bytes(bytes, span)
+    }
+
+    fn reserve_values_payload(&mut self, values: &[Value], span: SourceSpan) -> RuntimeResult<()> {
+        let bytes = values.iter().try_fold(0usize, |total, value| {
+            total.checked_add(value_direct_payload_bytes(value))
+        });
+        let bytes = bytes
+            .ok_or_else(|| vec![self.error("limite de memória de coleções excedido", span)])?;
+        self.reserve_collection_bytes(bytes, span)
+    }
+
+    fn reserve_cloned_value_payload(
+        &mut self,
+        value: &Value,
+        copies: usize,
+        span: SourceSpan,
+    ) -> RuntimeResult<()> {
+        let bytes = value_clone_bytes(value)
+            .and_then(|bytes| bytes.checked_mul(copies))
+            .ok_or_else(|| vec![self.error("limite de memória de coleções excedido", span)])?;
+        self.reserve_collection_bytes(bytes, span)
+    }
+
+    fn reserve_cloned_values_payload(
+        &mut self,
+        values: &[Value],
+        span: SourceSpan,
+    ) -> RuntimeResult<()> {
+        let bytes = values.iter().try_fold(0usize, |total, value| {
+            total.checked_add(value_clone_bytes(value)?)
+        });
+        let bytes = bytes
+            .ok_or_else(|| vec![self.error("limite de memória de coleções excedido", span)])?;
+        self.reserve_collection_bytes(bytes, span)
+    }
+
+    fn reserve_value_vec_copy(&mut self, values: &[Value], span: SourceSpan) -> RuntimeResult<()> {
+        self.reserve_elements(values.len(), span)?;
+        self.reserve_cloned_values_payload(values, span)
+    }
+
+    fn copy_list_values(&mut self, value: &Value, span: SourceSpan) -> RuntimeResult<Vec<Value>> {
+        match value {
+            Value::List(values) => {
+                self.reserve_value_vec_copy(values, span)?;
+                Ok(values.clone())
+            }
+            Value::MutableList(values) => {
+                let values = values.borrow();
+                self.reserve_value_vec_copy(&values, span)?;
+                Ok(values.clone())
+            }
+            _ => Ok(Vec::new()),
+        }
     }
 
     fn write_output(&mut self, text: &str, span: SourceSpan) -> RuntimeResult<()> {
@@ -946,19 +1038,23 @@ impl<'a> Interpreter<'a> {
                 Ok(value)
             }
             ExprKind::Tuple(elements) => {
-                let values = elements
-                    .iter()
-                    .map(|element| self.evaluate_expression(element))
-                    .collect::<RuntimeResult<Vec<_>>>()?;
-                self.reserve_elements(values.len(), expression.span)?;
+                self.reserve_elements(elements.len(), expression.span)?;
+                let mut values = Vec::with_capacity(elements.len());
+                for element in elements {
+                    let value = self.evaluate_expression(element)?;
+                    self.reserve_value_payload(&value, expression.span)?;
+                    values.push(value);
+                }
                 Ok(Value::Tuple(values))
             }
             ExprKind::List(elements) => {
-                let values = elements
-                    .iter()
-                    .map(|element| self.evaluate_expression(element))
-                    .collect::<RuntimeResult<Vec<_>>>()?;
-                self.reserve_elements(values.len(), expression.span)?;
+                self.reserve_elements(elements.len(), expression.span)?;
+                let mut values = Vec::with_capacity(elements.len());
+                for element in elements {
+                    let value = self.evaluate_expression(element)?;
+                    self.reserve_value_payload(&value, expression.span)?;
+                    values.push(value);
+                }
                 Ok(Value::List(values))
             }
             ExprKind::Unary { operator, operand } => {
@@ -1041,7 +1137,6 @@ impl<'a> Interpreter<'a> {
             ExprKind::Comprehension { generators, value } => {
                 let mut values = Vec::new();
                 self.evaluate_comprehension(generators, 0, value, &mut values)?;
-                self.reserve_elements(values.len(), expression.span)?;
                 Ok(Value::List(values))
             }
         }
@@ -1144,6 +1239,7 @@ impl<'a> Interpreter<'a> {
                     .map_err(|_| vec![self.error("tamanho de lista inválido", span)])?;
                 self.reserve_elements(length, span)?;
                 let initial = self.evaluate_expression(&arguments[1])?;
+                self.reserve_cloned_value_payload(&initial, length, span)?;
                 Value::List(vec![initial; length])
             }
             "BigInt" | "bigint" => {
@@ -1343,12 +1439,20 @@ impl<'a> Interpreter<'a> {
                 self.reserve_elements(count, span)?;
                 let mut values = Vec::with_capacity(count);
                 for _ in 0..count {
-                    values.push(self.read_scalar(data_type, span)?);
+                    let value = self.read_scalar(data_type, span)?;
+                    self.reserve_value_payload(&value, span)?;
+                    values.push(value);
                 }
                 values
             }
             Some(Value::Text(separator)) => {
                 let line = self.read_line(DataType::Text, span)?;
+                let count = if separator.is_empty() {
+                    line.chars().count()
+                } else {
+                    line.split(&separator).count()
+                };
+                self.reserve_elements(count, span)?;
                 let fields: Vec<String> = if separator.is_empty() {
                     line.chars()
                         .map(|character| character.to_string())
@@ -1356,23 +1460,26 @@ impl<'a> Interpreter<'a> {
                 } else {
                     line.split(&separator).map(str::to_owned).collect()
                 };
-                self.reserve_elements(fields.len(), span)?;
-                fields
+                let values = fields
                     .into_iter()
                     .map(|field| self.parse_input_value(data_type, &field, span))
-                    .collect::<RuntimeResult<Vec<_>>>()?
+                    .collect::<RuntimeResult<Vec<_>>>()?;
+                self.reserve_values_payload(&values, span)?;
+                values
             }
             None => {
                 let line = self.read_line(DataType::Text, span)?;
+                self.reserve_elements(line.split_whitespace().count(), span)?;
                 let fields = line
                     .split_whitespace()
                     .map(str::to_owned)
                     .collect::<Vec<_>>();
-                self.reserve_elements(fields.len(), span)?;
-                fields
+                let values = fields
                     .into_iter()
                     .map(|field| self.parse_input_value(data_type, &field, span))
-                    .collect::<RuntimeResult<Vec<_>>>()?
+                    .collect::<RuntimeResult<Vec<_>>>()?;
+                self.reserve_values_payload(&values, span)?;
+                values
             }
             Some(other) => {
                 return Err(vec![self.error(
@@ -1608,24 +1715,36 @@ impl<'a> Interpreter<'a> {
                 }))
             }
             "::" => {
-                let mut values = match right {
-                    Value::List(values) => values,
-                    Value::MutableList(values) => values.borrow().clone(),
+                let values = match right {
+                    Value::List(mut values) => {
+                        self.reserve_elements(1, span)?;
+                        self.reserve_value_payload(&left, span)?;
+                        values.insert(0, left);
+                        values
+                    }
+                    Value::MutableList(values) => {
+                        let values = values.borrow();
+                        self.reserve_value_vec_copy(&values, span)?;
+                        self.reserve_elements(1, span)?;
+                        self.reserve_value_payload(&left, span)?;
+                        let mut copy = values.clone();
+                        copy.insert(0, left);
+                        copy
+                    }
                     _ => {
                         return Err(vec![
                             self.error("o lado direito de '::' deve ser lista", span),
                         ]);
                     }
                 };
-                values.insert(0, left);
-                self.reserve_elements(1, span)?;
                 Ok(Value::List(values))
             }
             "formato" => {
                 let Value::Text(format) = right else {
                     return Err(vec![self.error("formato espera um Texto", span)]);
                 };
-                let result = format_value(&left, &format)
+                let result = format_value(&left, &format, self.options.max_string_bytes)
+                    .map_err(|()| vec![self.error("limite de tamanho de texto excedido", span)])?
                     .ok_or_else(|| vec![self.error("formato inválido para este valor", span)])?;
                 self.check_string_size(result.len(), span)?;
                 Ok(Value::Text(result))
@@ -1727,21 +1846,27 @@ impl<'a> Interpreter<'a> {
                 Ok(Value::List(left))
             }
             (Value::MutableList(left), Value::List(right)) => {
+                let left = left.borrow();
+                self.reserve_value_vec_copy(&left, span)?;
                 self.reserve_elements(right.len(), span)?;
-                let mut values = left.borrow().clone();
+                let mut values = left.clone();
                 values.extend(right);
                 Ok(Value::List(values))
             }
             (Value::MutableList(left), Value::MutableList(right)) => {
-                let mut values = left.borrow().clone();
+                let left = left.borrow();
                 let right = right.borrow();
+                self.reserve_value_vec_copy(&left, span)?;
                 self.reserve_elements(right.len(), span)?;
+                self.reserve_cloned_values_payload(&right, span)?;
+                let mut values = left.clone();
                 values.extend(right.iter().cloned());
                 Ok(Value::List(values))
             }
             (Value::List(mut left), Value::MutableList(right)) => {
                 let right = right.borrow();
                 self.reserve_elements(right.len(), span)?;
+                self.reserve_cloned_values_payload(&right, span)?;
                 left.extend(right.iter().cloned());
                 Ok(Value::List(left))
             }
@@ -1947,7 +2072,7 @@ impl<'a> Interpreter<'a> {
         name: &str,
         span: SourceSpan,
     ) -> RuntimeResult<Value> {
-        let values = list_values(&receiver).unwrap_or_default();
+        let values = self.copy_list_values(&receiver, span)?;
         match name {
             "tamanho" | "size" => Ok(Value::Integer(values.len() as i64)),
             "cabeça" | "cabeca" | "primeiro" => values
@@ -1958,7 +2083,10 @@ impl<'a> Interpreter<'a> {
                 .last()
                 .cloned()
                 .ok_or_else(|| vec![self.error("lista vazia não possui último elemento", span)]),
-            "cauda" => Ok(Value::List(values.into_iter().skip(1).collect())),
+            "cauda" => {
+                self.reserve_elements(values.len().saturating_sub(1), span)?;
+                Ok(Value::List(values.into_iter().skip(1).collect()))
+            }
             "vazia" => Ok(Value::Logical(values.is_empty())),
             "inverta" => {
                 let mut values = values;
@@ -1974,10 +2102,7 @@ impl<'a> Interpreter<'a> {
                 self.check_string_size(text.len(), span)?;
                 Ok(Value::Text(text))
             }
-            "mutável" | "mutavel" => {
-                self.reserve_elements(values.len(), span)?;
-                Ok(Value::MutableList(Rc::new(RefCell::new(values))))
-            }
+            "mutável" | "mutavel" => Ok(Value::MutableList(Rc::new(RefCell::new(values)))),
             "imutável" | "imutavel" => Ok(Value::List(values)),
             _ => Ok(Value::Function(Rc::new(Callable::Member {
                 receiver,
@@ -2015,8 +2140,9 @@ impl<'a> Interpreter<'a> {
             "inteiro" => Ok(Value::Integer(parse_integer_prefix(text))),
             "real" => Ok(Value::Real(parse_real_prefix(text))),
             "lista" => {
+                let length = text.chars().count();
+                self.reserve_elements(length, span)?;
                 let characters = text.chars().map(Value::Character).collect::<Vec<_>>();
-                self.reserve_elements(characters.len(), span)?;
                 Ok(Value::List(characters))
             }
             "cabeça" | "cabeca" => text
@@ -2035,13 +2161,28 @@ impl<'a> Interpreter<'a> {
                 Ok(Value::Text(result))
             }
             "ordene" => {
+                self.reserve_elements(text.chars().count(), span)?;
                 let mut characters = text.chars().collect::<Vec<_>>();
-                characters.sort_unstable();
+                let mut failure = None;
+                characters.sort_unstable_by(|left, right| {
+                    if failure.is_some() {
+                        return std::cmp::Ordering::Equal;
+                    }
+                    if let Err(error) = self.consume_step(span) {
+                        failure = Some(error);
+                        return std::cmp::Ordering::Equal;
+                    }
+                    left.cmp(right)
+                });
+                if let Some(error) = failure {
+                    return Err(error);
+                }
                 Ok(Value::Text(characters.into_iter().collect()))
             }
-            "divida" | "pegue" | "descarte" | "junte" | "posição" | "posicao" | "contém"
-            | "contem" | "selecione" | "injete" | "pegue_enquanto" | "descarte_enquanto"
-            | "remova" | "insira" => Ok(Value::Function(Rc::new(Callable::Member {
+            "divida" => self.call_text_member(text, name, Vec::new(), span),
+            "pegue" | "descarte" | "junte" | "posição" | "posicao" | "contém" | "contem"
+            | "selecione" | "injete" | "pegue_enquanto" | "descarte_enquanto" | "remova"
+            | "insira" => Ok(Value::Function(Rc::new(Callable::Member {
                 receiver: Value::Text(text.to_owned()),
                 name: name.to_owned(),
             }))),
@@ -2129,25 +2270,39 @@ impl<'a> Interpreter<'a> {
     }
 
     fn index_value(&self, receiver: Value, index: i64, span: SourceSpan) -> RuntimeResult<Value> {
-        let values = match receiver {
-            Value::List(values) => values,
-            Value::MutableList(values) => values.borrow().clone(),
-            Value::Tuple(values) => values,
-            Value::Text(text) => {
-                let characters = text.chars().map(Value::Character).collect::<Vec<_>>();
-                let index = normalize_index(index, characters.len())
+        match receiver {
+            Value::List(values) | Value::Tuple(values) => {
+                let index = normalize_index(index, values.len())
                     .ok_or_else(|| vec![self.error("índice fora dos limites", span)])?;
-                return Ok(characters[index].clone());
+                values
+                    .get(index)
+                    .cloned()
+                    .ok_or_else(|| vec![self.error("índice fora dos limites", span)])
+            }
+            Value::MutableList(values) => {
+                let values = values.borrow();
+                let index = normalize_index(index, values.len())
+                    .ok_or_else(|| vec![self.error("índice fora dos limites", span)])?;
+                values
+                    .get(index)
+                    .cloned()
+                    .ok_or_else(|| vec![self.error("índice fora dos limites", span)])
+            }
+            Value::Text(text) => {
+                let length = text.chars().count();
+                let index = normalize_index(index, length)
+                    .ok_or_else(|| vec![self.error("índice fora dos limites", span)])?;
+                text.chars()
+                    .nth(index)
+                    .map(Value::Character)
+                    .ok_or_else(|| vec![self.error("índice fora dos limites", span)])
             }
             other => {
                 return Err(vec![
                     self.error(format!("{} não aceita índice", other.display()), span),
                 ]);
             }
-        };
-        let index = normalize_index(index, values.len())
-            .ok_or_else(|| vec![self.error("índice fora dos limites", span)])?;
-        Ok(values[index].clone())
+        }
     }
 
     fn evaluate_match(
@@ -2207,10 +2362,10 @@ impl<'a> Interpreter<'a> {
             return Ok(());
         }
         let Some(generator) = generators.get(index) else {
-            results.push(self.evaluate_expression(value)?);
-            if results.len() > self.options.max_collection_elements {
-                return Err(vec![self.error("limite de elementos excedido", value.span)]);
-            }
+            let result = self.evaluate_expression(value)?;
+            self.reserve_elements(1, value.span)?;
+            self.reserve_value_payload(&result, value.span)?;
+            results.push(result);
             return Ok(());
         };
         for item in self.generator_values(generator)? {
@@ -2315,10 +2470,15 @@ impl<'a> Interpreter<'a> {
         }
         let total = sizes
             .iter()
-            .try_fold(1usize, |product, size| product.checked_mul(*size))
+            .try_fold((1usize, 0usize), |(product, total), size| {
+                let product = product.checked_mul(*size)?;
+                Some((product, total.checked_add(product)?))
+            })
             .ok_or_else(|| vec![self.error("dimensões excedem o limite", span)])?;
-        self.reserve_elements(total, span)?;
+        let (leaf_count, storage_elements) = total;
+        self.reserve_elements(storage_elements, span)?;
         let initial = arguments.last().cloned().unwrap_or(Value::Nothing);
+        self.reserve_cloned_value_payload(&initial, leaf_count, span)?;
         let values = make_nested_list(&sizes, initial);
         if mutable {
             Ok(Value::MutableList(Rc::new(RefCell::new(values))))
@@ -2336,25 +2496,31 @@ impl<'a> Interpreter<'a> {
     ) -> RuntimeResult<Value> {
         match name {
             "divida" => {
-                if arguments.len() > 1 {
-                    return Err(vec![
-                        self.error("divida aceita no máximo um separador", span),
-                    ]);
-                }
-                let pieces: Vec<String> = if let Some(Value::Text(separator)) = arguments.first() {
-                    if separator.is_empty() {
-                        text.chars()
-                            .map(|character| character.to_string())
-                            .collect()
-                    } else {
-                        text.split(separator).map(str::to_owned).collect()
+                let separator = match arguments.as_slice() {
+                    [] => None,
+                    [Value::Text(separator)] => Some(separator.as_str()),
+                    [_] => return Err(vec![self.error("o separador deve ser Texto", span)]),
+                    _ => {
+                        return Err(vec![
+                            self.error("divida aceita no máximo um separador", span),
+                        ]);
                     }
-                } else if arguments.is_empty() {
-                    text.split_whitespace().map(str::to_owned).collect()
-                } else {
-                    return Err(vec![self.error("o separador deve ser Texto", span)]);
                 };
-                self.reserve_elements(pieces.len(), span)?;
+                let count = match separator {
+                    Some("") => text.chars().count(),
+                    Some(separator) => text.split(separator).count(),
+                    None => text.split_whitespace().count(),
+                };
+                self.reserve_elements(count, span)?;
+                self.reserve_collection_bytes(text.len(), span)?;
+                let pieces: Vec<String> = match separator {
+                    Some("") => text
+                        .chars()
+                        .map(|character| character.to_string())
+                        .collect(),
+                    Some(separator) => text.split(separator).map(str::to_owned).collect(),
+                    None => text.split_whitespace().map(str::to_owned).collect(),
+                };
                 Ok(Value::List(pieces.into_iter().map(Value::Text).collect()))
             }
             "pegue" | "descarte" => {
@@ -2540,17 +2706,19 @@ impl<'a> Interpreter<'a> {
         arguments: Vec<Value>,
         span: SourceSpan,
     ) -> RuntimeResult<Value> {
-        let values = list_values(&receiver).unwrap_or_default();
+        let values = self.copy_list_values(&receiver, span)?;
         match name {
             "mapeie" => {
                 if arguments.len() != 1 {
                     return Err(vec![self.error("mapeie recebe uma função", span)]);
                 }
+                self.reserve_elements(values.len(), span)?;
                 let mut result = Vec::with_capacity(values.len());
                 for value in values {
-                    result.push(self.apply(arguments[0].clone(), vec![value], span)?);
+                    let mapped = self.apply(arguments[0].clone(), vec![value], span)?;
+                    self.reserve_value_payload(&mapped, span)?;
+                    result.push(mapped);
                 }
-                self.reserve_elements(result.len(), span)?;
                 Ok(Value::List(result))
             }
             "selecione" => {
@@ -2561,10 +2729,10 @@ impl<'a> Interpreter<'a> {
                 for value in values {
                     let selected = self.apply(arguments[0].clone(), vec![value.clone()], span)?;
                     if self.expect_logical(selected, span)? {
+                        self.reserve_elements(1, span)?;
                         result.push(value);
                     }
                 }
-                self.reserve_elements(result.len(), span)?;
                 Ok(Value::List(result))
             }
             "pegue_enquanto" | "descarte_enquanto" => {
@@ -2581,8 +2749,10 @@ impl<'a> Interpreter<'a> {
                     count += 1;
                 }
                 let result = if name == "pegue_enquanto" {
+                    self.reserve_elements(count, span)?;
                     values.into_iter().take(count).collect()
                 } else {
+                    self.reserve_elements(values.len().saturating_sub(count), span)?;
                     values.into_iter().skip(count).collect()
                 };
                 Ok(Value::List(result))
@@ -2604,6 +2774,7 @@ impl<'a> Interpreter<'a> {
                                 self.error("injete sem acumulador exige lista não vazia", span),
                             ]);
                         };
+                        self.reserve_elements(values.len().saturating_sub(1), span)?;
                         (
                             first,
                             arguments[0].clone(),
@@ -2666,11 +2837,13 @@ impl<'a> Interpreter<'a> {
                     if index <= 0 || index as usize > result.len() + 1 {
                         return Err(vec![self.error("posição de inserção inválida", span)]);
                     }
-                    result.insert(index as usize - 1, arguments[1].clone());
                     self.reserve_elements(1, span)?;
+                    self.reserve_cloned_value_payload(&arguments[1], 1, span)?;
+                    result.insert(index as usize - 1, arguments[1].clone());
                 } else {
                     let index = normalize_index(index, result.len())
                         .ok_or_else(|| vec![self.error("índice fora dos limites", span)])?;
+                    self.reserve_cloned_value_payload(&arguments[1], 1, span)?;
                     result[index] = arguments[1].clone();
                 }
                 self.return_collection_mutation(receiver, result, span)
@@ -2776,12 +2949,23 @@ impl<'a> Interpreter<'a> {
     ) -> RuntimeResult<Vec<Value>> {
         let Some(function) = key_or_comparator else {
             let mut invalid = false;
+            let mut failure = None;
             values.sort_by(|left, right| {
+                if failure.is_some() {
+                    return std::cmp::Ordering::Equal;
+                }
+                if let Err(error) = self.consume_step(span) {
+                    failure = Some(error);
+                    return std::cmp::Ordering::Equal;
+                }
                 compare_values(left, right).unwrap_or_else(|| {
                     invalid = true;
                     std::cmp::Ordering::Equal
                 })
             });
+            if let Some(error) = failure {
+                return Err(error);
+            }
             return if invalid {
                 Err(vec![
                     self.error("elementos da lista não podem ser ordenados", span),
@@ -2798,6 +2982,10 @@ impl<'a> Interpreter<'a> {
             let mut failure = None;
             values.sort_by(|left, right| {
                 if failure.is_some() {
+                    return std::cmp::Ordering::Equal;
+                }
+                if let Err(error) = self.consume_step(span) {
+                    failure = Some(error);
                     return std::cmp::Ordering::Equal;
                 }
                 match self
@@ -2835,25 +3023,41 @@ impl<'a> Interpreter<'a> {
             }
             return Ok(values);
         }
-        let mut keyed = values
-            .into_iter()
-            .map(|value| {
-                self.apply(Value::Function(callable.clone()), vec![value.clone()], span)
-                    .map(|key| (key, value))
-            })
-            .collect::<RuntimeResult<Vec<_>>>()?;
+        let keyed_bytes = values
+            .len()
+            .checked_mul(std::mem::size_of::<(Value, Value)>())
+            .ok_or_else(|| vec![self.error("limite de memória de coleções excedido", span)])?;
+        self.reserve_collection_bytes(keyed_bytes, span)?;
+        let mut keyed = Vec::with_capacity(values.len());
+        for value in values {
+            let key = self.apply(Value::Function(callable.clone()), vec![value.clone()], span)?;
+            self.reserve_value_payload(&key, span)?;
+            keyed.push((key, value));
+        }
         let mut invalid = false;
+        let mut failure = None;
         keyed.sort_by(|(left, _), (right, _)| {
+            if failure.is_some() {
+                return std::cmp::Ordering::Equal;
+            }
+            if let Err(error) = self.consume_step(span) {
+                failure = Some(error);
+                return std::cmp::Ordering::Equal;
+            }
             compare_values(left, right).unwrap_or_else(|| {
                 invalid = true;
                 std::cmp::Ordering::Equal
             })
         });
+        if let Some(error) = failure {
+            return Err(error);
+        }
         if invalid {
             return Err(vec![
                 self.error("chaves da ordenação não podem ser comparadas", span),
             ]);
         }
+        self.reserve_elements(keyed.len(), span)?;
         Ok(keyed.into_iter().map(|(_, value)| value).collect())
     }
 
@@ -3386,11 +3590,34 @@ impl<'a> Interpreter<'a> {
     }
 }
 
-fn list_values(value: &Value) -> Option<Vec<Value>> {
+fn value_direct_payload_bytes(value: &Value) -> usize {
     match value {
-        Value::List(values) => Some(values.clone()),
-        Value::MutableList(values) => Some(values.borrow().clone()),
-        _ => None,
+        Value::BigInteger(value) | Value::Text(value) | Value::TypeName(value) => value.len(),
+        Value::FieldReference(_, name) => name.len(),
+        _ => 0,
+    }
+}
+
+fn value_clone_bytes(value: &Value) -> Option<usize> {
+    match value {
+        Value::BigInteger(value) | Value::Text(value) | Value::TypeName(value) => Some(value.len()),
+        Value::Tuple(values) | Value::List(values) => values
+            .len()
+            .checked_mul(std::mem::size_of::<Value>())
+            .and_then(|bytes| {
+                values.iter().try_fold(bytes, |total, value| {
+                    total.checked_add(value_clone_bytes(value)?)
+                })
+            }),
+        Value::FieldReference(_, name) => Some(name.len()),
+        Value::Integer(_)
+        | Value::Real(_)
+        | Value::Character(_)
+        | Value::Logical(_)
+        | Value::Nothing
+        | Value::MutableList(_)
+        | Value::Function(_)
+        | Value::Object(_) => Some(0),
     }
 }
 
@@ -3636,53 +3863,79 @@ fn make_nested_list(sizes: &[usize], initial: Value) -> Vec<Value> {
     }
 }
 
-fn format_value(value: &Value, format: &str) -> Option<String> {
-    let start = format.find('%')?;
+fn format_value(value: &Value, format: &str, maximum_bytes: usize) -> Result<Option<String>, ()> {
+    let Some(start) = format.find('%') else {
+        return Ok(None);
+    };
     let (prefix, rest) = format.split_at(start);
-    let conversion_index = rest
+    let Some((conversion_index, _)) = rest
         .char_indices()
         .skip(1)
-        .find(|(_, character)| matches!(character, 'd' | 'i' | 'f' | 's'))?
-        .0;
-    let conversion = rest[conversion_index..].chars().next()?;
+        .find(|(_, character)| matches!(character, 'd' | 'i' | 'f' | 's'))
+    else {
+        return Ok(None);
+    };
+    let Some(conversion) = rest[conversion_index..].chars().next() else {
+        return Ok(None);
+    };
     let suffix = &rest[conversion_index + conversion.len_utf8()..];
     let specification = &rest[1..conversion_index];
     let left_aligned = specification.contains('-');
     let zero_padded = specification.contains('0') && !left_aligned;
-    let precision = specification.split_once('.').and_then(|(_, precision)| {
+    let width_text = specification
+        .split_once('.')
+        .map_or(specification, |(width, _)| width);
+    let width_digits = width_text
+        .chars()
+        .filter(char::is_ascii_digit)
+        .collect::<String>();
+    let width = if width_digits.is_empty() {
+        0
+    } else {
+        width_digits.parse::<usize>().map_err(|_| ())?
+    };
+    let precision_text = specification.split_once('.').map(|(_, precision)| {
         precision
             .chars()
             .take_while(char::is_ascii_digit)
             .collect::<String>()
-            .parse::<usize>()
-            .ok()
     });
-    let width = specification
-        .split_once('.')
-        .map_or(specification, |(width, _)| width)
-        .chars()
-        .filter(char::is_ascii_digit)
-        .collect::<String>()
-        .parse::<usize>()
-        .unwrap_or(0);
+    let precision = precision_text
+        .filter(|precision| !precision.is_empty())
+        .map(|precision| precision.parse::<usize>().map_err(|_| ()))
+        .transpose()?;
+    if precision.is_some_and(|precision| precision > maximum_bytes) {
+        return Err(());
+    }
     let raw = match conversion {
         'd' | 'i' => match value {
             Value::Integer(value) => value.to_string(),
             Value::BigInteger(value) => value.clone(),
             Value::Real(value) => (*value as i64).to_string(),
-            _ => return None,
+            _ => return Ok(None),
         },
         'f' => {
-            let number = numeric_f64(value)?;
+            let Some(number) = numeric_f64(value) else {
+                return Ok(None);
+            };
             match precision {
-                Some(precision) => format!("{number:.precision$}"),
+                Some(precision) => format_fixed_real(number, precision, maximum_bytes)?,
                 None => number.to_string(),
             }
         }
         's' => value.display(),
-        _ => return None,
+        _ => return Ok(None),
     };
     let padding = width.saturating_sub(raw.chars().count());
+    let output_bytes = prefix
+        .len()
+        .checked_add(raw.len())
+        .and_then(|size| size.checked_add(padding))
+        .and_then(|size| size.checked_add(suffix.len()))
+        .ok_or(())?;
+    if output_bytes > maximum_bytes {
+        return Err(());
+    }
     let padded = if left_aligned {
         format!("{raw}{}", " ".repeat(padding))
     } else if zero_padded && conversion != 's' {
@@ -3694,7 +3947,122 @@ fn format_value(value: &Value, format: &str) -> Option<String> {
     } else {
         format!("{}{raw}", " ".repeat(padding))
     };
-    Some(format!("{prefix}{padded}{suffix}"))
+    Ok(Some(format!("{prefix}{padded}{suffix}")))
+}
+
+fn format_fixed_real(number: f64, precision: usize, maximum_bytes: usize) -> Result<String, ()> {
+    if !number.is_finite() {
+        return Ok(number.to_string());
+    }
+
+    let shortest = number.to_string();
+    let (negative, shortest) = shortest
+        .strip_prefix('-')
+        .map_or((false, shortest.as_str()), |digits| (true, digits));
+    let (mantissa, exponent) =
+        shortest
+            .split_once(['e', 'E'])
+            .map_or(Ok((shortest, 0)), |(mantissa, exponent)| {
+                exponent
+                    .parse::<i64>()
+                    .map(|exponent| (mantissa, exponent))
+                    .map_err(|_| ())
+            })?;
+    let (integer, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    let mut digits = integer.bytes().chain(fraction.bytes()).collect::<Vec<_>>();
+    let decimal_exponent = exponent
+        .checked_sub(i64::try_from(fraction.len()).map_err(|_| ())?)
+        .ok_or(())?;
+    let decimal_point = i64::try_from(digits.len())
+        .map_err(|_| ())?
+        .checked_add(decimal_exponent)
+        .ok_or(())?;
+    let integer_digits = usize::try_from(decimal_point.max(1)).map_err(|_| ())?;
+    let decimal_bytes = if precision == 0 {
+        0
+    } else {
+        precision.checked_add(1).ok_or(())?
+    };
+    let minimum_output_bytes = usize::from(negative)
+        .checked_add(integer_digits)
+        .and_then(|size| size.checked_add(decimal_bytes))
+        .ok_or(())?;
+    if minimum_output_bytes > maximum_bytes {
+        return Err(());
+    }
+
+    let scale = decimal_exponent
+        .checked_add(i64::try_from(precision).map_err(|_| ())?)
+        .ok_or(())?;
+    let mut rounded = if scale >= 0 {
+        digits.resize(
+            digits
+                .len()
+                .checked_add(usize::try_from(scale).map_err(|_| ())?)
+                .ok_or(())?,
+            b'0',
+        );
+        digits
+    } else {
+        let discarded_count = usize::try_from(scale.checked_neg().ok_or(())?).map_err(|_| ())?;
+        let retained_count = digits.len().saturating_sub(discarded_count);
+        let discarded = if discarded_count < digits.len() {
+            &digits[retained_count..]
+        } else {
+            &[]
+        };
+        let mut retained = if retained_count == 0 {
+            vec![b'0']
+        } else {
+            digits[..retained_count].to_vec()
+        };
+        let first_discarded = discarded.first().copied().unwrap_or(b'0');
+        let remaining_nonzero = discarded
+            .get(1..)
+            .is_some_and(|digits| digits.iter().any(|digit| *digit != b'0'));
+        let round_up = first_discarded > b'5'
+            || (first_discarded == b'5'
+                && (remaining_nonzero || retained.last().is_some_and(|digit| digit % 2 == 1)));
+        if round_up {
+            increment_decimal_digits(&mut retained);
+        }
+        retained
+    };
+
+    let minimum_digits = precision.checked_add(1).ok_or(())?;
+    if rounded.len() < minimum_digits {
+        rounded.splice(
+            0..0,
+            std::iter::repeat(b'0').take(minimum_digits - rounded.len()),
+        );
+    }
+    let output_bytes = usize::from(negative)
+        .checked_add(rounded.len())
+        .and_then(|size| size.checked_add(usize::from(precision > 0)))
+        .ok_or(())?;
+    if output_bytes > maximum_bytes {
+        return Err(());
+    }
+
+    let digits = String::from_utf8(rounded).map_err(|_| ())?;
+    let raw = if precision == 0 {
+        digits
+    } else {
+        let split = digits.len() - precision;
+        format!("{}.{}", &digits[..split], &digits[split..])
+    };
+    Ok(if negative { format!("-{raw}") } else { raw })
+}
+
+fn increment_decimal_digits(digits: &mut Vec<u8>) {
+    for digit in digits.iter_mut().rev() {
+        if *digit < b'9' {
+            *digit += 1;
+            return;
+        }
+        *digit = b'0';
+    }
+    digits.insert(0, b'1');
 }
 
 fn count_placeholders(expression: &Expr) -> usize {
@@ -3816,5 +4184,38 @@ fn input_list_data_type(name: &str) -> Option<DataType> {
         "leia_reais" | "leia_numeros" | "leia_números" => Some(DataType::Real),
         "leia_textos" => Some(DataType::Text),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod format_value_tests {
+    use super::{format_value, value_clone_bytes, value_direct_payload_bytes};
+    use crate::value::Value;
+
+    #[test]
+    fn format_width_and_precision_respect_the_string_limit_before_padding() {
+        assert_eq!(
+            format_value(&Value::Integer(7), "%1000000000d", 16),
+            Err(())
+        );
+        assert_eq!(
+            format_value(&Value::Real(1.25), "%.1000000000f", 16),
+            Err(())
+        );
+        assert_eq!(
+            format_value(&Value::Integer(7), "%4d", 16),
+            Ok(Some("   7".to_owned()))
+        );
+    }
+
+    #[test]
+    fn moving_a_nested_collection_does_not_count_its_payload_twice() {
+        let nested = Value::List(vec![Value::Integer(1), Value::Text("a".to_owned())]);
+
+        assert_eq!(value_direct_payload_bytes(&nested), 0);
+        assert_eq!(
+            value_clone_bytes(&nested),
+            Some(std::mem::size_of::<Value>() * 2 + 1)
+        );
     }
 }

@@ -11,6 +11,8 @@ struct TestIo {
     output: String,
     events: Vec<ExecutionEvent>,
     input_types: Vec<DataType>,
+    stop_after_checks: Option<usize>,
+    stop_checks: usize,
 }
 
 impl RuntimeIo for TestIo {
@@ -23,6 +25,12 @@ impl RuntimeIo for TestIo {
         self.input
             .pop_front()
             .ok_or_else(|| "unexpected input request".to_owned())
+    }
+
+    fn should_stop(&mut self) -> bool {
+        self.stop_checks += 1;
+        self.stop_after_checks
+            .is_some_and(|limit| self.stop_checks > limit)
     }
 
     fn on_execution_event(&mut self, event: &ExecutionEvent) -> Result<ControlAction, String> {
@@ -49,6 +57,149 @@ fn official_imperative_input_and_interpolated_output_example() {
     .unwrap();
 
     assert_eq!(io.output, "2 + 3 = 5\n");
+}
+
+#[test]
+fn official_basic_types_operators_and_math_examples_work() {
+    let source = r#"
+resultados = [
+  5 + 3 == 8,
+  1.5 + 2.3 == 3.8,
+  'a' + 1 == 98,
+  'a' + 'b' == 195,
+  'b' - 1.5 == 96.5,
+  'b' - 'a' == 1,
+  5 div 3 == 1,
+  -5 mod 3 == -2,
+  5 ^ 2 == 25.0,
+  "ab" + 12 == "ab12",
+  "ab" + verdadeiro == "abverdadeiro",
+  "abc" - "cde" == "ab",
+  "abc" * 3 == "abcabcabc",
+  falso < verdadeiro,
+  "a" == 'a' == falso,
+  5.qual_tipo == "Inteiro",
+  5.0.qual_tipo == "Real",
+  abs(-2.4) == 2.4,
+  raiz(9) == 3.0,
+  log10(100) == 2.0,
+  PI > 3.14,
+  (12345 formato "%8d") == "   12345",
+  (123 formato "%04d") == "0123",
+  ("abc" formato "%-5s") == "abc  ",
+  (12345.678 formato "%.1f") == "12345.7"
+]
+escreva resultados
+"#;
+
+    let io = run(source, &[]).unwrap();
+    assert_eq!(
+        io.output,
+        format!("[{}]\n", vec!["verdadeiro"; 25].join(", "))
+    );
+}
+
+#[test]
+fn official_numeric_conversions_and_math_functions_work() {
+    let source = r#"
+resultados = [
+  12345.real == 12345.0,
+  12345.texto == "12345",
+  97.caractere == 'a',
+  12345.678.inteiro == 12345,
+  12345.678.texto == "12345.678",
+  12345.678.arredonde == 12346,
+  12345.678.arredonde(2) == 12345.68,
+  12345.678.piso == 12345.0,
+  12345.678.teto == 12346.0,
+  sen(0) == 0.0,
+  cos(0) == 1.0,
+  tg(0) == 0.0,
+  arcsen(0) == 0.0,
+  arccos(1) == 0.0,
+  arctg(0) == 0.0,
+  abs(-2.4) == 2.4,
+  raiz(9) == 3.0,
+  log(1) == 0.0,
+  log10(100) == 2.0
+]
+escreva resultados
+"#;
+
+    let io = run(source, &[]).unwrap();
+    assert_eq!(
+        io.output,
+        format!("[{}]\n", vec!["verdadeiro"; 19].join(", "))
+    );
+}
+
+#[test]
+fn official_random_function_overloads_return_documented_values() {
+    let source = r#"
+real = aleatório()
+inteiro = aleatório(10)
+intervalo = aleatório(1, 6)
+item = aleatório([2, 4, 6, 8, 10])
+escreva real >= 0.0 e real < 1.0
+escreva inteiro >= 1 e inteiro <= 10
+escreva intervalo >= 1 e intervalo <= 6
+escreva [2, 4, 6, 8, 10].contém(item)
+"#;
+
+    let io = run(source, &[]).unwrap();
+    assert_eq!(
+        io.output,
+        "verdadeiro\nverdadeiro\nverdadeiro\nverdadeiro\n"
+    );
+}
+
+#[test]
+fn official_text_conversion_and_collection_methods_work() {
+    let source = r#"
+verificacoes = [
+  "abc".qual_tipo == "Texto",
+  "12abc3".inteiro == 12,
+  "abc".inteiro == 0,
+  "12a.3".real == 12.0,
+  "abc".real == 0.0,
+  "abc"[2] == 'b',
+  "abc".tamanho == 3,
+  "abc".posição('b') == 2,
+  "abc".posição('d') == 0,
+  "abc".contém('a'),
+  não "abc".contém('d'),
+  "Abc".maiúsculo == "ABC",
+  "Abc".minúsculo == "abc",
+  "Abc".inverta == "cbA",
+  "cab".ordene == "abc",
+  "abc".junte("-") == "a-b-c",
+  "abc".junte("[", ", ", "]") == "[a, b, c]",
+  "Um texto".divida == ["Um", "texto"],
+  "Um texto".divida("t") == ["Um ", "ex", "o"],
+  "abc".lista == ['a', 'b', 'c'],
+  "abc".cabeça == 'a',
+  "abc".cauda == "bc",
+  "abc".último == 'c',
+  "abcde".pegue(3) == "abc",
+  "abcde".descarte(3) == "de",
+  "abcb".selecione(letra => letra <> 'c') == "abb",
+  "abc".injete(0)((x, y) => x + y) == 294,
+  "abc".injete("")((x, y) => x + "-" + y) == "-a-b-c",
+  "abcb".descarte_enquanto(letra => letra <> 'c') == "cb",
+  "abcb".pegue_enquanto(letra => letra < 'c') == "ab",
+  "abc".remova(2) == "ac",
+  "abc".insira(3, 'd') == "abdc",
+  [2, 4, 6].junte == "246",
+  [6, 2, 4].ordene == [2, 4, 6]
+]
+escreva verificacoes
+"#;
+
+    let io = run(source, &[]).unwrap();
+    assert_eq!(
+        io.output,
+        format!("[{}]\n", vec!["verdadeiro"; 34].join(", "))
+    );
 }
 
 #[test]
@@ -80,6 +231,20 @@ escreva "{fatorial(5)} {quadrados}"
 
     let io = run(source, &[]).unwrap();
     assert_eq!(io.output, "120 [1, 4, 9, 16]\n");
+}
+
+#[test]
+fn official_tail_recursion_example_runs_past_the_call_depth_limit() {
+    let source = r#"
+h(a, cont: Inteiro): Inteiro = escolha a
+  caso 0 => cont
+  caso n => h(a - 1, cont + 1)
+fim
+escreva h(1000, 0)
+"#;
+
+    let io = run(source, &[]).unwrap();
+    assert_eq!(io.output, "1000\n");
 }
 
 #[test]
@@ -180,6 +345,21 @@ escreva valores
 
     let io = run(source, &[]).unwrap();
     assert_eq!(io.output, "[0, 15, 0]\n");
+}
+
+#[test]
+fn immutable_list_updates_and_mutable_list_snapshots_are_independent() {
+    let source = r#"
+original = [2, 4, 6]
+atualizada = original.atualize(2, 5)
+var valores := original.mutável
+snapshot = valores.imutável
+valores[1] := 9
+escreva "{original} {atualizada} {valores} {snapshot}"
+"#;
+
+    let io = run(source, &[]).unwrap();
+    assert_eq!(io.output, "[2, 4, 6] [2, 5, 6] [9, 4, 6] [2, 4, 6]\n");
 }
 
 #[test]
@@ -317,12 +497,44 @@ var soma := 0
 para i de 1 até 5 passo 2 faça
   soma := soma + i
 fim
+decrescente = para i de 3 até 1 passo -1 gere i fim
 status = se soma == 9 então "certo" senãose soma < 9 então "baixo" senão "alto" fim
-escreva "{inteiro} {texto} {pares} {status} {aplicar(sucessor, 5)}"
+escreva "{inteiro} {texto} {pares} {decrescente} {status} {aplicar(sucessor, 5)}"
 "#;
 
     let io = run(source, &[]).unwrap();
-    assert_eq!(io.output, "7 ok [3, 4, 5] certo 6\n");
+    assert_eq!(io.output, "7 ok [3, 4, 5] [3, 2, 1] certo 6\n");
+}
+
+#[test]
+fn official_scalar_input_supports_every_documented_basic_type() {
+    let mut io = TestIo {
+        input: VecDeque::from([
+            "42".to_owned(),
+            "3.5".to_owned(),
+            "Olá".to_owned(),
+            "ç".to_owned(),
+            "verdadeiro".to_owned(),
+        ]),
+        ..TestIo::default()
+    };
+    execute(
+        "i = leia_inteiro\nr = leia_real\nt = leia_texto\nc = leia_caractere\nl = leia_logico\nescreva \"{i} {r} {t} {c} {l}\"",
+        &mut io,
+    )
+    .unwrap();
+
+    assert_eq!(io.output, "42 3.5 Olá ç verdadeiro\n");
+    assert_eq!(
+        io.input_types,
+        [
+            DataType::Integer,
+            DataType::Real,
+            DataType::Text,
+            DataType::Character,
+            DataType::Logical,
+        ]
+    );
 }
 
 #[test]
@@ -340,6 +552,23 @@ escreva texto
 
     let io = run(source, &[]).unwrap();
     assert_eq!(io.output, "Total: R$   149.70\n\nOlá,\nMUNDO\n\n");
+}
+
+#[test]
+fn documented_decimal_format_uses_the_potigol_rounding_result() {
+    let io = run(
+        r#"escreva 123.45 formato "%.1f"
+escreva 123.55 formato "%.1f"
+escreva 123.46 formato "%.1f"
+escreva (-123.45) formato "%.1f"
+escreva 2.5 formato "%.0f"
+escreva 3.5 formato "%.0f"
+escreva 9.95 formato "%.1f""#,
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(io.output, "123.4\n123.6\n123.5\n-123.4\n2\n4\n10.0\n");
 }
 
 #[test]
@@ -366,4 +595,93 @@ fn execution_options_stop_unbounded_programs() {
     )
     .unwrap_err();
     assert!(errors[0].message.contains("limite de passos"));
+}
+
+#[test]
+fn collection_byte_limit_stops_repeated_large_values() {
+    let mut io = TestIo::default();
+    let options = ExecutionOptions {
+        max_collection_bytes: 4096,
+        ..ExecutionOptions::default()
+    };
+
+    let errors =
+        execute_with_options("itens = Lista(2, \"x\" * 4096)", &mut io, options).unwrap_err();
+    assert!(errors[0].message.contains("limite de memória de coleções"));
+
+    let options = ExecutionOptions {
+        max_collection_bytes: 4096,
+        ..ExecutionOptions::default()
+    };
+    let errors = execute_with_options(
+        "itens = para i de 1 até 5 gere \"x\" * 1000 fim",
+        &mut TestIo::default(),
+        options,
+    )
+    .unwrap_err();
+    assert!(errors[0].message.contains("limite de memória de coleções"));
+
+    let options = ExecutionOptions {
+        max_collection_bytes: 4096,
+        ..ExecutionOptions::default()
+    };
+    let errors = execute_with_options(
+        "valores = [1, 2]\nordenados = valores.ordene(chave => \"x\" * 4096)",
+        &mut TestIo::default(),
+        options,
+    )
+    .unwrap_err();
+    assert!(errors[0].message.contains("limite de memória de coleções"));
+
+    let errors = execute_with_options(
+        "Matriz.imutável(2, 2, \"x\" * 4096)",
+        &mut TestIo::default(),
+        options,
+    )
+    .unwrap_err();
+    assert!(errors[0].message.contains("limite de memória de coleções"));
+
+    let errors = execute_with_options(
+        "valores = [1, 2]\nmap = valores.mapeie(x => \"x\" * 4096)",
+        &mut TestIo::default(),
+        options,
+    )
+    .unwrap_err();
+    assert!(errors[0].message.contains("limite de memória de coleções"));
+
+    let options = ExecutionOptions {
+        max_collection_bytes: 1024,
+        ..ExecutionOptions::default()
+    };
+    let errors = execute_with_options(
+        "itens = (\"x\" * 2048).divida(\",\")",
+        &mut TestIo::default(),
+        options,
+    )
+    .unwrap_err();
+    assert!(errors[0].message.contains("limite de memória de coleções"));
+}
+
+#[test]
+fn cancellation_interrupts_default_list_sorting() {
+    let mut io = TestIo {
+        stop_after_checks: Some(6),
+        ..TestIo::default()
+    };
+    let errors = execute("escreva Lista(1000, 0).ordene", &mut io).unwrap_err();
+
+    assert!(errors[0].message.contains("execução interrompida"));
+    assert!(io.output.is_empty());
+}
+
+#[test]
+fn cancellation_interrupts_text_sorting() {
+    let mut io = TestIo {
+        stop_after_checks: Some(5),
+        ..TestIo::default()
+    };
+    let errors = execute("escreva (\"z\" * 100000).ordene", &mut io).unwrap_err();
+
+    assert!(errors[0].message.contains("execução interrompida"));
+    assert!(io.output.is_empty());
 }

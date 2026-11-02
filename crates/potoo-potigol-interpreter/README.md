@@ -4,6 +4,8 @@ A reusable Rust interpreter for the Potigol programming language. The compatibil
 
 The interpreter supports typed expressions and inference, immutable and mutable values, parallel binding, functions and closures, recursion, lambdas and currying, lists and higher-order operations, tuples, comprehensions, pattern matching, conditionals, loops, text interpolation and formatting, user-defined types, abstract types and single inheritance. The IDE connects typed input/output, cancellation, source-located diagnostics, resource limits, and debugger events through the `RuntimeIo` interface.
 
+`ExecutionOptions` lets hosts bound steps, output, individual strings, collection elements and estimated cumulative collection bytes, waits, call depth, and parse depth for each execution. Collection bytes are an allocation estimate, not a strict live-heap ceiling.
+
 External JVM libraries such as Jerimum are not loaded by this crate. The interpreter is a fresh Rust implementation based on the published language documentation and examples; it does not include or invoke the upstream Scala/JVM interpreter.
 
 ## Development
