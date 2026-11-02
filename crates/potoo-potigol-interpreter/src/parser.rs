@@ -926,7 +926,7 @@ impl Parser {
             let case_start = self.previous().span.start;
             let pattern = self.parse_pattern()?;
             let guard = if self.consume_keyword("se").is_some() {
-                Some(self.parse_expression(0)?)
+                Some(self.parse_expression(1)?)
             } else {
                 None
             };

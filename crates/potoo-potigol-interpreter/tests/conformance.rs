@@ -234,6 +234,40 @@ escreva "{fatorial(5)} {quadrados}"
 }
 
 #[test]
+fn constructor_patterns_bind_fields_and_match_guards_fall_through() {
+    let source = r#"
+tipo Ponto
+  x, y: Inteiro
+fim
+p = Ponto(0, 3)
+resultado = escolha p
+  caso Ponto(0, 0) => "origem"
+  caso Ponto(x, y) se x < y => "acima: {x},{y}"
+  caso Ponto(x, y) => "ponto: {x},{y}"
+fim
+escreva resultado
+"#;
+
+    let io = run(source, &[]).unwrap();
+    assert_eq!(io.output, "acima: 0,3\n");
+}
+
+#[test]
+fn guarded_match_uses_the_next_case_when_guard_is_false() {
+    let source = r#"
+resultado = escolha -3
+  caso n se n > 0 => "positivo"
+  caso n se n < 0 => "negativo: {n}"
+  caso _ => "zero"
+fim
+escreva resultado
+"#;
+
+    let io = run(source, &[]).unwrap();
+    assert_eq!(io.output, "negativo: -3\n");
+}
+
+#[test]
 fn official_tail_recursion_example_runs_past_the_call_depth_limit() {
     let source = r#"
 h(a, cont: Inteiro): Inteiro = escolha a
