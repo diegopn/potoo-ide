@@ -825,12 +825,11 @@ pub(crate) fn build_output_panel(
     start_content.append(&gtk::Label::new(Some(tr(language, "Iniciar depuração"))));
     debugger_start.set_child(Some(&start_content));
     debugger_start.set_tooltip_text(Some(tr(language, "Iniciar depuração")));
-    debugger_start.add_css_class("potoo-debugger-action");
+    debugger_start.add_css_class("potoo-run-button");
     debugger_start.set_hexpand(true);
 
     let controls = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    controls.set_homogeneous(true);
-    controls.set_hexpand(true);
+    controls.set_halign(gtk::Align::Start);
     let debugger_continue = gtk::Button::new();
     debugger_continue.set_child(Some(&icon("play")));
     debugger_continue.set_tooltip_text(Some(tr(language, "Continuar")));
@@ -850,8 +849,10 @@ pub(crate) fn build_output_panel(
     for button in [&debugger_continue, &debugger_step, &debugger_stop] {
         button.add_css_class("potoo-debugger-action");
         button.add_css_class("potoo-debugger-icon-action");
-        button.set_hexpand(true);
     }
+    controls.append(&debugger_continue);
+    controls.append(&debugger_step);
+    controls.append(&debugger_stop);
     let sender_for_start = sender.clone();
     debugger_start.connect_clicked(move |_| {
         sender_for_start.input(MainWindowMsg::StartDebug);
