@@ -1,0 +1,12 @@
+[package]
+name = "potoo-mapler-interpreter"
+version = "0.1.0"
+description = "Independent Rust interpreter for the Portugol Mapler dialect"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/diegopn/potoo-ide"
+edition = "2024"
+rust-version = "1.93"
+
+[lib]
+name = "potoo_mapler_interpreter"
+path = "src/lib.rs"

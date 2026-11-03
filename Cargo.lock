@@ -599,12 +599,17 @@ version = "0.1.0"
 dependencies = [
  "gtk4",
  "potoo-gportugol-interpreter",
+ "potoo-mapler-interpreter",
  "potoo-portugol-interpreter",
  "potoo-potigol-interpreter",
  "potoo-visualg-interpreter",
  "relm4",
  "sourceview5",
 ]
+
+[[package]]
+name = "potoo-mapler-interpreter"
+version = "0.1.0"
 
 [[package]]
 name = "potoo-portugol-interpreter"
