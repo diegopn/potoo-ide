@@ -800,7 +800,7 @@ impl<'a> Interpreter<'a> {
                     self.read_into(arguments, expression)?;
                     return Ok(Value::Null);
                 }
-                if name == "escreva" || name == "escreva_linha" {
+                if name == "escreva" {
                     let mut output = String::new();
                     for argument in arguments {
                         let text = self.evaluate(argument)?.to_text();
@@ -821,23 +821,6 @@ impl<'a> Interpreter<'a> {
                             ));
                         }
                         output.push_str(&text);
-                    }
-                    if name == "escreva_linha" {
-                        if self
-                            .output_bytes
-                            .saturating_add(output.len())
-                            .saturating_add(1)
-                            > self.output_limit
-                        {
-                            return Err(runtime_error(
-                                expression,
-                                format!(
-                                    "limite de saída do programa excedido ({} bytes)",
-                                    self.output_limit
-                                ),
-                            ));
-                        }
-                        output.push('\n');
                     }
                     self.write_output(&output, expression)?;
                     return Ok(Value::Null);
@@ -3987,8 +3970,7 @@ fn call_types_builtin(
         )),
         "caracter_para_cadeia" => Value::String(character_argument(0)?.to_string()),
         "caracter_para_inteiro" => Value::Integer(
-            character_argument(0)?
-                .to_digit(10)
+            java_digit(character_argument(0)?, 10)
                 .map(i64::from)
                 .ok_or_else(|| runtime_error(expression, "o caracter não é um dígito"))?,
         ),

@@ -614,7 +614,7 @@ fn catalog(
                 "pare",
                 "retorne",
             ],
-            &["escreva", "escreva_linha", "leia", "limpa"],
+            &["escreva", "leia", "limpa"],
             PORTUGOL_SNIPPETS,
         ),
         Language::Visualg => (

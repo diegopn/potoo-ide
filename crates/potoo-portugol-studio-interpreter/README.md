@@ -53,7 +53,7 @@ Call `parse` instead of `execute` when a host needs to inspect the public syntax
 - Local variables, constants, vectors and matrices (including initializers and inferred vector sizes), and array parameters
 - Value and reference parameters, expressions, assignments, and arithmetic, bitwise, comparison, and logical operators
 - `se` / `senao`, `enquanto`, `faca` / `enquanto`, `para`, `escolha` / `caso`, `pare`, and `retorne`
-- `escreva`, `escreva_linha`, `leia`, and `limpa`
+- `escreva`, `leia`, and `limpa`
 - `Matematica`: `PI`, `potencia`, `raiz`, `arredondar`, `logaritmo`, trigonometric functions, `valor_absoluto`, `maior_numero`, and `menor_numero`
 - `Texto`: `numero_caracteres`, `caixa_alta`, `caixa_baixa`, `substituir`, `preencher_a_esquerda`, `obter_caracter`, `posicao_texto`, and `extrair_subtexto`
 - `Tipos`: common conversions between strings, integers, reals, logical values, and characters

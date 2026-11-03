@@ -413,12 +413,36 @@ impl<'a> Analyzer<'a> {
             } => {
                 let condition_type = self.expression(condition)?;
                 self.expect_scalar(condition_type, Type::Logical, condition)?;
+                let before = self.scopes.clone();
                 let then_returns = self.statement(then_branch)?;
-                let else_returns = if let Some(else_branch) = else_branch {
-                    self.statement(else_branch)?
+                let then_scopes = self.scopes.clone();
+                self.scopes = before.clone();
+                let (else_returns, else_scopes) = if let Some(else_branch) = else_branch {
+                    let returns = self.statement(else_branch)?;
+                    (returns, self.scopes.clone())
                 } else {
-                    false
+                    (false, before.clone())
                 };
+                let mut continuing_paths = Vec::with_capacity(2);
+                if !then_returns {
+                    continuing_paths.push(&then_scopes);
+                }
+                if !else_returns {
+                    continuing_paths.push(&else_scopes);
+                }
+                let mut merged_scopes = before;
+                for (scope_index, scope) in merged_scopes.iter_mut().enumerate() {
+                    for (name, variable) in scope {
+                        if !continuing_paths.is_empty() {
+                            variable.initialized = continuing_paths.iter().all(|path| {
+                                path.get(scope_index)
+                                    .and_then(|scope| scope.get(name))
+                                    .is_some_and(|branch_variable| branch_variable.initialized)
+                            });
+                        }
+                    }
+                }
+                self.scopes = merged_scopes;
                 Ok(else_branch.is_some() && then_returns && else_returns)
             }
             StatementKind::While { condition, body } => {
@@ -789,8 +813,8 @@ impl<'a> Analyzer<'a> {
         arguments: &[Expression],
         expression: &Expression,
     ) -> Result<ValueType, Vec<Diagnostic>> {
-        if name == "escreva" || name == "escreva_linha" {
-            if name == "escreva" && arguments.is_empty() {
+        if name == "escreva" {
+            if arguments.is_empty() {
                 return Err(vec![self.error_at(
                     DiagnosticKind::Type,
                     "'escreva' precisa receber ao menos um argumento",
@@ -1405,10 +1429,7 @@ fn callable_name(expression: &Expression) -> Option<String> {
 }
 
 fn is_reserved_function(name: &str) -> bool {
-    matches!(
-        name,
-        "leia" | "escreva" | "limpa" | "sorteia" | "escreva_linha"
-    )
+    matches!(name, "leia" | "escreva" | "limpa" | "sorteia")
 }
 
 fn is_constant_literal(expression: &Expression) -> bool {
