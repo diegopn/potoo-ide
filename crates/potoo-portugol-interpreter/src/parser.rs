@@ -31,20 +31,28 @@ impl Parser {
         let mut libraries = Vec::new();
         let mut functions = Vec::new();
         let mut statements = Vec::new();
-        self.skip_terminators();
+        let mut program_content_started = false;
         while !self.check(&TokenKind::RightBrace) && !self.is_at_end() {
-            if self.check_word("funcao") {
-                functions.push(self.function()?);
-            } else if self.check_word("inclua") {
+            if self.check_word("inclua") {
+                if program_content_started {
+                    return Err(
+                        self.error("as bibliotecas devem ser incluídas antes das declarações")
+                    );
+                }
                 libraries.push(self.include()?);
+            } else if self.check_word("funcao") {
+                program_content_started = true;
+                functions.push(self.function()?);
+            } else if self.check_word("const") || self.is_type() {
+                program_content_started = true;
+                let is_constant = self.matches_word("const");
+                statements.push(self.variable_declaration(is_constant)?);
             } else {
-                statements.push(self.statement()?);
+                return Err(self.error("esperada uma função ou declaração no programa"));
             }
-            self.consume_statement_end()?;
-            self.skip_terminators();
         }
         self.consume(TokenKind::RightBrace, "esperado '}' para fechar o programa")?;
-        self.skip_terminators();
+        self.skip_newlines();
         if !self.is_at_end() {
             return Err(self.error("há código depois do fim do programa"));
         }
@@ -75,12 +83,14 @@ impl Parser {
                 let name = self.consume_identifier("esperado o nome do parâmetro")?;
                 let mut dimensions = 0;
                 while self.matches(&TokenKind::LeftBracket) {
-                    self.skip_newlines();
                     self.consume(
                         TokenKind::RightBracket,
-                        "esperado ']' após a dimensão do parâmetro",
+                        "parâmetros vetoriais exigem dimensões vazias",
                     )?;
                     dimensions += 1;
+                    if dimensions > 2 {
+                        return Err(self.error("vetores podem ter no máximo duas dimensões"));
+                    }
                 }
                 parameters.push(Parameter {
                     ty,
@@ -96,7 +106,11 @@ impl Parser {
             }
         }
         self.consume(TokenKind::RightParen, "esperado ')' após os parâmetros")?;
-        let body = self.block_or_statement()?;
+        let body_token = self.peek().clone();
+        if !self.matches(&TokenKind::LeftBrace) {
+            return Err(self.error("o corpo da função deve ser delimitado por chaves"));
+        }
+        let body = self.block_statement(body_token)?;
         Ok(Function {
             name,
             return_type,
@@ -131,21 +145,6 @@ impl Parser {
 
     fn statement_inner(&mut self) -> Result<Statement, Vec<Diagnostic>> {
         let token = self.peek().clone();
-        if self.matches(&TokenKind::LeftBrace) {
-            let mut statements = Vec::new();
-            self.skip_terminators();
-            while !self.check(&TokenKind::RightBrace) && !self.is_at_end() {
-                statements.push(self.statement()?);
-                self.consume_statement_end()?;
-                self.skip_terminators();
-            }
-            self.consume(TokenKind::RightBrace, "esperado '}' para fechar o bloco")?;
-            return Ok(Statement {
-                kind: StatementKind::Block(statements),
-                line: token.line,
-                column: token.column,
-            });
-        }
         if self.check_word("se") {
             self.advance();
             return self.if_statement(token);
@@ -201,15 +200,28 @@ impl Parser {
                 column: token.column,
             });
         }
-        if self.matches_word("constante") || self.matches_word("const") {
+        if self.matches_word("const") {
             return self.variable_declaration(true);
         }
         if self.is_type() {
             return self.variable_declaration(false);
         }
-        let expression = self.expression(0)?;
+        let expression = self.assignment_or_expression()?;
         Ok(Statement {
             kind: StatementKind::Expression(expression),
+            line: token.line,
+            column: token.column,
+        })
+    }
+
+    fn block_statement(&mut self, token: Token) -> Result<Statement, Vec<Diagnostic>> {
+        let mut statements = Vec::new();
+        while !self.check(&TokenKind::RightBrace) && !self.is_at_end() {
+            statements.push(self.statement()?);
+        }
+        self.consume(TokenKind::RightBrace, "esperado '}' para fechar o bloco")?;
+        Ok(Statement {
+            kind: StatementKind::Block(statements),
             line: token.line,
             column: token.column,
         })
@@ -249,12 +261,22 @@ impl Parser {
         let initializer = if self.matches(&TokenKind::Semicolon) {
             None
         } else {
-            let initializer = if self.matches_word("constante") || self.matches_word("const") {
+            let initializer = if self.matches_word("const") {
                 self.variable_declaration(true)?
             } else if self.is_type() {
                 self.variable_declaration(false)?
             } else {
-                let expression = self.expression(0)?;
+                let expression = self.assignment_or_expression()?;
+                if !matches!(
+                    expression.kind,
+                    ExpressionKind::Variable(_)
+                        | ExpressionKind::Assign {
+                            operator: AssignmentOperator::Assign,
+                            ..
+                        }
+                ) {
+                    return Err(self.error("inicialização inválida no cabeçalho do 'para'"));
+                }
                 Statement {
                     kind: StatementKind::Expression(expression),
                     line: token.line,
@@ -266,22 +288,14 @@ impl Parser {
         };
 
         self.skip_newlines();
-        let condition = if self.check(&TokenKind::Semicolon) {
-            None
-        } else {
-            Some(self.expression(0)?)
-        };
+        let condition = Some(self.expression(0)?);
         self.consume(
             TokenKind::Semicolon,
             "esperado ';' após a condição do 'para'",
         )?;
 
         self.skip_newlines();
-        let increment = if self.check(&TokenKind::RightParen) {
-            None
-        } else {
-            Some(self.expression(0)?)
-        };
+        let increment = Some(self.assignment_or_expression()?);
         self.consume(
             TokenKind::RightParen,
             "esperado ')' após o cabeçalho do 'para'",
@@ -308,11 +322,13 @@ impl Parser {
         )?;
         let mut cases = Vec::new();
         let mut default = Vec::new();
+        let mut default_position = None;
         self.skip_terminators();
         while !self.check(&TokenKind::RightBrace) && !self.is_at_end() {
             self.consume_word("caso", "esperado 'caso' dentro de 'escolha'")?;
             self.skip_newlines();
             if self.matches_word("contrario") {
+                default_position = Some(cases.len());
                 self.consume_case_separator()?;
                 default = self.case_body()?;
             } else {
@@ -329,6 +345,7 @@ impl Parser {
                 expression,
                 cases,
                 default,
+                default_position,
             },
             line: token.line,
             column: token.column,
@@ -362,14 +379,7 @@ impl Parser {
     }
 
     fn consume_case_separator(&mut self) -> Result<(), Vec<Diagnostic>> {
-        if self.matches(&TokenKind::Colon) || self.check(&TokenKind::LeftBrace) {
-            Ok(())
-        } else if self.check(&TokenKind::Newline) {
-            self.skip_newlines();
-            Ok(())
-        } else {
-            Err(self.error("esperado ':' ou bloco após o rótulo do caso"))
-        }
+        self.consume(TokenKind::Colon, "esperado ':' após o rótulo do caso")
     }
 
     fn variable_declaration(&mut self, is_constant: bool) -> Result<Statement, Vec<Diagnostic>> {
@@ -380,6 +390,9 @@ impl Parser {
             let name = self.consume_identifier("esperado o nome da variável")?;
             let mut dimensions = Vec::new();
             while self.matches(&TokenKind::LeftBracket) {
+                if dimensions.len() == 2 {
+                    return Err(self.error("vetores podem ter no máximo duas dimensões"));
+                }
                 self.skip_newlines();
                 if self.matches(&TokenKind::RightBracket) {
                     dimensions.push(None);
@@ -392,7 +405,12 @@ impl Parser {
                 )?;
             }
             let initializer = if self.matches(&TokenKind::Equal) {
-                Some(self.expression(0)?)
+                Some(match dimensions.len() {
+                    0 => self.expression(0)?,
+                    1 => self.array_initializer()?,
+                    2 => self.matrix_initializer()?,
+                    _ => unreachable!("array dimensions checked above"),
+                })
             } else {
                 None
             };
@@ -414,22 +432,74 @@ impl Parser {
         })
     }
 
+    fn array_initializer(&mut self) -> Result<Expression, Vec<Diagnostic>> {
+        let token = self.peek().clone();
+        self.consume(
+            TokenKind::LeftBrace,
+            "esperado '{' para inicializar um vetor",
+        )?;
+        let mut values = Vec::new();
+        if !self.check(&TokenKind::RightBrace) {
+            loop {
+                values.push(self.assignment_or_expression()?);
+                if !self.matches(&TokenKind::Comma) {
+                    break;
+                }
+            }
+        }
+        self.consume(
+            TokenKind::RightBrace,
+            "esperado '}' após os valores do vetor",
+        )?;
+        Ok(Expression {
+            kind: ExpressionKind::ArrayLiteral(values),
+            line: token.line,
+            column: token.column,
+        })
+    }
+
+    fn matrix_initializer(&mut self) -> Result<Expression, Vec<Diagnostic>> {
+        let token = self.peek().clone();
+        self.consume(
+            TokenKind::LeftBrace,
+            "esperado '{' para inicializar uma matriz",
+        )?;
+        let mut rows = Vec::new();
+        loop {
+            rows.push(self.array_initializer()?);
+            if !self.matches(&TokenKind::Comma) {
+                break;
+            }
+        }
+        self.consume(
+            TokenKind::RightBrace,
+            "esperado '}' após as linhas da matriz",
+        )?;
+        Ok(Expression {
+            kind: ExpressionKind::ArrayLiteral(rows),
+            line: token.line,
+            column: token.column,
+        })
+    }
+
     fn condition(&mut self) -> Result<Expression, Vec<Diagnostic>> {
         self.skip_newlines();
-        if self.matches(&TokenKind::LeftParen) {
-            self.skip_newlines();
-            let expression = self.expression(0)?;
-            self.skip_newlines();
-            self.consume(TokenKind::RightParen, "esperado ')' após a condição")?;
-            Ok(expression)
-        } else {
-            self.expression(0)
-        }
+        self.consume(TokenKind::LeftParen, "esperado '(' antes da condição")?;
+        self.skip_newlines();
+        let expression = self.expression(0)?;
+        self.skip_newlines();
+        self.consume(TokenKind::RightParen, "esperado ')' após a condição")?;
+        Ok(expression)
     }
 
     fn block_or_statement(&mut self) -> Result<Statement, Vec<Diagnostic>> {
         self.skip_newlines();
-        self.statement()
+        let token = self.peek().clone();
+        if self.matches(&TokenKind::LeftBrace) {
+            self.block_statement(token)
+        } else {
+            self.statement()
+        }
     }
 
     fn expression(&mut self, minimum_precedence: u8) -> Result<Expression, Vec<Diagnostic>> {
@@ -442,17 +512,50 @@ impl Parser {
         result
     }
 
+    fn assignment_or_expression(&mut self) -> Result<Expression, Vec<Diagnostic>> {
+        let target = self.expression(0)?;
+        let operator = match &self.peek().kind {
+            TokenKind::Equal => Some(AssignmentOperator::Assign),
+            TokenKind::PlusEqual => Some(AssignmentOperator::Add),
+            TokenKind::MinusEqual => Some(AssignmentOperator::Subtract),
+            TokenKind::StarEqual => Some(AssignmentOperator::Multiply),
+            TokenKind::SlashEqual => Some(AssignmentOperator::Divide),
+            _ => None,
+        };
+        let Some(operator) = operator else {
+            return Ok(target);
+        };
+        self.advance();
+        let value = self.expression(0)?;
+        Ok(Expression {
+            line: target.line,
+            column: target.column,
+            kind: ExpressionKind::Assign {
+                target: Box::new(target),
+                operator,
+                value: Box::new(value),
+            },
+        })
+    }
+
     fn expression_inner(&mut self, minimum_precedence: u8) -> Result<Expression, Vec<Diagnostic>> {
         self.skip_newlines();
         let mut left = self.prefix()?;
+        let mut left_height = expression_height(&left);
         loop {
-            if self.check(&TokenKind::LeftParen) && 13 >= minimum_precedence {
+            if self.check(&TokenKind::LeftParen) && 25 >= minimum_precedence {
+                if !is_callable_name(&left) {
+                    return Err(self.error("a chamada deve usar um nome de função ou biblioteca"));
+                }
                 self.advance();
                 let mut arguments = Vec::new();
+                let mut argument_height = 0;
                 self.skip_newlines();
                 if !self.check(&TokenKind::RightParen) {
                     loop {
-                        arguments.push(self.expression(0)?);
+                        let argument = self.assignment_or_expression()?;
+                        argument_height = argument_height.max(expression_height(&argument));
+                        arguments.push(argument);
                         self.skip_newlines();
                         if !self.matches(&TokenKind::Comma) {
                             break;
@@ -461,6 +564,8 @@ impl Parser {
                     }
                 }
                 self.consume(TokenKind::RightParen, "esperado ')' após os argumentos")?;
+                left_height = left_height.max(argument_height) + 1;
+                self.check_expression_height(left_height)?;
                 left = Expression {
                     line: left.line,
                     column: left.column,
@@ -471,9 +576,14 @@ impl Parser {
                 };
                 continue;
             }
-            if self.check(&TokenKind::LeftBracket) && 13 >= minimum_precedence {
+            if self.check(&TokenKind::LeftBracket) && 25 >= minimum_precedence {
+                if !is_array_reference(&left) || array_reference_depth(&left) == 2 {
+                    return Err(self.error("referência de vetor inválida"));
+                }
                 self.advance();
                 let index = self.expression(0)?;
+                left_height = left_height.max(expression_height(&index)) + 1;
+                self.check_expression_height(left_height)?;
                 self.consume(TokenKind::RightBracket, "esperado ']' após o índice")?;
                 left = Expression {
                     line: left.line,
@@ -485,9 +595,14 @@ impl Parser {
                 };
                 continue;
             }
-            if self.check(&TokenKind::Dot) && 13 >= minimum_precedence {
+            if self.check(&TokenKind::Dot) && 25 >= minimum_precedence {
+                if !matches!(&left.kind, ExpressionKind::Variable(_)) {
+                    return Err(self.error("o escopo da biblioteca deve ser um identificador"));
+                }
                 self.advance();
                 let name = self.consume_identifier("esperado um nome após '.'")?;
+                left_height += 1;
+                self.check_expression_height(left_height)?;
                 left = Expression {
                     line: left.line,
                     column: left.column,
@@ -499,8 +614,11 @@ impl Parser {
                 continue;
             }
             if self.check(&TokenKind::PlusPlus) || self.check(&TokenKind::MinusMinus) {
-                if 13 < minimum_precedence {
+                if 25 < minimum_precedence {
                     break;
+                }
+                if !is_increment_target(&left) {
+                    return Err(self.error("incremento exige uma variável ou elemento de vetor"));
                 }
                 let operator = if self.matches(&TokenKind::PlusPlus) {
                     PostfixOperator::Increment
@@ -508,6 +626,8 @@ impl Parser {
                     self.advance();
                     PostfixOperator::Decrement
                 };
+                left_height += 1;
+                self.check_expression_height(left_height)?;
                 left = Expression {
                     line: left.line,
                     column: left.column,
@@ -526,36 +646,30 @@ impl Parser {
                 break;
             }
             self.advance();
-            let right = if precedence == 1 {
-                self.expression(precedence)?
-            } else {
-                self.expression(precedence + 1)?
-            };
+            let right = self.expression(precedence + 1)?;
+            left_height = left_height.max(expression_height(&right)) + 1;
+            self.check_expression_height(left_height)?;
             let line = left.line;
             let column = left.column;
-            if let Some(operator) = operator.assignment() {
-                left = Expression {
-                    kind: ExpressionKind::Assign {
-                        target: Box::new(left),
-                        operator,
-                        value: Box::new(right),
-                    },
-                    line,
-                    column,
-                };
-            } else {
-                left = Expression {
-                    kind: ExpressionKind::Binary {
-                        left: Box::new(left),
-                        operator: operator.binary().expect("non-assignment operator"),
-                        right: Box::new(right),
-                    },
-                    line,
-                    column,
-                };
-            }
+            left = Expression {
+                kind: ExpressionKind::Binary {
+                    left: Box::new(left),
+                    operator: operator.binary(),
+                    right: Box::new(right),
+                },
+                line,
+                column,
+            };
         }
         Ok(left)
+    }
+
+    fn check_expression_height(&self, height: usize) -> Result<(), Vec<Diagnostic>> {
+        if height > MAX_EXPRESSION_NESTING {
+            Err(self.error("expressão excede o limite de aninhamento"))
+        } else {
+            Ok(())
+        }
     }
 
     fn prefix(&mut self) -> Result<Expression, Vec<Diagnostic>> {
@@ -565,23 +679,23 @@ impl Parser {
             TokenKind::Real(value) => ExpressionKind::Real(value),
             TokenKind::String(value) => ExpressionKind::String(value),
             TokenKind::Character(value) => ExpressionKind::Character(value),
-            TokenKind::Identifier(value) if value.eq_ignore_ascii_case("verdadeiro") => {
-                ExpressionKind::Logical(true)
+            TokenKind::Identifier(value) if value == "verdadeiro" => ExpressionKind::Logical(true),
+            TokenKind::Identifier(value) if value == "falso" => ExpressionKind::Logical(false),
+            TokenKind::Identifier(value) if value == "nao" => ExpressionKind::Unary {
+                operator: UnaryOperator::Not,
+                operand: Box::new(self.expression(25)?),
+            },
+            TokenKind::Identifier(value) if !is_reserved_word(&value) => {
+                ExpressionKind::Variable(value)
             }
-            TokenKind::Identifier(value) if value.eq_ignore_ascii_case("falso") => {
-                ExpressionKind::Logical(false)
-            }
-            TokenKind::Identifier(value) if value.eq_ignore_ascii_case("nao") => {
-                ExpressionKind::Unary {
-                    operator: UnaryOperator::Not,
-                    operand: Box::new(self.expression(12)?),
-                }
-            }
-            TokenKind::Identifier(value) => ExpressionKind::Variable(value),
             TokenKind::PlusPlus => {
+                let target = self.expression(25)?;
+                if !is_increment_target(&target) {
+                    return Err(self.error("incremento exige uma variável ou elemento de vetor"));
+                }
                 return Ok(Expression {
                     kind: ExpressionKind::Prefix {
-                        target: Box::new(self.expression(12)?),
+                        target: Box::new(target),
                         operator: PostfixOperator::Increment,
                     },
                     line: token.line,
@@ -589,9 +703,13 @@ impl Parser {
                 });
             }
             TokenKind::MinusMinus => {
+                let target = self.expression(25)?;
+                if !is_increment_target(&target) {
+                    return Err(self.error("decremento exige uma variável ou elemento de vetor"));
+                }
                 return Ok(Expression {
                     kind: ExpressionKind::Prefix {
-                        target: Box::new(self.expression(12)?),
+                        target: Box::new(target),
                         operator: PostfixOperator::Decrement,
                     },
                     line: token.line,
@@ -600,19 +718,15 @@ impl Parser {
             }
             TokenKind::Plus => ExpressionKind::Unary {
                 operator: UnaryOperator::Positive,
-                operand: Box::new(self.expression(12)?),
+                operand: Box::new(self.expression(25)?),
             },
             TokenKind::Minus => ExpressionKind::Unary {
                 operator: UnaryOperator::Negate,
-                operand: Box::new(self.expression(12)?),
-            },
-            TokenKind::Not => ExpressionKind::Unary {
-                operator: UnaryOperator::Not,
-                operand: Box::new(self.expression(12)?),
+                operand: Box::new(self.expression(25)?),
             },
             TokenKind::BitNot => ExpressionKind::Unary {
                 operator: UnaryOperator::BitNot,
-                operand: Box::new(self.expression(12)?),
+                operand: Box::new(self.expression(25)?),
             },
             TokenKind::LeftParen => {
                 self.skip_newlines();
@@ -620,22 +734,6 @@ impl Parser {
                 self.skip_newlines();
                 self.consume(TokenKind::RightParen, "esperado ')' após a expressão")?;
                 return Ok(inner);
-            }
-            TokenKind::LeftBrace => {
-                let mut values = Vec::new();
-                self.skip_terminators();
-                if !self.check(&TokenKind::RightBrace) {
-                    loop {
-                        values.push(self.expression(0)?);
-                        self.skip_newlines();
-                        if !self.matches(&TokenKind::Comma) {
-                            break;
-                        }
-                        self.skip_terminators();
-                    }
-                }
-                self.consume(TokenKind::RightBrace, "esperado '}' após os valores")?;
-                ExpressionKind::ArrayLiteral(values)
             }
             _ => return Err(self.error_at(&token, "esperada uma expressão")),
         };
@@ -648,30 +746,24 @@ impl Parser {
 
     fn binary_operator(&self) -> Option<(u8, Operator)> {
         let result = match &self.peek().kind {
-            TokenKind::Equal => (1, Operator::Assign),
-            TokenKind::PlusEqual => (1, Operator::AddAssign),
-            TokenKind::MinusEqual => (1, Operator::SubtractAssign),
-            TokenKind::StarEqual => (1, Operator::MultiplyAssign),
-            TokenKind::SlashEqual => (1, Operator::DivideAssign),
-            TokenKind::Identifier(word) if word.eq_ignore_ascii_case("ou") => (2, Operator::Or),
-            TokenKind::Identifier(word) if word.eq_ignore_ascii_case("e") => (3, Operator::And),
-            TokenKind::Pipe => (4, Operator::BitOr),
-            TokenKind::Caret => (5, Operator::BitXor),
-            TokenKind::Ampersand => (6, Operator::BitAnd),
-            TokenKind::EqualEqual => (7, Operator::Equal),
-            TokenKind::BangEqual => (7, Operator::NotEqual),
-            TokenKind::Less => (8, Operator::Less),
-            TokenKind::LessEqual => (8, Operator::LessEqual),
-            TokenKind::Greater => (8, Operator::Greater),
-            TokenKind::GreaterEqual => (8, Operator::GreaterEqual),
-            TokenKind::ShiftLeft => (9, Operator::ShiftLeft),
+            TokenKind::Identifier(word) if word == "ou" => (12, Operator::Or),
+            TokenKind::Identifier(word) if word == "e" => (13, Operator::And),
+            TokenKind::Pipe => (7, Operator::BitOr),
+            TokenKind::Caret => (11, Operator::BitXor),
+            TokenKind::Ampersand => (8, Operator::BitAnd),
+            TokenKind::EqualEqual => (19, Operator::Equal),
+            TokenKind::BangEqual => (18, Operator::NotEqual),
+            TokenKind::Less => (16, Operator::Less),
+            TokenKind::LessEqual => (15, Operator::LessEqual),
+            TokenKind::Greater => (17, Operator::Greater),
+            TokenKind::GreaterEqual => (14, Operator::GreaterEqual),
+            TokenKind::ShiftLeft => (10, Operator::ShiftLeft),
             TokenKind::ShiftRight => (9, Operator::ShiftRight),
-            TokenKind::Plus => (10, Operator::Add),
-            TokenKind::Minus => (10, Operator::Subtract),
-            TokenKind::Star => (11, Operator::Multiply),
-            TokenKind::Slash => (11, Operator::Divide),
-            TokenKind::IntegerSlash => (11, Operator::IntegerDivide),
-            TokenKind::Percent => (11, Operator::Remainder),
+            TokenKind::Plus => (21, Operator::Add),
+            TokenKind::Minus => (20, Operator::Subtract),
+            TokenKind::Star => (24, Operator::Multiply),
+            TokenKind::Slash => (23, Operator::Divide),
+            TokenKind::Percent => (22, Operator::Remainder),
             _ => return None,
         };
         Some(result)
@@ -680,12 +772,13 @@ impl Parser {
     fn parse_type(&mut self) -> Result<Type, Vec<Diagnostic>> {
         let token = self.advance().clone();
         match token.kind {
-            TokenKind::Identifier(ref name) => match name.to_ascii_lowercase().as_str() {
+            TokenKind::Identifier(ref name) => match name.as_str() {
                 "inteiro" => Ok(Type::Integer),
                 "real" => Ok(Type::Real),
                 "logico" => Ok(Type::Logical),
                 "caracter" => Ok(Type::Character),
                 "cadeia" => Ok(Type::String),
+                "vazio" => Ok(Type::Void),
                 _ => Err(self.error_at(&token, "tipo de variável desconhecido")),
             },
             _ => Err(self.error_at(&token, "esperado o tipo da variável")),
@@ -699,7 +792,7 @@ impl Parser {
     fn consume_identifier(&mut self, message: &str) -> Result<String, Vec<Diagnostic>> {
         let token = self.advance().clone();
         match token.kind {
-            TokenKind::Identifier(name) => Ok(name),
+            TokenKind::Identifier(name) if !is_reserved_word(&name) => Ok(name),
             _ => Err(self.error_at(&token, message)),
         }
     }
@@ -721,27 +814,34 @@ impl Parser {
     }
 
     fn consume_statement_end(&mut self) -> Result<(), Vec<Diagnostic>> {
-        if self.check(&TokenKind::Newline) || self.check(&TokenKind::Semicolon) {
-            self.skip_terminators();
-            Ok(())
-        } else if self.check(&TokenKind::RightBrace) || self.is_at_end() {
-            Ok(())
-        } else {
-            Err(self.error("esperada uma nova linha ou ';' entre instruções"))
-        }
+        Ok(())
     }
 
     fn at_statement_end(&self) -> bool {
-        self.check(&TokenKind::Newline)
-            || self.check(&TokenKind::Semicolon)
-            || self.check(&TokenKind::RightBrace)
-            || self.is_at_end()
+        !self.is_expression_start()
+    }
+
+    fn is_expression_start(&self) -> bool {
+        match &self.peek().kind {
+            TokenKind::Integer(_)
+            | TokenKind::Real(_)
+            | TokenKind::String(_)
+            | TokenKind::Character(_)
+            | TokenKind::LeftParen
+            | TokenKind::Plus
+            | TokenKind::Minus
+            | TokenKind::PlusPlus
+            | TokenKind::MinusMinus
+            | TokenKind::BitNot => true,
+            TokenKind::Identifier(word) => {
+                !is_reserved_word(word) || matches!(word.as_str(), "verdadeiro" | "falso" | "nao")
+            }
+            _ => false,
+        }
     }
 
     fn skip_terminators(&mut self) {
-        while self.check(&TokenKind::Newline) || self.check(&TokenKind::Semicolon) {
-            self.advance();
-        }
+        self.skip_newlines();
     }
 
     fn skip_newlines(&mut self) {
@@ -751,7 +851,7 @@ impl Parser {
     }
 
     fn check_word(&self, word: &str) -> bool {
-        matches!(&self.peek().kind, TokenKind::Identifier(value) if value.eq_ignore_ascii_case(word))
+        matches!(&self.peek().kind, TokenKind::Identifier(value) if value == word)
     }
 
     fn matches_word(&mut self, word: &str) -> bool {
@@ -812,16 +912,10 @@ impl Parser {
 
 #[derive(Clone, Copy)]
 enum Operator {
-    Assign,
-    AddAssign,
-    SubtractAssign,
-    MultiplyAssign,
-    DivideAssign,
     Add,
     Subtract,
     Multiply,
     Divide,
-    IntegerDivide,
     Remainder,
     Equal,
     NotEqual,
@@ -839,46 +933,145 @@ enum Operator {
 }
 
 impl Operator {
-    fn assignment(self) -> Option<AssignmentOperator> {
+    fn binary(self) -> BinaryOperator {
         match self {
-            Self::Assign => Some(AssignmentOperator::Assign),
-            Self::AddAssign => Some(AssignmentOperator::Add),
-            Self::SubtractAssign => Some(AssignmentOperator::Subtract),
-            Self::MultiplyAssign => Some(AssignmentOperator::Multiply),
-            Self::DivideAssign => Some(AssignmentOperator::Divide),
-            _ => None,
-        }
-    }
-
-    fn binary(self) -> Option<BinaryOperator> {
-        match self {
-            Self::Add => Some(BinaryOperator::Add),
-            Self::Subtract => Some(BinaryOperator::Subtract),
-            Self::Multiply => Some(BinaryOperator::Multiply),
-            Self::Divide => Some(BinaryOperator::Divide),
-            Self::IntegerDivide => Some(BinaryOperator::IntegerDivide),
-            Self::Remainder => Some(BinaryOperator::Remainder),
-            Self::Equal => Some(BinaryOperator::Equal),
-            Self::NotEqual => Some(BinaryOperator::NotEqual),
-            Self::Less => Some(BinaryOperator::Less),
-            Self::LessEqual => Some(BinaryOperator::LessEqual),
-            Self::Greater => Some(BinaryOperator::Greater),
-            Self::GreaterEqual => Some(BinaryOperator::GreaterEqual),
-            Self::BitAnd => Some(BinaryOperator::BitAnd),
-            Self::BitOr => Some(BinaryOperator::BitOr),
-            Self::BitXor => Some(BinaryOperator::BitXor),
-            Self::ShiftLeft => Some(BinaryOperator::ShiftLeft),
-            Self::ShiftRight => Some(BinaryOperator::ShiftRight),
-            Self::And => Some(BinaryOperator::And),
-            Self::Or => Some(BinaryOperator::Or),
-            _ => None,
+            Self::Add => BinaryOperator::Add,
+            Self::Subtract => BinaryOperator::Subtract,
+            Self::Multiply => BinaryOperator::Multiply,
+            Self::Divide => BinaryOperator::Divide,
+            Self::Remainder => BinaryOperator::Remainder,
+            Self::Equal => BinaryOperator::Equal,
+            Self::NotEqual => BinaryOperator::NotEqual,
+            Self::Less => BinaryOperator::Less,
+            Self::LessEqual => BinaryOperator::LessEqual,
+            Self::Greater => BinaryOperator::Greater,
+            Self::GreaterEqual => BinaryOperator::GreaterEqual,
+            Self::BitAnd => BinaryOperator::BitAnd,
+            Self::BitOr => BinaryOperator::BitOr,
+            Self::BitXor => BinaryOperator::BitXor,
+            Self::ShiftLeft => BinaryOperator::ShiftLeft,
+            Self::ShiftRight => BinaryOperator::ShiftRight,
+            Self::And => BinaryOperator::And,
+            Self::Or => BinaryOperator::Or,
         }
     }
 }
 
 fn is_type_name(name: &str) -> bool {
     matches!(
-        name.to_ascii_lowercase().as_str(),
-        "inteiro" | "real" | "logico" | "caracter" | "cadeia"
+        name,
+        "inteiro" | "real" | "logico" | "caracter" | "cadeia" | "vazio"
     )
+}
+
+fn is_reserved_word(name: &str) -> bool {
+    matches!(
+        name,
+        "real"
+            | "inteiro"
+            | "vazio"
+            | "logico"
+            | "cadeia"
+            | "caracter"
+            | "faca"
+            | "enquanto"
+            | "para"
+            | "se"
+            | "senao"
+            | "const"
+            | "funcao"
+            | "programa"
+            | "escolha"
+            | "caso"
+            | "contrario"
+            | "pare"
+            | "retorne"
+            | "inclua"
+            | "biblioteca"
+            | "nao"
+            | "e"
+            | "ou"
+            | "verdadeiro"
+            | "falso"
+    )
+}
+
+fn is_callable_name(expression: &Expression) -> bool {
+    match &expression.kind {
+        ExpressionKind::Variable(_) => true,
+        ExpressionKind::Member { target, .. } => {
+            matches!(&target.kind, ExpressionKind::Variable(_))
+        }
+        _ => false,
+    }
+}
+
+fn is_array_reference(expression: &Expression) -> bool {
+    match &expression.kind {
+        ExpressionKind::Variable(_) => true,
+        ExpressionKind::Member { target, .. } => {
+            matches!(&target.kind, ExpressionKind::Variable(_))
+        }
+        ExpressionKind::Index { target, .. } => is_array_reference(target),
+        _ => false,
+    }
+}
+
+fn array_reference_depth(expression: &Expression) -> usize {
+    match &expression.kind {
+        ExpressionKind::Index { target, .. } => array_reference_depth(target) + 1,
+        _ => 0,
+    }
+}
+
+fn is_increment_target(expression: &Expression) -> bool {
+    match &expression.kind {
+        ExpressionKind::Variable(_) => true,
+        ExpressionKind::Index { target, .. } => is_increment_target(target),
+        _ => false,
+    }
+}
+
+fn expression_height(expression: &Expression) -> usize {
+    let child_height = match &expression.kind {
+        ExpressionKind::ArrayLiteral(values) => {
+            values.iter().map(expression_height).max().unwrap_or(0)
+        }
+        ExpressionKind::Unary { operand, .. } => expression_height(operand),
+        ExpressionKind::Binary { left, right, .. }
+        | ExpressionKind::Assign {
+            target: left,
+            value: right,
+            ..
+        }
+        | ExpressionKind::Index {
+            target: left,
+            index: right,
+        } => expression_height(left).max(expression_height(right)),
+        ExpressionKind::Call { callee, arguments } => arguments
+            .iter()
+            .map(expression_height)
+            .fold(expression_height(callee), usize::max),
+        ExpressionKind::Member { target, .. }
+        | ExpressionKind::Postfix { target, .. }
+        | ExpressionKind::Prefix { target, .. } => expression_height(target),
+        ExpressionKind::Integer(_)
+        | ExpressionKind::Real(_)
+        | ExpressionKind::Logical(_)
+        | ExpressionKind::Character(_)
+        | ExpressionKind::String(_)
+        | ExpressionKind::Variable(_) => 0,
+    };
+    child_height
+        + usize::from(matches!(
+            &expression.kind,
+            ExpressionKind::Unary { .. }
+                | ExpressionKind::Binary { .. }
+                | ExpressionKind::Assign { .. }
+                | ExpressionKind::Call { .. }
+                | ExpressionKind::Index { .. }
+                | ExpressionKind::Member { .. }
+                | ExpressionKind::Postfix { .. }
+                | ExpressionKind::Prefix { .. }
+        ))
 }

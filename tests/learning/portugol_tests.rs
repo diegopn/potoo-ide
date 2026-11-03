@@ -118,7 +118,7 @@ fn reports_no_context_for_an_unclassified_line_and_source_errors_for_incomplete_
 
 #[test]
 fn recovers_independent_syntax_errors_on_separate_lines() {
-    let source = "programa {\n funcao inicio() {\n  primeiro depois\n  segundo depois\n }\n}";
+    let source = "programa {\n funcao inicio() {\n  inteiro =\n  real =\n }\n}";
     let diagnostics =
         analyze_source_line(source, 4).expect_err("the selected line contains a syntax error");
     assert_eq!(

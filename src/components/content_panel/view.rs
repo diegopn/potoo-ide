@@ -11,6 +11,7 @@ pub(crate) struct SyntaxTags {
     keyword: gtk::TextTag,
     string: gtk::TextTag,
     number: gtk::TextTag,
+    comment: gtk::TextTag,
     current_line: gtk::TextTag,
     matching_delimiter: gtk::TextTag,
 }
@@ -1073,6 +1074,7 @@ pub(crate) fn make_syntax_tags(buffer: &gtk::TextBuffer) -> SyntaxTags {
     let keyword = gtk::TextTag::builder().name("keyword").weight(700).build();
     let string = gtk::TextTag::builder().name("string").build();
     let number = gtk::TextTag::builder().name("number").build();
+    let comment = gtk::TextTag::builder().name("comment").build();
     let current_line = gtk::TextTag::builder().name("current-line").build();
     let matching_delimiter = gtk::TextTag::builder()
         .name("matching-delimiter")
@@ -1081,12 +1083,14 @@ pub(crate) fn make_syntax_tags(buffer: &gtk::TextBuffer) -> SyntaxTags {
     table.add(&keyword);
     table.add(&string);
     table.add(&number);
+    table.add(&comment);
     table.add(&current_line);
     table.add(&matching_delimiter);
     SyntaxTags {
         keyword,
         string,
         number,
+        comment,
         current_line,
         matching_delimiter,
     }
@@ -1099,6 +1103,8 @@ pub(crate) fn set_syntax_palette(tags: &SyntaxTags, dark: bool) {
         .set_property("foreground", if dark { "#dfb47d" } else { "#825022" });
     tags.number
         .set_property("foreground", if dark { "#b9a9e8" } else { "#55468e" });
+    tags.comment
+        .set_property("foreground", if dark { "#9ca8a1" } else { "#718078" });
     tags.current_line.set_property(
         "paragraph-background",
         if dark { "#282f2b" } else { "#f2f7f3" },
@@ -1118,6 +1124,35 @@ pub(crate) fn highlight_buffer(buffer: &gtk::TextBuffer, language: Language, tag
     let mut index = 0;
 
     while index < chars.len() {
+        if language == Language::GPortugol && chars[index] == '/' {
+            let comment_end = match chars.get(index + 1) {
+                Some('/') => {
+                    let mut end = index + 2;
+                    while end < chars.len() && chars[end] != '\n' {
+                        end += 1;
+                    }
+                    Some(end)
+                }
+                Some('*') => {
+                    let mut end = index + 2;
+                    while end + 1 < chars.len() && !(chars[end] == '*' && chars[end + 1] == '/') {
+                        end += 1;
+                    }
+                    Some(if end + 1 < chars.len() {
+                        end + 2
+                    } else {
+                        chars.len()
+                    })
+                }
+                _ => None,
+            };
+            if let Some(end) = comment_end {
+                apply_tag_range(buffer, &tags.comment, index, end);
+                index = end;
+                continue;
+            }
+        }
+
         if chars[index] == '"' {
             let first = index;
             index += 1;
@@ -1220,7 +1255,10 @@ fn matching_delimiter_at_cursor(
             continue;
         }
 
-        if language == Language::Portugol && current == '/' && next == Some('*') {
+        if matches!(language, Language::Portugol | Language::GPortugol)
+            && current == '/'
+            && next == Some('*')
+        {
             index += 2;
             let mut closed = false;
             while index + 1 < chars.len() {
@@ -1366,5 +1404,44 @@ mod line_number_ui_tests {
             "the gutter and editor must use identical font metrics to keep each row aligned"
         );
         window.close();
+    }
+}
+
+#[cfg(test)]
+mod gportugol_syntax_tests {
+    use super::{highlight_buffer, make_syntax_tags};
+    use crate::components::content_panel::Language;
+    use gtk::prelude::*;
+
+    fn has_tag_at(
+        buffer: &gtk::TextBuffer,
+        tag: &gtk::TextTag,
+        source: &str,
+        needle: &str,
+    ) -> bool {
+        let byte_offset = source.find(needle).expect("needle should exist in source");
+        let char_offset = source[..byte_offset].chars().count();
+        buffer.iter_at_offset(char_offset as i32).has_tag(tag)
+    }
+
+    #[test]
+    #[ignore = "requires a GTK display; run with xvfb-run"]
+    fn gportugol_highlights_keywords_and_comments() {
+        gtk::init().expect("GTK should initialize under Xvfb");
+        let source = "algoritmo exemplo;\ninício\n  imprima(\"oi\"); /* fim */ // comentário\n";
+        let buffer = gtk::TextBuffer::new(None);
+        buffer.set_text(source);
+        let tags = make_syntax_tags(&buffer);
+        highlight_buffer(&buffer, Language::GPortugol, &tags);
+
+        let comments = buffer
+            .tag_table()
+            .lookup("comment")
+            .expect("the comment syntax tag should be registered");
+        assert!(has_tag_at(&buffer, &tags.keyword, source, "início"));
+        assert!(has_tag_at(&buffer, &tags.keyword, source, "imprima"));
+        assert!(has_tag_at(&buffer, &comments, source, "/*"));
+        assert!(has_tag_at(&buffer, &comments, source, "//"));
+        assert!(!has_tag_at(&buffer, &tags.keyword, source, "fim"));
     }
 }

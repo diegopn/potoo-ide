@@ -1,5 +1,8 @@
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
+use std::rc::Rc;
+use std::time::Duration;
 
 use gtk::prelude::*;
 use potoo_portugol_interpreter::HostValue;
@@ -36,20 +39,26 @@ impl AudioHost {
         arguments: &[HostValue],
     ) -> Result<HostValue, String> {
         match function {
-            "carregar_som" => {
+            "carregar_som" | "carregar_musica" => {
                 let relative = string_argument(arguments, 0)?;
                 let path = resolve_audio_path(root, &relative)?;
-                if let Some(handle) = self.handles_by_path.get(&path) {
-                    return Ok(HostValue::Integer(*handle));
+                let cache_by_path = function == "carregar_som";
+                if cache_by_path {
+                    if let Some(handle) = self.handles_by_path.get(&path) {
+                        return Ok(HostValue::Integer(*handle));
+                    }
                 }
+                let media = gtk::MediaFile::for_filename(&path);
+                media.set_volume(1.0);
+                wait_until_prepared(&media)?;
                 let handle = self.next_handle;
                 self.next_handle = self
                     .next_handle
                     .checked_add(1)
                     .ok_or_else(|| "não há mais identificadores de som disponíveis".to_owned())?;
-                let media = gtk::MediaFile::for_filename(&path);
-                media.set_volume(1.0);
-                self.handles_by_path.insert(path.clone(), handle);
+                if cache_by_path {
+                    self.handles_by_path.insert(path.clone(), handle);
+                }
                 self.sounds.insert(
                     handle,
                     Sound {
@@ -65,7 +74,9 @@ impl AudioHost {
                 if let Some(sound) = self.sounds.remove(&handle) {
                     sound.media.pause();
                     sound.media.seek(0);
-                    self.handles_by_path.remove(&sound.path);
+                    if self.handles_by_path.get(&sound.path) == Some(&handle) {
+                        self.handles_by_path.remove(&sound.path);
+                    }
                 }
                 Ok(HostValue::Null)
             }
@@ -76,6 +87,10 @@ impl AudioHost {
                     .sounds
                     .get(&handle)
                     .ok_or_else(|| format!("endereço de som inválido ({handle})"))?;
+                if sound.media.is_playing() {
+                    sound.media.pause();
+                    sound.media.seek(0);
+                }
                 sound.media.set_loop(repeat);
                 sound.media.play();
                 Ok(HostValue::Integer(handle))
@@ -86,6 +101,26 @@ impl AudioHost {
                 }
                 Ok(HostValue::Null)
             }
+            "continuar_som" => {
+                if let Some(sound) = self.sounds.get(&integer_argument(arguments, 0)?) {
+                    sound.media.play();
+                }
+                Ok(HostValue::Null)
+            }
+            "som_tocando" => Ok(HostValue::Logical(
+                self.sounds
+                    .get(&integer_argument(arguments, 0)?)
+                    .is_some_and(|sound| sound.media.is_playing()),
+            )),
+            "musica_pausada" => Ok(HostValue::Logical(
+                self.sounds
+                    .get(&integer_argument(arguments, 0)?)
+                    .is_some_and(|sound| {
+                        let position = sound.media.timestamp();
+                        let duration = sound.media.duration();
+                        !sound.media.is_playing() && position > 0 && position < duration
+                    }),
+            )),
             "interromper_som" => {
                 if let Some(sound) = self.sounds.get(&integer_argument(arguments, 0)?) {
                     sound.media.pause();
@@ -159,6 +194,55 @@ impl AudioHost {
         }
         self.sounds.clear();
         self.handles_by_path.clear();
+        self.next_handle = 1;
+        self.master_volume = 100;
+    }
+}
+
+fn wait_until_prepared(media: &gtk::MediaFile) -> Result<(), String> {
+    if let Some(error) = media.error() {
+        return Err(format!("não foi possível carregar o áudio: {error}"));
+    }
+    if media.is_prepared() {
+        return Ok(());
+    }
+
+    let main_loop = gtk::glib::MainLoop::new(None, false);
+    let loop_on_change = main_loop.clone();
+    let handler = media.connect_prepared_notify(move |media| {
+        if media.is_prepared() || media.error().is_some() {
+            loop_on_change.quit();
+        }
+    });
+    let loop_on_error = main_loop.clone();
+    let error_handler = media.connect_error_notify(move |media| {
+        if media.error().is_some() {
+            loop_on_error.quit();
+        }
+    });
+    let timed_out = Rc::new(Cell::new(false));
+    let timeout_state = timed_out.clone();
+    let loop_on_timeout = main_loop.clone();
+    // shortcut: 30s preparation timeout, extend only if supported codecs need longer.
+    let timeout = gtk::glib::timeout_add_local_once(Duration::from_secs(30), move || {
+        timeout_state.set(true);
+        loop_on_timeout.quit();
+    });
+    if !media.is_prepared() && media.error().is_none() {
+        main_loop.run();
+    }
+    media.disconnect(handler);
+    media.disconnect(error_handler);
+    if !timed_out.get() {
+        timeout.remove();
+    }
+
+    if let Some(error) = media.error() {
+        Err(format!("não foi possível carregar o áudio: {error}"))
+    } else if media.is_prepared() {
+        Ok(())
+    } else {
+        Err("tempo limite ao preparar o áudio".to_owned())
     }
 }
 
@@ -268,5 +352,17 @@ mod tests {
                 .unwrap(),
             HostValue::Integer(-1)
         );
+    }
+
+    #[test]
+    fn finishing_execution_resets_audio_library_state() {
+        let mut host = AudioHost::default();
+        host.master_volume = 20;
+        host.next_handle = 8;
+        host.stop_all();
+        assert_eq!(host.master_volume, 100);
+        assert_eq!(host.next_handle, 1);
+        assert!(host.sounds.is_empty());
+        assert!(host.handles_by_path.is_empty());
     }
 }

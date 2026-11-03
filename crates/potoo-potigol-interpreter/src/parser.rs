@@ -72,7 +72,7 @@ impl Parser {
     fn parse_block_until_inner(
         &mut self,
         endings: &[&str],
-        allow_inline_statements: bool,
+        _allow_inline_statements: bool,
     ) -> Result<Vec<Stmt>, Vec<Diagnostic>> {
         let mut statements = Vec::new();
         loop {
@@ -87,23 +87,7 @@ impl Parser {
                     self.error_here("não foi possível avançar ao analisar o bloco"),
                 ]);
             }
-            let statement_end = statement.span.end;
             statements.push(statement);
-            if !self.is_eof()
-                && !self.at_symbol(';')
-                && !self.at_newline()
-                && !endings.iter().any(|word| self.at_keyword(word))
-            {
-                if allow_inline_statements
-                    && self.current().span.start.line == statement_end.line
-                    && self.current().span.start.column > statement_end.column
-                {
-                    continue;
-                }
-                return Err(vec![
-                    self.error_here("esperava uma quebra de linha entre instruções"),
-                ]);
-            }
         }
     }
 
@@ -113,6 +97,22 @@ impl Parser {
         }
         if self.at_keyword("tipo") {
             return self.parse_type_declaration();
+        }
+        if self.at_keyword("val") {
+            return self.parse_immutable_binding();
+        }
+        if self.at_keyword("use") {
+            let start = self.advance().span.start;
+            let token = self.advance().clone();
+            let TokenKind::String(path) = token.kind else {
+                return Err(vec![
+                    self.error_at("esperava o caminho entre aspas", token.span),
+                ]);
+            };
+            return Ok(self.stmt(start, token.span.end, StmtKind::Import(path)));
+        }
+        if self.at_keyword("faça") || self.at_keyword("faca") {
+            return self.parse_standalone_block();
         }
         if self.consume_keyword("def").is_some() {
             return self.parse_function_declaration();
@@ -172,12 +172,8 @@ impl Parser {
 
     fn parse_mutable_binding(&mut self) -> Result<Stmt, Vec<Diagnostic>> {
         let start = self.advance().span.start;
-        let pattern = self.parse_pattern()?;
-        let annotation = if self.consume_symbol(':').is_some() {
-            Some(self.parse_type_expression()?)
-        } else {
-            None
-        };
+        let mut pattern = self.parse_pattern()?;
+        let annotation = self.parse_binding_annotation(&mut pattern)?;
         if self.consume_operator(":=").is_none() && self.consume_operator("=").is_none() {
             return Err(vec![
                 self.error_here("esperava ':=' ou '=' após a variável"),
@@ -198,13 +194,11 @@ impl Parser {
     }
 
     fn parse_immutable_binding(&mut self) -> Result<Stmt, Vec<Diagnostic>> {
-        let start = self.current().span.start;
-        let pattern = self.parse_pattern()?;
-        let annotation = if self.consume_symbol(':').is_some() {
-            Some(self.parse_type_expression()?)
-        } else {
-            None
-        };
+        let start = self
+            .consume_keyword("val")
+            .map_or(self.current().span.start, |token| token.span.start);
+        let mut pattern = self.parse_pattern()?;
+        let annotation = self.parse_binding_annotation(&mut pattern)?;
         if self.consume_operator("=").is_none() {
             return Err(vec![self.error_here("esperava '=' na declaração de valor")]);
         }
@@ -222,11 +216,44 @@ impl Parser {
         ))
     }
 
+    fn parse_binding_annotation(
+        &mut self,
+        pattern: &mut Pattern,
+    ) -> Result<Option<TypeExpr>, Vec<Diagnostic>> {
+        let Some(annotation) = pattern.annotation.take() else {
+            return if self.consume_symbol(':').is_some() {
+                Ok(Some(self.parse_type_expression()?))
+            } else {
+                Ok(None)
+            };
+        };
+        if self.consume_operator("=>").is_none() {
+            return Ok(Some(annotation));
+        }
+        let result = self.parse_type_expression()?;
+        let parameters = match annotation.kind {
+            TypeExprKind::Tuple(parameters) => parameters,
+            kind => vec![TypeExpr {
+                id: annotation.id,
+                span: annotation.span,
+                kind,
+            }],
+        };
+        Ok(Some(TypeExpr {
+            id: self.id(),
+            span: SourceSpan {
+                start: annotation.span.start,
+                end: result.span.end,
+            },
+            kind: TypeExprKind::Function(parameters, Box::new(result)),
+        }))
+    }
+
     fn parse_function_declaration(&mut self) -> Result<Stmt, Vec<Diagnostic>> {
         let declaration = self.parse_function_signature()?;
         let start = declaration.span.start;
         let body = if self.consume_operator("=").is_some() {
-            FunctionBody::Expression(self.parse_expression(0)?)
+            FunctionBody::Expression(Box::new(self.parse_expression(0)?))
         } else {
             self.skip_newlines();
             let body_start = self.current().span.start;
@@ -245,6 +272,7 @@ impl Parser {
         let end = match &body {
             FunctionBody::Expression(expression) => expression.span.end,
             FunctionBody::Block(block) => block.span.end,
+            FunctionBody::Abstract => declaration.span.end,
         };
         let function = FunctionDecl {
             body,
@@ -259,6 +287,7 @@ impl Parser {
         let name = self.identifier_value(&name_token)?;
         self.expect_symbol('(')?;
         let parameters = self.parse_parameters(')')?;
+        self.skip_newlines();
         self.expect_symbol(')')?;
         self.skip_newlines();
         let return_type = if self.consume_symbol(':').is_some() {
@@ -273,11 +302,11 @@ impl Parser {
             name,
             parameters,
             return_type,
-            body: FunctionBody::Expression(Expr {
+            body: FunctionBody::Expression(Box::new(Expr {
                 id: self.id(),
                 span: SourceSpan { start: end, end },
                 kind: ExprKind::Tuple(Vec::new()),
-            }),
+            })),
             id: self.id(),
             span: SourceSpan {
                 start: name_token.span.start,
@@ -291,12 +320,22 @@ impl Parser {
         let abstract_type = self.consume_keyword("abstrato").is_some();
         let name_token = self.expect_identifier()?;
         let name = self.identifier_value(&name_token)?;
-        let parent = if self.consume_symbol(':').is_some() {
-            let parent = self.expect_identifier()?;
-            Some(self.identifier_value(&parent)?)
-        } else {
-            None
-        };
+        if self.consume_operator("=").is_some() {
+            let target = self.parse_type_expression()?;
+            let end = target.span.end;
+            return Ok(self.stmt(start, end, StmtKind::TypeAlias { name, target }));
+        }
+        let mut parents = Vec::new();
+        if self.consume_symbol(':').is_some() {
+            loop {
+                let parent = self.expect_identifier()?;
+                parents.push(self.identifier_value(&parent)?);
+                if self.consume_symbol(',').is_none() {
+                    break;
+                }
+                self.skip_newlines();
+            }
+        }
         self.skip_separators();
         let mut fields = Vec::new();
         let mut methods = Vec::new();
@@ -308,8 +347,14 @@ impl Parser {
             let before = self.index;
             if self.consume_keyword("def").is_some() || self.looks_like_function_declaration() {
                 let mut method = self.parse_function_signature()?;
+                self.skip_newlines();
                 let body = if self.consume_operator("=").is_some() {
-                    FunctionBody::Expression(self.parse_expression(0)?)
+                    FunctionBody::Expression(Box::new(self.parse_expression(0)?))
+                // shortcut: indentation separates abstract signatures from method bodies, upgrade when grammar context removes the column convention.
+                } else if abstract_type
+                    && self.current().span.start.column <= method.span.start.column
+                {
+                    FunctionBody::Abstract
                 } else {
                     self.skip_newlines();
                     let body_start = self.current().span.start;
@@ -328,6 +373,7 @@ impl Parser {
                 method.span.end = match &body {
                     FunctionBody::Expression(expression) => expression.span.end,
                     FunctionBody::Block(block) => block.span.end,
+                    FunctionBody::Abstract => method.span.end,
                 };
                 method.body = body;
                 methods.push(method);
@@ -337,11 +383,6 @@ impl Parser {
             if self.index == before {
                 return Err(vec![self.error_here("declaração de tipo sem progresso")]);
             }
-            if !self.at_newline() && !self.at_symbol(';') && !self.at_keyword("fim") {
-                return Err(vec![
-                    self.error_here("esperava uma quebra de linha no tipo"),
-                ]);
-            }
             self.skip_separators();
         }
         let end = self.current().span.start;
@@ -349,7 +390,7 @@ impl Parser {
         let declaration = TypeDecl {
             id: self.id(),
             name,
-            parent,
+            parents,
             abstract_type,
             fields,
             methods,
@@ -360,6 +401,9 @@ impl Parser {
 
     fn parse_type_field(&mut self) -> Result<Vec<TypeField>, Vec<Diagnostic>> {
         let mutable = self.consume_keyword("var").is_some();
+        if !mutable {
+            self.consume_keyword("val");
+        }
         let mut names = vec![self.expect_identifier()?];
         while self.consume_symbol(',').is_some() {
             names.push(self.expect_identifier()?);
@@ -407,7 +451,9 @@ impl Parser {
             fields.push(TypeField {
                 id: self.id(),
                 name: self.identifier_value(&name_token)?,
-                annotation: annotation.clone(),
+                annotation: annotation
+                    .as_ref()
+                    .map(|annotation| self.type_expr_with_fresh_ids(annotation)),
                 mutable,
                 constructor_parameter: default_value.is_none(),
                 default_value,
@@ -422,6 +468,26 @@ impl Parser {
 
     fn parse_while_statement(&mut self) -> Result<Stmt, Vec<Diagnostic>> {
         let start = self.advance().span.start;
+        let expression = self.parse_while_construct(start)?;
+        let Expr {
+            span: expression_span,
+            kind,
+            ..
+        } = expression;
+        let ExprKind::While { condition, body } = kind else {
+            unreachable!()
+        };
+        Ok(self.stmt(
+            start,
+            expression_span.end,
+            StmtKind::While {
+                condition: *condition,
+                body,
+            },
+        ))
+    }
+
+    fn parse_while_construct(&mut self, start: SourceLocation) -> Result<Expr, Vec<Diagnostic>> {
         let condition = self.parse_expression(0)?;
         if self.consume_keyword("faça").is_none() && self.consume_keyword("faca").is_none() {
             return Err(vec![self.error_here("esperava 'faça' após a condição")]);
@@ -429,26 +495,61 @@ impl Parser {
         self.skip_newlines();
         let body_start = self.current().span.start;
         let statements = self.parse_block_until(&["fim"])?;
-        let end = self.current().span.start;
-        self.expect_keyword("fim")?;
+        let end = self.expect_keyword("fim")?.span.end;
         let body = Block {
             id: self.id(),
             statements,
             span: SourceSpan {
                 start: body_start,
-                end,
+                end: self.previous().span.start,
             },
         };
-        Ok(self.stmt(
-            start,
-            self.previous().span.end,
-            StmtKind::While { condition, body },
+        Ok(self.expr(
+            SourceSpan { start, end },
+            ExprKind::While {
+                condition: Box::new(condition),
+                body,
+            },
         ))
     }
 
     fn parse_for_statement(&mut self) -> Result<Stmt, Vec<Diagnostic>> {
         let start = self.advance().span.start;
-        let generators = self.parse_generators_until(&["faça", "faca"])?;
+        let expression = self.parse_for_construct(start)?;
+        let Expr { id, span, kind } = expression;
+        match kind {
+            ExprKind::For { generators, body } => {
+                Ok(self.stmt(start, span.end, StmtKind::For { generators, body }))
+            }
+            kind => Ok(self.stmt(
+                span.start,
+                span.end,
+                StmtKind::Expression(Expr { id, span, kind }),
+            )),
+        }
+    }
+
+    fn parse_for_construct(&mut self, start: SourceLocation) -> Result<Expr, Vec<Diagnostic>> {
+        let generators = self.parse_generators_until(&["gere", "faça", "faca"])?;
+        if self.consume_keyword("gere").is_some() {
+            self.skip_newlines();
+            let body_start = self.current().span.start;
+            let statements = self.parse_block_until(&["fim"])?;
+            let body_end = self.current().span.start;
+            let end = self.expect_keyword("fim")?.span.end;
+            let body = Block {
+                id: self.id(),
+                statements,
+                span: SourceSpan {
+                    start: body_start,
+                    end: body_end,
+                },
+            };
+            return Ok(self.expr(
+                SourceSpan { start, end },
+                ExprKind::Comprehension { generators, body },
+            ));
+        }
         if self.consume_keyword("faça").is_none() && self.consume_keyword("faca").is_none() {
             return Err(vec![
                 self.error_here("esperava 'faça' após os limites do laço"),
@@ -457,18 +558,38 @@ impl Parser {
         self.skip_newlines();
         let body_start = self.current().span.start;
         let statements = self.parse_block_until(&["fim"])?;
-        let end = self.current().span.start;
-        self.expect_keyword("fim")?;
-        let statement_end = self.previous().span.end;
+        let body_end = self.current().span.start;
+        let end = self.expect_keyword("fim")?.span.end;
         let body = Block {
             id: self.id(),
             statements,
             span: SourceSpan {
                 start: body_start,
-                end,
+                end: body_end,
             },
         };
-        Ok(self.stmt(start, statement_end, StmtKind::For { generators, body }))
+        Ok(self.expr(
+            SourceSpan { start, end },
+            ExprKind::For { generators, body },
+        ))
+    }
+
+    fn parse_standalone_block(&mut self) -> Result<Stmt, Vec<Diagnostic>> {
+        let start = self.advance().span.start;
+        self.skip_newlines();
+        let body_start = self.current().span.start;
+        let statements = self.parse_block_until(&["fim"])?;
+        let body_end = self.current().span.start;
+        let end = self.expect_keyword("fim")?.span.end;
+        let block = Block {
+            id: self.id(),
+            statements,
+            span: SourceSpan {
+                start: body_start,
+                end: body_end,
+            },
+        };
+        Ok(self.stmt(start, end, StmtKind::Block(block)))
     }
 
     fn parse_generators_until(
@@ -558,9 +679,10 @@ impl Parser {
 
     fn parse_expression_inner(&mut self, minimum_precedence: u8) -> Result<Expr, Vec<Diagnostic>> {
         let mut left = self.parse_prefix_expression()?;
+        let mut operator_depth = 0usize;
         loop {
-            self.skip_newlines_before_operator();
-            if let Some(postfix) = self.parse_postfix(left.clone())? {
+            self.skip_newlines_before_continuation();
+            if let Some(postfix) = self.parse_postfix(&left)? {
                 left = postfix;
                 continue;
             }
@@ -570,6 +692,12 @@ impl Parser {
             };
             if precedence < minimum_precedence {
                 break;
+            }
+            operator_depth += 1;
+            if self.depth.saturating_add(operator_depth) > self.max_depth {
+                return Err(vec![
+                    self.error_here("aninhamento excedeu o limite do analisador"),
+                ]);
             }
             self.advance();
             let next_minimum = if right_associative {
@@ -623,18 +751,16 @@ impl Parser {
                     ]);
                 }
             };
-            let body = self.parse_expression(0)?;
+            let body = self.parse_lambda_body(span_start)?;
             let span = SourceSpan {
                 start: span_start,
-                end: body.span.end,
-            };
-            left = self.expr(
-                span,
-                ExprKind::Lambda {
-                    parameters,
-                    body: Box::new(body),
+                end: match &body {
+                    FunctionBody::Expression(expression) => expression.span.end,
+                    FunctionBody::Block(block) => block.span.end,
+                    FunctionBody::Abstract => span_start,
                 },
-            );
+            };
+            left = self.expr(span, ExprKind::Lambda { parameters, body });
         }
         Ok(left)
     }
@@ -643,7 +769,9 @@ impl Parser {
         self.skip_newlines();
         let token = self.advance().clone();
         match token.kind {
-            TokenKind::Integer(value) => Ok(self.expr(token.span, ExprKind::Integer(value))),
+            TokenKind::Integer(value) => i32::try_from(value)
+                .map(|value| self.expr(token.span, ExprKind::Integer(value)))
+                .map_err(|_| vec![self.error_at("inteiro fora do limite", token.span)]),
             TokenKind::Real(value) => Ok(self.expr(token.span, ExprKind::Real(value))),
             TokenKind::Character(value) => Ok(self.expr(token.span, ExprKind::Character(value))),
             TokenKind::String(value) => {
@@ -668,6 +796,12 @@ impl Parser {
             TokenKind::Identifier(word) if word == "para" => {
                 self.parse_comprehension(token.span.start)
             }
+            TokenKind::Identifier(word) if word == "enquanto" => {
+                self.parse_while_construct(token.span.start)
+            }
+            TokenKind::Identifier(word) if matches!(word.as_str(), "faça" | "faca") => {
+                self.parse_block_expression(token.span.start)
+            }
             TokenKind::Identifier(word) if matches!(word.as_str(), "não" | "nao") => {
                 let operand = self.parse_expression(3)?;
                 let span = SourceSpan {
@@ -682,7 +816,37 @@ impl Parser {
                     },
                 ))
             }
-            TokenKind::Operator(operator) if matches!(operator.as_str(), "-" | "+") => {
+            TokenKind::Identifier(word) if is_reserved_keyword(&word) => {
+                Err(vec![self.error_at("esperava uma expressão", token.span)])
+            }
+            TokenKind::Operator(operator) if operator == "-" => {
+                if matches!(
+                    self.current().kind,
+                    TokenKind::Integer(value) if value == i64::from(i32::MAX) + 1
+                ) {
+                    let literal = self.advance().clone();
+                    return Ok(self.expr(
+                        SourceSpan {
+                            start: token.span.start,
+                            end: literal.span.end,
+                        },
+                        ExprKind::Integer(i32::MIN),
+                    ));
+                }
+                let operand = self.parse_expression(7)?;
+                let span = SourceSpan {
+                    start: token.span.start,
+                    end: operand.span.end,
+                };
+                Ok(self.expr(
+                    span,
+                    ExprKind::Unary {
+                        operator,
+                        operand: Box::new(operand),
+                    },
+                ))
+            }
+            TokenKind::Operator(operator) if operator == "+" => {
                 let operand = self.parse_expression(7)?;
                 let span = SourceSpan {
                     start: token.span.start,
@@ -711,22 +875,20 @@ impl Parser {
         if self.looks_like_lambda_parameters() {
             let parameters = self.parse_parameters(')')?;
             self.expect_symbol(')')?;
+            self.skip_newlines();
             self.expect_operator("=>")?;
-            let body = self.parse_expression(0)?;
-            let span = SourceSpan {
-                start,
-                end: body.span.end,
+            let body = self.parse_lambda_body(start)?;
+            let end = match &body {
+                FunctionBody::Expression(expression) => expression.span.end,
+                FunctionBody::Block(block) => block.span.end,
+                FunctionBody::Abstract => start,
             };
-            return Ok(self.expr(
-                span,
-                ExprKind::Lambda {
-                    parameters,
-                    body: Box::new(body),
-                },
-            ));
+            let span = SourceSpan { start, end };
+            return Ok(self.expr(span, ExprKind::Lambda { parameters, body }));
         }
         let first = self.parse_expression(0)?;
         if self.consume_symbol(',').is_none() {
+            self.skip_newlines();
             self.expect_symbol(')')?;
             return Ok(first);
         }
@@ -762,7 +924,7 @@ impl Parser {
         Ok(self.expr(SourceSpan { start, end }, ExprKind::List(elements)))
     }
 
-    fn parse_postfix(&mut self, expression: Expr) -> Result<Option<Expr>, Vec<Diagnostic>> {
+    fn parse_postfix(&mut self, expression: &Expr) -> Result<Option<Expr>, Vec<Diagnostic>> {
         if self.consume_symbol('(').is_some() {
             let mut arguments = Vec::new();
             self.skip_newlines();
@@ -783,7 +945,7 @@ impl Parser {
                     end,
                 },
                 ExprKind::Call {
-                    callee: Box::new(expression),
+                    callee: Box::new(expression.clone()),
                     arguments,
                 },
             )));
@@ -805,7 +967,7 @@ impl Parser {
                     end,
                 },
                 ExprKind::Index {
-                    receiver: Box::new(expression),
+                    receiver: Box::new(expression.clone()),
                     indices,
                 },
             )));
@@ -819,7 +981,7 @@ impl Parser {
                     end: member.span.end,
                 },
                 ExprKind::Member {
-                    receiver: Box::new(expression),
+                    receiver: Box::new(expression.clone()),
                     name,
                 },
             )));
@@ -848,9 +1010,8 @@ impl Parser {
         start: SourceLocation,
         condition: Expr,
     ) -> Result<Expr, Vec<Diagnostic>> {
-        if self.consume_keyword("então").is_none() && self.consume_keyword("entao").is_none() {
-            return Err(vec![self.error_here("esperava 'então' após a condição")]);
-        }
+        self.consume_keyword("então")
+            .or_else(|| self.consume_keyword("entao"));
         self.skip_newlines();
         let then_start = self.current().span.start;
         let then_statements =
@@ -971,17 +1132,78 @@ impl Parser {
     }
 
     fn parse_comprehension(&mut self, start: SourceLocation) -> Result<Expr, Vec<Diagnostic>> {
-        let generators = self.parse_generators_until(&["gere"])?;
-        self.expect_keyword("gere")?;
-        let value = self.parse_expression(0)?;
+        self.parse_for_construct(start)
+    }
+
+    fn parse_block_expression(&mut self, start: SourceLocation) -> Result<Expr, Vec<Diagnostic>> {
+        self.skip_newlines();
+        let body_start = self.current().span.start;
+        let statements = self.parse_block_until(&["fim"])?;
+        let body_end = self.current().span.start;
         let end = self.expect_keyword("fim")?.span.end;
-        Ok(self.expr(
-            SourceSpan { start, end },
-            ExprKind::Comprehension {
-                generators,
-                value: Box::new(value),
+        let block = Block {
+            id: self.id(),
+            statements,
+            span: SourceSpan {
+                start: body_start,
+                end: body_end,
             },
-        ))
+        };
+        Ok(self.expr(SourceSpan { start, end }, ExprKind::Block(block)))
+    }
+
+    fn parse_lambda_body(
+        &mut self,
+        start: SourceLocation,
+    ) -> Result<FunctionBody, Vec<Diagnostic>> {
+        let mut body_index = self.index;
+        while matches!(
+            self.tokens.get(body_index).map(|token| &token.kind),
+            Some(TokenKind::Newline)
+        ) {
+            body_index += 1;
+        }
+        let line_column = self.tokens[..self.index]
+            .iter()
+            .rev()
+            .take_while(|token| token.span.start.line == start.line)
+            .last()
+            .map_or(start.column, |token| token.span.start.column);
+        if let Some(body) = self.tokens.get(body_index)
+            && body.span.start.line > start.line
+            && body.span.start.column > line_column
+        {
+            self.skip_newlines();
+            let body_start = self.current().span.start;
+            let mut statements = Vec::new();
+            loop {
+                let before = self.index;
+                statements.push(self.parse_statement()?);
+                if self.index == before {
+                    return Err(vec![self.error_here("corpo de lambda sem progresso")]);
+                }
+                if !self.at_newline() {
+                    continue;
+                }
+                self.skip_newlines();
+                if self.is_eof() || self.current().span.start.column <= line_column {
+                    break;
+                }
+            }
+            let end = statements.last().map_or(body_start, |stmt| stmt.span.end);
+            return Ok(FunctionBody::Block(Block {
+                id: self.id(),
+                statements,
+                span: SourceSpan {
+                    start: body_start,
+                    end,
+                },
+            }));
+        }
+        self.skip_newlines();
+        Ok(FunctionBody::Expression(Box::new(
+            self.parse_expression(0)?,
+        )))
     }
 
     fn parse_pattern(&mut self) -> Result<Pattern, Vec<Diagnostic>> {
@@ -1009,6 +1231,7 @@ impl Parser {
             pattern = Pattern {
                 id: self.id(),
                 span,
+                annotation: None,
                 kind: PatternKind::Tuple(elements),
             };
         }
@@ -1030,8 +1253,14 @@ impl Parser {
             pattern = Pattern {
                 id: self.id(),
                 span,
+                annotation: None,
                 kind: PatternKind::Cons(Box::new(pattern), Box::new(tail)),
             };
+        }
+        if self.consume_symbol(':').is_some() {
+            let annotation = self.parse_atomic_type()?;
+            pattern.span.end = annotation.span.end;
+            pattern.annotation = Some(annotation);
         }
         Ok(pattern)
     }
@@ -1039,13 +1268,19 @@ impl Parser {
     fn parse_atomic_pattern(&mut self) -> Result<Pattern, Vec<Diagnostic>> {
         let token = self.advance().clone();
         let kind = match token.kind {
-            TokenKind::Integer(value) => PatternKind::Integer(value),
+            TokenKind::Integer(value) => match i32::try_from(value) {
+                Ok(value) => PatternKind::Integer(value),
+                Err(_) => return Err(vec![self.error_at("inteiro fora do limite", token.span)]),
+            },
             TokenKind::Real(value) => PatternKind::Real(value),
             TokenKind::Character(value) => PatternKind::Character(value),
             TokenKind::String(value) => PatternKind::Text(value),
             TokenKind::Identifier(name) if name == "_" => PatternKind::Wildcard,
             TokenKind::Identifier(name) if name == "verdadeiro" => PatternKind::Logical(true),
             TokenKind::Identifier(name) if name == "falso" => PatternKind::Logical(false),
+            TokenKind::Identifier(name) if is_reserved_keyword(&name) => {
+                return Err(vec![self.error_at("esperava um padrão", token.span)]);
+            }
             TokenKind::Identifier(name) => {
                 if self.consume_symbol('(').is_some() {
                     let mut fields = Vec::new();
@@ -1064,6 +1299,7 @@ impl Parser {
                             start: token.span.start,
                             end,
                         },
+                        annotation: None,
                         kind: PatternKind::Constructor { name, fields },
                     });
                 }
@@ -1086,6 +1322,7 @@ impl Parser {
                         start: token.span.start,
                         end,
                     },
+                    annotation: None,
                     kind: PatternKind::List(elements),
                 });
             }
@@ -1105,6 +1342,7 @@ impl Parser {
                             start: token.span.start,
                             end,
                         },
+                        annotation: None,
                         kind: PatternKind::Tuple(elements),
                     });
                 }
@@ -1116,6 +1354,7 @@ impl Parser {
         Ok(Pattern {
             id: self.id(),
             span: token.span,
+            annotation: None,
             kind,
         })
     }
@@ -1204,21 +1443,27 @@ impl Parser {
         loop {
             self.skip_newlines();
             let mutable = self.consume_keyword("var").is_some();
+            if !mutable {
+                self.consume_keyword("val");
+            }
             let token = self.expect_identifier()?;
             let name = self.identifier_value(&token)?;
             pending.push((name, token.span, mutable));
             if self.consume_symbol(':').is_some() {
                 let annotation = self.parse_type_expression()?;
-                parameters.extend(pending.drain(..).map(|(name, span, mutable)| Parameter {
-                    id: self.id(),
-                    name,
-                    annotation: Some(annotation.clone()),
-                    mutable,
-                    span: SourceSpan {
-                        start: span.start,
-                        end: annotation.span.end,
-                    },
-                }));
+                for (name, span, mutable) in pending.drain(..) {
+                    let annotation = self.type_expr_with_fresh_ids(&annotation);
+                    parameters.push(Parameter {
+                        id: self.id(),
+                        name,
+                        annotation: Some(annotation.clone()),
+                        mutable,
+                        span: SourceSpan {
+                            start: span.start,
+                            end: annotation.span.end,
+                        },
+                    });
+                }
             }
             if self.consume_symbol(',').is_none() {
                 break;
@@ -1245,15 +1490,6 @@ impl Parser {
         let mut text = String::new();
         let mut index = 0usize;
         while index < chars.len() {
-            if chars[index] == '\\' {
-                text.push(chars[index]);
-                index += 1;
-                if index < chars.len() {
-                    text.push(chars[index]);
-                    index += 1;
-                }
-                continue;
-            }
             if chars[index] != '{' {
                 text.push(chars[index]);
                 index += 1;
@@ -1269,16 +1505,18 @@ impl Parser {
             while index < chars.len() && depth > 0 {
                 let character = chars[index];
                 if let Some(delimiter) = quote {
-                    if character == '\\' {
-                        index = (index + 2).min(chars.len());
-                        continue;
-                    }
                     if character == delimiter {
                         quote = None;
                     }
                 } else {
                     match character {
                         '"' | '\'' => quote = Some(character),
+                        '#' => {
+                            while index < chars.len() && chars[index] != '\n' {
+                                index += 1;
+                            }
+                            continue;
+                        }
                         '{' => depth += 1,
                         '}' => depth -= 1,
                         _ => {}
@@ -1293,14 +1531,7 @@ impl Parser {
             }
             let expression_end = index - 1;
             let embedded: String = chars[expression_start..expression_end].iter().collect();
-            let string_bytes = token_span
-                .end
-                .byte_offset
-                .saturating_sub(token_span.start.byte_offset);
-            let quote_bytes = string_bytes.saturating_sub(raw.len());
-            let quote_count = if quote_bytes >= 6 { 3 } else { 1 };
-            let base =
-                string_content_location(token_span.start, quote_count, &chars[..expression_start]);
+            let base = string_content_location(token_span.start, 1, &chars[..expression_start]);
             let expression = self.parse_embedded_expression(&embedded, base)?;
             parts.push(StringPart::Expression(expression));
         }
@@ -1325,6 +1556,7 @@ impl Parser {
             token.span = shift_span(token.span, base);
         }
         let mut parser = Parser::with_next_id(tokens, self.max_depth, self.next_id);
+        parser.depth = self.depth;
         let result = (|| {
             let expression = parser.parse_expression(0)?;
             parser.skip_newlines();
@@ -1343,7 +1575,7 @@ impl Parser {
         let (operator, precedence, right_associative) = match &self.current().kind {
             TokenKind::Operator(operator) => match operator.as_str() {
                 "==" | "<>" | "<" | "<=" | ">" | ">=" => (operator.as_str(), 3, false),
-                "::" => (operator.as_str(), 6, true),
+                "::" => (operator.as_str(), 7, true),
                 "+" | "-" => (operator.as_str(), 5, false),
                 "*" | "/" => (operator.as_str(), 6, false),
                 "^" => (operator.as_str(), 7, true),
@@ -1353,7 +1585,7 @@ impl Parser {
                 "ou" => (word.as_str(), 1, false),
                 "e" => (word.as_str(), 2, false),
                 "mod" | "div" => (word.as_str(), 6, false),
-                "formato" => (word.as_str(), 7, false),
+                "formato" => (word.as_str(), 4, false),
                 _ => return None,
             },
             _ => return None,
@@ -1383,7 +1615,6 @@ impl Parser {
         if nesting != 0 {
             return false;
         }
-        let starts_new_line = self.token_at(index, |kind| matches!(kind, TokenKind::Newline));
         while matches!(
             self.tokens.get(index).map(|token| &token.kind),
             Some(TokenKind::Newline)
@@ -1399,42 +1630,35 @@ impl Parser {
         ) {
             return true;
         }
-        let has_block_terminator = self.tokens[index..]
-            .iter()
-            .any(|token| matches!(&token.kind, TokenKind::Identifier(word) if word == "fim"));
-        let body_is_indented = self.tokens.get(index).is_some_and(|body| {
-            starts_new_line
-                && body.span.start.line > self.current().span.start.line
-                && body.span.start.column > self.current().span.start.column
-        });
-        has_block_terminator && body_is_indented
+        if self.token_at(index, |kind| {
+            matches!(kind, TokenKind::Identifier(word) if matches!(word.as_str(), "fim" | "caso" | "senão" | "senao"))
+        }) {
+            return false;
+        }
+        if self.token_at(index, |kind| matches!(kind, TokenKind::Identifier(_)))
+            || self.token_at(index, |kind| {
+                matches!(
+                    kind,
+                    TokenKind::Integer(_)
+                        | TokenKind::Real(_)
+                        | TokenKind::String(_)
+                        | TokenKind::Character(_)
+                        | TokenKind::Symbol('(' | '[')
+                )
+            })
+        {
+            return self.tokens[index..]
+                .iter()
+                .any(|token| matches!(&token.kind, TokenKind::Identifier(word) if word == "fim"));
+        }
+        false
     }
 
     fn looks_like_immutable_binding(&self) -> bool {
-        if let TokenKind::Identifier(word) = &self.current().kind {
-            if matches!(
-                word.as_str(),
-                "se" | "senão"
-                    | "senao"
-                    | "escolha"
-                    | "caso"
-                    | "enquanto"
-                    | "para"
-                    | "tipo"
-                    | "var"
-                    | "escreva"
-                    | "imprima"
-                    | "retorne"
-                    | "fim"
-                    | "verdadeiro"
-                    | "falso"
-                    | "não"
-                    | "nao"
-                    | "ou"
-                    | "e"
-            ) {
-                return false;
-            }
+        if let TokenKind::Identifier(word) = &self.current().kind
+            && is_reserved_keyword(word)
+        {
+            return false;
         }
         let mut index = self.index;
         let mut nesting = 0usize;
@@ -1470,7 +1694,11 @@ impl Parser {
                 TokenKind::Symbol(')') => {
                     nesting = nesting.saturating_sub(1);
                     if nesting == 0 {
-                        return self.token_at(index + 1, |kind| {
+                        let mut arrow = index + 1;
+                        while self.token_at(arrow, |kind| matches!(kind, TokenKind::Newline)) {
+                            arrow += 1;
+                        }
+                        return self.token_at(arrow, |kind| {
                             matches!(kind, TokenKind::Operator(operator) if operator == "=>")
                         });
                     }
@@ -1483,7 +1711,7 @@ impl Parser {
         false
     }
 
-    fn skip_newlines_before_operator(&mut self) {
+    fn skip_newlines_before_continuation(&mut self) {
         let mut next = self.index;
         while matches!(
             self.tokens.get(next).map(|token| &token.kind),
@@ -1493,7 +1721,8 @@ impl Parser {
         }
         if self.token_at(next, |kind| {
             matches!(kind, TokenKind::Operator(operator) if matches!(operator.as_str(), "+" | "-" | "*" | "/" | "^" | "==" | "<>" | "<" | "<=" | ">" | ">=" | "::"))
-                || matches!(kind, TokenKind::Identifier(word) if matches!(word.as_str(), "e" | "ou" | "div" | "mod"))
+                || matches!(kind, TokenKind::Symbol('.' | '(' | '['))
+                || matches!(kind, TokenKind::Identifier(word) if matches!(word.as_str(), "e" | "ou" | "div" | "mod" | "formato"))
         }) {
             self.skip_newlines();
         }
@@ -1567,11 +1796,12 @@ impl Parser {
     }
 
     fn expect_identifier(&mut self) -> Result<Token, Vec<Diagnostic>> {
-        if matches!(self.current().kind, TokenKind::Identifier(_)) {
-            Ok(self.advance().clone())
-        } else {
-            Err(vec![self.error_here("esperava um identificador")])
+        if let TokenKind::Identifier(word) = &self.current().kind
+            && !is_reserved_keyword(word)
+        {
+            return Ok(self.advance().clone());
         }
+        Err(vec![self.error_here("esperava um identificador")])
     }
 
     fn identifier_value(&self, token: &Token) -> Result<String, Vec<Diagnostic>> {
@@ -1610,6 +1840,36 @@ impl Parser {
         let id = NodeId(self.next_id);
         self.next_id = self.next_id.wrapping_add(1);
         id
+    }
+
+    fn type_expr_with_fresh_ids(&mut self, expression: &TypeExpr) -> TypeExpr {
+        let kind = match &expression.kind {
+            TypeExprKind::Named(name, arguments) => TypeExprKind::Named(
+                name.clone(),
+                arguments
+                    .iter()
+                    .map(|argument| self.type_expr_with_fresh_ids(argument))
+                    .collect(),
+            ),
+            TypeExprKind::Tuple(elements) => TypeExprKind::Tuple(
+                elements
+                    .iter()
+                    .map(|element| self.type_expr_with_fresh_ids(element))
+                    .collect(),
+            ),
+            TypeExprKind::Function(parameters, result) => TypeExprKind::Function(
+                parameters
+                    .iter()
+                    .map(|parameter| self.type_expr_with_fresh_ids(parameter))
+                    .collect(),
+                Box::new(self.type_expr_with_fresh_ids(result)),
+            ),
+        };
+        TypeExpr {
+            id: self.id(),
+            span: expression.span,
+            kind,
+        }
     }
 
     fn expr(&mut self, span: SourceSpan, kind: ExprKind) -> Expr {
@@ -1651,6 +1911,48 @@ impl Parser {
         self.depth -= 1;
         result
     }
+}
+
+fn is_reserved_keyword(word: &str) -> bool {
+    matches!(
+        word,
+        "abstrato"
+            | "até"
+            | "ate"
+            | "caso"
+            | "de"
+            | "def"
+            | "div"
+            | "e"
+            | "em"
+            | "enquanto"
+            | "então"
+            | "entao"
+            | "escolha"
+            | "escreva"
+            | "faca"
+            | "faça"
+            | "falso"
+            | "fim"
+            | "formato"
+            | "gere"
+            | "imprima"
+            | "mod"
+            | "nao"
+            | "não"
+            | "ou"
+            | "para"
+            | "passo"
+            | "retorne"
+            | "se"
+            | "senao"
+            | "senão"
+            | "tipo"
+            | "use"
+            | "val"
+            | "var"
+            | "verdadeiro"
+    )
 }
 
 fn string_content_location(

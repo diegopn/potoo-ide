@@ -101,6 +101,41 @@ pub struct ExecutionEvent {
     pub pause_reason: Option<PauseReason>,
 }
 
+/// Scalar and list data exchanged with the Jerimum host adapter.
+#[derive(Clone, Debug, PartialEq)]
+pub enum JerimumValue {
+    Null,
+    Integer(i64),
+    Real(f64),
+    Logical(bool),
+    String(String),
+    Array(Vec<JerimumValue>),
+}
+
+/// An effect requested by a program that imported `jerimum`.
+#[derive(Clone, Debug, PartialEq)]
+pub enum JerimumRequest {
+    Graphics {
+        function: String,
+        arguments: Vec<JerimumValue>,
+    },
+    Audio {
+        function: String,
+        arguments: Vec<JerimumValue>,
+    },
+    WindowIsOpen,
+    KeyPressed {
+        key: i64,
+    },
+    MouseButtonPressed {
+        button: i64,
+    },
+    MousePosition,
+    ReadFileLines {
+        path: String,
+    },
+}
+
 /// Resource limits for one Potigol execution.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExecutionOptions {
@@ -155,5 +190,11 @@ pub trait RuntimeIo {
 
     fn on_execution_event(&mut self, _event: &ExecutionEvent) -> Result<ControlAction, String> {
         Ok(ControlAction::Continue)
+    }
+
+    /// Executes a Jerimum host request. Existing hosts can keep using the language core without
+    /// adding graphical or audio services.
+    fn jerimum_request(&mut self, _request: JerimumRequest) -> Result<JerimumValue, String> {
+        Err("o host não oferece suporte à biblioteca Jerimum".to_owned())
     }
 }

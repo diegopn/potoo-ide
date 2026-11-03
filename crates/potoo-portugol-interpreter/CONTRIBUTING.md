@@ -24,7 +24,7 @@ cargo test --release --locked
 cargo package --allow-dirty --locked
 ```
 
-The interpreter currently has no third-party dependencies. If a contribution proposes one, explain why the standard library is insufficient and include its maintenance, license, and security implications.
+The crate currently depends on `indexmap`. For any additional dependency, explain why the standard library or existing dependencies are insufficient and include its maintenance, license, and security implications.
 
 ## Changes to language behavior
 

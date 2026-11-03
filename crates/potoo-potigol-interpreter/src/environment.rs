@@ -47,15 +47,37 @@ impl Environment {
         Ok(())
     }
 
-    pub(crate) fn lookup(environment: &EnvironmentRef, name: &str) -> Option<Binding> {
-        let (binding, parent) = {
-            let environment = environment.borrow();
-            (
-                environment.values.get(name).cloned(),
-                environment.parent.clone(),
-            )
-        };
-        binding.or_else(|| parent.and_then(|parent| Self::lookup(&parent, name)))
+    pub(crate) fn lookup_with<E>(
+        environment: &EnvironmentRef,
+        name: &str,
+        mut clone_binding: impl FnMut(&Binding) -> Result<Binding, E>,
+    ) -> Result<Option<Binding>, E> {
+        fn lookup<E>(
+            environment: &EnvironmentRef,
+            name: &str,
+            clone_binding: &mut impl FnMut(&Binding) -> Result<Binding, E>,
+        ) -> Result<Option<Binding>, E> {
+            let (binding, parent) = {
+                let environment = environment.borrow();
+                (
+                    environment
+                        .values
+                        .get(name)
+                        .map(&mut *clone_binding)
+                        .transpose()?,
+                    environment.parent.clone(),
+                )
+            };
+            match binding {
+                Some(binding) => Ok(Some(binding)),
+                None => match parent {
+                    Some(parent) => lookup(&parent, name, clone_binding),
+                    None => Ok(None),
+                },
+            }
+        }
+
+        lookup(environment, name, &mut clone_binding)
     }
 
     pub(crate) fn assign(
@@ -81,26 +103,38 @@ impl Environment {
         }
     }
 
-    pub(crate) fn visible_values(environment: &EnvironmentRef) -> Vec<(String, Value)> {
-        let (values, parent) = {
-            let environment = environment.borrow();
-            (
-                environment
-                    .values
-                    .iter()
-                    .map(|(name, binding)| (name.clone(), binding.value.clone()))
-                    .collect::<Vec<_>>(),
-                environment.parent.clone(),
-            )
-        };
-        let mut visible = values.into_iter().collect::<HashMap<_, _>>();
-        if let Some(parent) = parent {
-            for (name, value) in Self::visible_values(&parent) {
-                visible.entry(name).or_insert(value);
+    pub(crate) fn visible_values_with<E>(
+        environment: &EnvironmentRef,
+        mut clone_value: impl FnMut(&Value) -> Result<Value, E>,
+    ) -> Result<Vec<(String, Value)>, E> {
+        fn visible_values<E>(
+            environment: &EnvironmentRef,
+            clone_value: &mut impl FnMut(&Value) -> Result<Value, E>,
+        ) -> Result<Vec<(String, Value)>, E> {
+            let (values, parent) = {
+                let environment = environment.borrow();
+                (
+                    environment
+                        .values
+                        .iter()
+                        .map(|(name, binding)| {
+                            clone_value(&binding.value).map(|value| (name.clone(), value))
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                    environment.parent.clone(),
+                )
+            };
+            let mut visible = values.into_iter().collect::<HashMap<_, _>>();
+            if let Some(parent) = parent {
+                for (name, value) in visible_values(&parent, clone_value)? {
+                    visible.entry(name).or_insert(value);
+                }
             }
+            let mut values = visible.into_iter().collect::<Vec<_>>();
+            values.sort_by(|left, right| left.0.cmp(&right.0));
+            Ok(values)
         }
-        let mut values = visible.into_iter().collect::<Vec<_>>();
-        values.sort_by(|left, right| left.0.cmp(&right.0));
-        values
+
+        visible_values(environment, &mut clone_value)
     }
 }

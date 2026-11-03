@@ -368,7 +368,7 @@ fn calls_the_math_library_and_concatenates_text() {
         run(
             "programa {\n inclua biblioteca Matematica\n funcao inicio() {\n escreva(\"resultado: \" + Matematica.potencia(2, 3))\n }\n}"
         ),
-        "resultado: 8"
+        "resultado: 8.0"
     );
 }
 
@@ -394,7 +394,7 @@ fn supports_all_documented_math_library_functions_and_pi() {
 }
 
 #[test]
-fn supports_the_portugol_studio_calendar_day_name_functions() {
+fn supports_portugol_2_0_calendar_day_name_functions() {
     let source = r#"programa {
   inclua biblioteca Calendario --> c
   funcao inicio() {
@@ -410,7 +410,7 @@ fn supports_the_portugol_studio_calendar_day_name_functions() {
 }
 
 #[test]
-fn exposes_portugol_studio_file_access_constants() {
+fn exposes_portugol_2_0_file_access_constants() {
     let source = r#"programa {
   inclua biblioteca Arquivos --> a
   funcao inicio() {
@@ -554,25 +554,23 @@ fn supports_object_vectors_assignment_constants_and_json_serialization() {
     let output = run(source);
 
     assert!(output.starts_with("1|2|3|4|5|6|7|Lia|8|verdadeiro|1.5|Z|fim|"));
-    assert!(output.contains("\"notas\": [\n    6,\n    8\n  ]"));
+    assert!(output.contains("\"notas\" : [ 6, 8 ]"));
 }
 
 #[test]
-fn creates_nested_objects_from_xml_and_decodes_entities() {
+fn xml_objects_omit_the_root_keep_the_last_repeated_element_and_decode_entities() {
     let source = r#"programa {
   inclua biblioteca Objetos --> o
   funcao inicio() {
     inteiro dados = o.criar_objeto_via_xml("<?xml version=\"1.0\"?><pessoa><nome>Ana &amp; Bia</nome><telefone>111</telefone><telefone>222</telefone></pessoa>")
-    inteiro pessoa = o.obter_propriedade_tipo_objeto(dados, "pessoa")
     escreva(
-      o.obter_propriedade_tipo_cadeia(pessoa, "nome"), "|",
-      o.obter_tamanho_vetor_propriedade(pessoa, "telefone"), "|",
-      o.obter_propriedade_tipo_cadeia_em_vetor(pessoa, "telefone", 1)
+      o.obter_propriedade_tipo_cadeia(dados, "nome"), "|",
+      o.obter_propriedade_tipo_cadeia(dados, "telefone")
     )
   }
 }"#;
 
-    assert_eq!(run(source), "Ana & Bia|2|222");
+    assert_eq!(run(source), "Ana & Bia|222");
 }
 
 #[test]
@@ -592,17 +590,16 @@ fn nested_object_handles_share_the_original_property_map() {
 }
 
 #[test]
-fn xml_objects_preserve_attributes_and_mixed_text_like_the_reference_mapper() {
+fn xml_objects_map_namespaced_attributes_and_elements_by_local_name() {
     let source = r#"programa {
   inclua biblioteca Objetos --> o
   funcao inicio() {
-    inteiro dados = o.criar_objeto_via_xml("<pessoa xmlns:teste=\"urn:x\" id=\"42\">Pessoa <nome>Ana</nome><literal><![CDATA[&amp;]]></literal></pessoa>")
-    inteiro pessoa = o.obter_propriedade_tipo_objeto(dados, "pessoa")
+    inteiro dados = o.criar_objeto_via_xml("<teste:pessoa xmlns:teste=\"urn:x\" teste:id=\"42\">Pessoa <teste:nome>Ana</teste:nome><literal><![CDATA[&amp;]]></literal></teste:pessoa>")
     escreva(
-      o.obter_propriedade_tipo_cadeia(pessoa, "id"), "|",
-      o.obter_propriedade_tipo_cadeia(pessoa, ""), "|",
-      o.obter_propriedade_tipo_cadeia(pessoa, "nome"), "|",
-      o.obter_propriedade_tipo_cadeia(pessoa, "literal")
+      o.obter_propriedade_tipo_cadeia(dados, "id"), "|",
+      o.obter_propriedade_tipo_cadeia(dados, ""), "|",
+      o.obter_propriedade_tipo_cadeia(dados, "nome"), "|",
+      o.obter_propriedade_tipo_cadeia(dados, "literal")
     )
   }
 }"#;
@@ -636,7 +633,12 @@ fn supports_the_internet_library_through_host_http_and_file_services() {
         HttpResponse {
             status: 200,
             headers: vec![("Content-Type".into(), "image/png".into())],
-            body: b"\x89PNG\r\n\x1a\nconteudo".to_vec(),
+            body: Vec::new(),
+        },
+        HttpResponse {
+            status: 200,
+            headers: vec![("Content-Type".into(), "image/png".into())],
+            body: b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec(),
         },
     ]);
 
@@ -648,11 +650,41 @@ fn supports_the_internet_library_through_host_http_and_file_services() {
             .iter()
             .map(|request| request.method.as_str())
             .collect::<Vec<_>>(),
-        ["GET", "HEAD", "GET"]
+        ["GET", "HEAD", "HEAD", "GET"]
     );
     assert_eq!(io.http_requests[0].timeout_millis, 1500);
     assert_eq!(io.downloads[0].0, "imagens/capa.png");
-    assert_eq!(io.downloads[0].1, b"\x89PNG\r\n\x1a\nconteudo");
+    assert_eq!(io.downloads[0].1, b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR");
+}
+
+#[test]
+fn internet_text_uses_the_declared_or_default_http_charset() {
+    let source = r#"programa {
+  inclua biblioteca Internet --> i
+  funcao inicio() {
+    escreva(i.obter_texto("https://example.test/declared"), "|", i.obter_texto("https://example.test/default"))
+  }
+}"#;
+    let mut io = TestIo::default();
+    io.http_responses = VecDeque::from([
+        HttpResponse {
+            status: 200,
+            headers: vec![(
+                "Content-Type".into(),
+                "text/plain; charset=\"ISO-8859-1\"".into(),
+            )],
+            body: b"caf\xe9".to_vec(),
+        },
+        HttpResponse {
+            status: 200,
+            headers: Vec::new(),
+            body: b"caf\xe9".to_vec(),
+        },
+    ]);
+
+    execute(source, &mut io).expect("HTTP text must honor the response charset");
+
+    assert_eq!(io.output, "café|café");
 }
 
 #[test]
@@ -724,7 +756,7 @@ fn supports_all_web_service_methods_headers_parameters_and_constants() {
 }
 
 #[test]
-fn supports_all_portugol_studio_calendar_date_and_time_functions() {
+fn supports_all_portugol_2_0_calendar_date_and_time_functions() {
     let source = r#"programa {
   inclua biblioteca Calendario --> c
   funcao inicio() {
@@ -835,13 +867,13 @@ fn rejects_invalid_random_ranges_and_waits_over_the_configured_limit() {
 }
 
 #[test]
-fn supports_integer_remainder_division_inequality_and_logical_or() {
+fn supports_integer_remainder_inequality_and_logical_or() {
     let source = r#"programa {
   funcao inicio() {
-    escreva(7 % 2, "|", 7 \ 2, "|", 7 <> 2, "|", falso ou verdadeiro)
+    escreva(7 % 2, "|", 7 != 2, "|", falso ou verdadeiro)
   }
 }"#;
-    assert_eq!(run(source), "1|3|verdadeiro|verdadeiro");
+    assert_eq!(run(source), "1|verdadeiro|verdadeiro");
 }
 
 #[test]
@@ -902,7 +934,7 @@ fn handles_break_inside_loops_and_rejects_it_outside() {
     let mut io = TestIo::default();
     let error = execute("programa {\n funcao inicio() {\n pare\n }\n}", &mut io)
         .expect_err("break outside a loop should fail");
-    assert_eq!(error[0].kind, DiagnosticKind::Runtime);
+    assert_eq!(error[0].kind, DiagnosticKind::Type);
 }
 
 #[test]
@@ -982,15 +1014,11 @@ fn rejects_unicode_escapes_that_are_not_valid_scalar_values() {
 }
 
 #[test]
-fn reports_integer_overflow_instead_of_panicking() {
-    let mut io = TestIo::default();
-    let error = execute(
-        "programa {\n funcao inicio() {\n inteiro valor = 9223372036854775807 + 1\n escreva(valor)\n }\n}",
-        &mut io,
-    )
-    .expect_err("integer overflow should be reported");
-
-    assert_eq!(error[0].kind, DiagnosticKind::Runtime);
+fn integer_overflow_wraps_at_the_reference_width() {
+    assert_eq!(
+        run("programa { funcao inicio() { escreva(2147483647 + 1) } }"),
+        "-2147483648"
+    );
 }
 
 #[test]
@@ -1009,9 +1037,22 @@ fn reads_real_and_string_values_without_losing_text() {
 }
 
 #[test]
+fn character_input_rejects_supplementary_code_points_that_need_two_utf16_units() {
+    let source = "programa { funcao inicio() { caracter valor leia(valor) } }";
+    let mut io = TestIo {
+        input: vec!["😀".to_owned()],
+        ..TestIo::default()
+    };
+
+    let errors = execute(source, &mut io).expect_err("Java char accepts one UTF-16 code unit");
+
+    assert!(errors[0].message.contains("exatamente um caractere"));
+}
+
+#[test]
 fn limpa_clears_output_through_the_host_runtime() {
     assert_eq!(
-        run("programa { funcao inicio() { escreva(\"antes\"); limpa(); escreva(\"depois\") } }"),
+        run("programa { funcao inicio() { escreva(\"antes\") limpa() escreva(\"depois\") } }"),
         "depois"
     );
 }
@@ -1034,7 +1075,7 @@ fn counts_array_allocations_across_the_whole_program() {
         ..ExecutionOptions::default()
     };
     let error = execute_with_options(
-        "programa { funcao inicio() { inteiro a[2]; inteiro b[2] } }",
+        "programa { funcao inicio() { inteiro a[2] inteiro b[2] } }",
         &mut io,
         options,
     )
@@ -1072,7 +1113,7 @@ fn stops_execution_when_the_configured_output_limit_is_reached() {
         ..ExecutionOptions::default()
     };
     let error = execute_with_options(
-        "programa { funcao inicio() { escreva(\"12345\"); escreva(\"6\") } }",
+        "programa { funcao inicio() { escreva(\"12345\") escreva(\"6\") } }",
         &mut io,
         options,
     )
@@ -1124,7 +1165,7 @@ fn exercises_every_supported_types_library_conversion() {
 }"#;
     assert_eq!(
         run(source),
-        "verdadeiro|verdadeiro|verdadeiro|verdadeiro|z|-12|2.5|falso|verdadeiro|10|7|falso|7|verdadeiro|verdadeiro|a|8|verdadeiro|verdadeiro|0|N|2.5|2"
+        "verdadeiro|verdadeiro|verdadeiro|verdadeiro|z|-12|2.5|falso|verdadeiro|10|7|falso|7.0|verdadeiro|verdadeiro|a|8|verdadeiro|verdadeiro|0|N|2.5|2"
     );
 }
 
@@ -1186,7 +1227,7 @@ fn passes_vectors_and_matrices_to_function_parameters() {
 }
 
 #[test]
-fn passing_an_array_by_value_does_not_mutate_the_callers_array() {
+fn passing_an_array_by_value_shares_the_reference_backing_array() {
     let source = r#"programa {
   funcao vazio alterar(inteiro valores[]) {
     valores[0] = 99
@@ -1199,7 +1240,7 @@ fn passing_an_array_by_value_does_not_mutate_the_callers_array() {
   }
 }"#;
 
-    assert_eq!(run(source), "4");
+    assert_eq!(run(source), "99");
 }
 
 #[test]
@@ -1216,7 +1257,7 @@ fn supports_prefix_and_postfix_increment_and_unary_plus() {
 #[test]
 fn reads_but_does_not_allow_writing_constants() {
     let source = r#"programa {
-  constante inteiro resposta = 42
+  const inteiro resposta = 42
   funcao inicio() {
     escreva(resposta)
     resposta = 43
@@ -1225,8 +1266,8 @@ fn reads_but_does_not_allow_writing_constants() {
     let mut io = TestIo::default();
     let error = execute(source, &mut io).expect_err("constants must not be writable");
 
-    assert_eq!(io.output, "42");
-    assert_eq!(error[0].kind, DiagnosticKind::Runtime);
+    assert!(io.output.is_empty());
+    assert_eq!(error[0].kind, DiagnosticKind::Type);
     assert!(error[0].message.contains("constante"));
 }
 
@@ -1256,7 +1297,7 @@ fn infers_an_unsized_vector_length_from_its_initializer() {
 #[test]
 fn uses_constant_expressions_for_array_dimensions() {
     let source = r#"programa {
-  constante inteiro TAMANHO = 3
+  const inteiro TAMANHO = 3
   funcao inicio() {
     inteiro valores[TAMANHO] = {4, 5, 6}
     escreva(valores[2])
@@ -1371,7 +1412,7 @@ fn rejects_a_value_returned_from_a_void_function() {
     let mut io = TestIo::default();
     let error = execute(source, &mut io).expect_err("a void function cannot return a value");
 
-    assert_eq!(error[0].kind, DiagnosticKind::Runtime);
+    assert_eq!(error[0].kind, DiagnosticKind::Type);
     assert!(error[0].message.contains("não pode retornar um valor"));
 }
 
@@ -1408,14 +1449,18 @@ fn enforces_the_configured_string_limit_before_output() {
 #[test]
 fn bounds_large_text_padding_and_expanding_replacements() {
     let mut io = TestIo::default();
-    let padding_error = execute(
+    let padding_error = execute_with_options(
         r#"programa {
   inclua biblioteca Texto --> t
   funcao inicio() {
-    escreva(t.preencher_a_esquerda('x', 9223372036854775807, ""))
+    escreva(t.preencher_a_esquerda('x', 10, ""))
   }
 }"#,
         &mut io,
+        ExecutionOptions {
+            max_string_bytes: 4,
+            ..ExecutionOptions::default()
+        },
     )
     .expect_err("large padding must be rejected without allocating it");
     assert!(padding_error[0].message.contains("limite de"));
@@ -1450,27 +1495,25 @@ fn text_library_uses_documented_search_order_and_replaces_every_match() {
 }
 
 #[test]
-fn reports_invalid_real_math_results_instead_of_emitting_nan_or_infinity() {
-    for expression in ["Matematica.raiz(-8, 2)", "Matematica.potencia(-2, 0.5)"] {
-        let mut io = TestIo::default();
-        let source = format!(
-            "programa {{\n  inclua biblioteca Matematica\n  funcao inicio() {{ escreva({expression}) }}\n}}"
-        );
-        let error = execute(&source, &mut io).expect_err("invalid real result must be rejected");
-        assert_eq!(error[0].kind, DiagnosticKind::Runtime);
-        assert!(io.output.is_empty());
-    }
+fn math_library_preserves_java_nan_and_infinity_results() {
+    let source = r#"programa {
+  inclua biblioteca Matematica
+  funcao inicio() {
+    escreva(Matematica.raiz(-8, 2), "|", Matematica.potencia(10, 1000))
+  }
+}"#;
+    assert_eq!(run(source), "NaN|Infinity");
 }
 
 #[test]
-fn computes_negative_odd_roots_and_rounds_negative_midpoints_consistently() {
+fn uses_java_pow_and_math_round_for_negative_values() {
     let source = r#"programa {
   inclua biblioteca Matematica
   funcao inicio() {
     escreva(Matematica.raiz(-27, 3), "|", Matematica.arredondar(-1.5, 0))
   }
 }"#;
-    assert_eq!(run(source), "-3|-1");
+    assert_eq!(run(source), "NaN|-1.0");
 }
 
 #[test]
@@ -1480,7 +1523,7 @@ fn leia_rejects_constants_before_requesting_input() {
         ..TestIo::default()
     };
     let source = r#"programa {
-  constante inteiro bloqueado = 3
+  const inteiro bloqueado = 3
   funcao inicio() {
     leia(bloqueado)
   }
@@ -1492,16 +1535,9 @@ fn leia_rejects_constants_before_requesting_input() {
 }
 
 #[test]
-fn rejects_overflowing_real_arithmetic() {
-    let mut io = TestIo::default();
-    let error = execute(
-        "programa {\n  inclua biblioteca Matematica\n  funcao inicio() { escreva(Matematica.potencia(10, 1000)) }\n}",
-        &mut io,
-    )
-    .expect_err("real overflow must be diagnosed");
-
-    assert_eq!(error[0].kind, DiagnosticKind::Runtime);
-    assert!(error[0].message.contains("não produziu"));
+fn math_round_saturates_to_java_long_before_scaling() {
+    let source = "programa { inclua biblioteca Matematica funcao inicio() { escreva(Matematica.arredondar(100000000000000000000.0, 0)) } }";
+    assert_eq!(run(source), "9.223372036854776E18");
 }
 
 #[test]

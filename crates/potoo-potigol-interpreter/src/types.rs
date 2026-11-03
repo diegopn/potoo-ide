@@ -12,6 +12,8 @@ pub enum ValueType {
     Character,
     Logical,
     Nothing,
+    Any,
+    Option(Box<ValueType>),
     List(Box<ValueType>),
     MutableList(Box<ValueType>),
     Tuple(Vec<ValueType>),
@@ -36,8 +38,10 @@ impl std::fmt::Display for ValueType {
             Self::Character => formatter.write_str("Caractere"),
             Self::Logical => formatter.write_str("Lógico"),
             Self::Nothing => formatter.write_str("Nada"),
+            Self::Any => formatter.write_str("Any"),
+            Self::Option(element) => write!(formatter, "Option[{element}]"),
             Self::List(element) => write!(formatter, "Lista[{element}]"),
-            Self::MutableList(element) => write!(formatter, "Lista.mutável[{element}]"),
+            Self::MutableList(element) => write!(formatter, "Vetor[{element}]"),
             Self::Tuple(elements) => {
                 formatter.write_str("(")?;
                 for (index, element) in elements.iter().enumerate() {
@@ -84,7 +88,7 @@ pub struct FieldInfo {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClassInfo {
     pub name: String,
-    pub parent: Option<String>,
+    pub parents: Vec<String>,
     pub abstract_type: bool,
     pub fields: Vec<FieldInfo>,
     pub methods: HashMap<String, FunctionSignature>,

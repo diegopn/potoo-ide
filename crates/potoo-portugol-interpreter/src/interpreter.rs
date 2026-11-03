@@ -4,7 +4,7 @@ use std::{
     collections::HashMap,
     f64::consts::PI,
     rc::Rc,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use crate::{
@@ -47,6 +47,7 @@ impl Value {
             Type::Logical => Self::Logical(false),
             Type::Character => Self::Character('\0'),
             Type::String => Self::String(String::new()),
+            Type::Void => Self::Null,
         }
     }
 
@@ -96,7 +97,7 @@ impl Value {
     fn to_text(&self) -> String {
         match self {
             Self::Integer(value) => value.to_string(),
-            Self::Real(value) => value.to_string(),
+            Self::Real(value) => java_double_to_string(*value),
             Self::Logical(true) => "verdadeiro".to_owned(),
             Self::Logical(false) => "falso".to_owned(),
             Self::Character(value) => value.to_string(),
@@ -143,6 +144,14 @@ struct Binding {
 }
 
 #[derive(Clone, Debug)]
+struct PreparedTarget {
+    value: Rc<RefCell<Value>>,
+    ty: Type,
+    dimensions: usize,
+    is_constant: bool,
+}
+
+#[derive(Clone, Debug)]
 enum PreparedArgument {
     Value {
         value: Value,
@@ -169,6 +178,7 @@ pub struct Interpreter<'a> {
     functions: HashMap<String, Vec<Function>>,
     global_statements: Vec<Statement>,
     scopes: Vec<HashMap<String, Binding>>,
+    function_scope_indices: Vec<usize>,
     io: &'a mut dyn RuntimeIo,
     steps: u64,
     step_limit: u64,
@@ -180,7 +190,7 @@ pub struct Interpreter<'a> {
     array_elements_allocated: usize,
     array_element_limit: usize,
     call_depth: usize,
-    util_start_time: Option<Instant>,
+    util_start_time: SystemTime,
     random_state: u64,
     objects: ObjectStore,
     internet_timeout_millis: u64,
@@ -207,6 +217,7 @@ impl<'a> Interpreter<'a> {
             functions,
             global_statements: program.statements,
             scopes: vec![HashMap::new()],
+            function_scope_indices: Vec::new(),
             io,
             steps: 0,
             step_limit: options.max_steps,
@@ -218,7 +229,7 @@ impl<'a> Interpreter<'a> {
             array_elements_allocated: 0,
             array_element_limit: options.max_array_elements,
             call_depth: 0,
-            util_start_time: None,
+            util_start_time: SystemTime::now(),
             random_state: random_state.max(1),
             objects: ObjectStore::default(),
             internet_timeout_millis: 2_000,
@@ -389,6 +400,7 @@ impl<'a> Interpreter<'a> {
                 expression,
                 cases,
                 default,
+                default_position,
             } => {
                 let value = self.evaluate(expression)?;
                 let mut matching_case = None;
@@ -399,20 +411,28 @@ impl<'a> Interpreter<'a> {
                         break;
                     }
                 }
-                if let Some(start) = matching_case {
-                    for case in cases.iter().skip(start) {
-                        match self.execute_statements(&case.body)? {
-                            Flow::Normal => {}
-                            Flow::Break => return Ok(Flow::Normal),
-                            Flow::Stop => return Ok(Flow::Stop),
-                            flow @ Flow::Return(_) => return Ok(flow),
+                let start = matching_case.or(*default_position);
+                if let Some(start) = start {
+                    for index in start..=cases.len() {
+                        if *default_position == Some(index) {
+                            match self.execute_statements(default)? {
+                                Flow::Normal => {}
+                                Flow::Break => return Ok(Flow::Normal),
+                                Flow::Stop => return Ok(Flow::Stop),
+                                flow @ Flow::Return(_) => return Ok(flow),
+                            }
+                        }
+                        if let Some(case) = cases.get(index) {
+                            match self.execute_statements(&case.body)? {
+                                Flow::Normal => {}
+                                Flow::Break => return Ok(Flow::Normal),
+                                Flow::Stop => return Ok(Flow::Stop),
+                                flow @ Flow::Return(_) => return Ok(flow),
+                            }
                         }
                     }
                 }
-                match self.execute_statements(default)? {
-                    Flow::Break => Ok(Flow::Normal),
-                    other => Ok(other),
-                }
+                Ok(Flow::Normal)
             }
             StatementKind::Return(value) => {
                 let value = match value {
@@ -688,7 +708,7 @@ impl<'a> Interpreter<'a> {
 
     fn evaluate_inner(&mut self, expression: &Expression) -> Result<Value, Diagnostic> {
         match &expression.kind {
-            ExpressionKind::Integer(value) => Ok(Value::Integer(*value)),
+            ExpressionKind::Integer(value) => Ok(Value::Integer(i64::from(*value as i32))),
             ExpressionKind::Real(value) => Ok(Value::Real(*value)),
             ExpressionKind::Logical(value) => Ok(Value::Logical(*value)),
             ExpressionKind::Character(value) => Ok(Value::Character(*value)),
@@ -717,10 +737,9 @@ impl<'a> Interpreter<'a> {
                         )),
                     },
                     UnaryOperator::Negate => match value {
-                        Value::Integer(value) => value
-                            .checked_neg()
-                            .map(Value::Integer)
-                            .ok_or_else(|| runtime_error(expression, "estouro ao negar inteiro")),
+                        Value::Integer(value) => {
+                            Ok(Value::Integer((value as i32).wrapping_neg() as i64))
+                        }
                         Value::Real(value) => Ok(Value::Real(-value)),
                         value => Err(runtime_error(
                             expression,
@@ -730,7 +749,7 @@ impl<'a> Interpreter<'a> {
                     UnaryOperator::Not => Ok(Value::Logical(!value.as_logical(expression)?)),
                     UnaryOperator::BitNot => value
                         .as_integer(expression)
-                        .map(|value| Value::Integer(!value)),
+                        .map(|value| Value::Integer(!(value as i32) as i64)),
                 }
             }
             ExpressionKind::Binary {
@@ -753,11 +772,16 @@ impl<'a> Interpreter<'a> {
                 operator,
                 value,
             } => {
+                let target = self.prepare_target(target)?;
+                let left = if *operator == AssignmentOperator::Assign {
+                    None
+                } else {
+                    Some(target.value.borrow().clone())
+                };
                 let right = self.evaluate(value)?;
                 let result = if *operator == AssignmentOperator::Assign {
                     right
                 } else {
-                    let left = self.read_target(target)?;
                     let binary = match operator {
                         AssignmentOperator::Add => BinaryOperator::Add,
                         AssignmentOperator::Subtract => BinaryOperator::Subtract,
@@ -765,21 +789,25 @@ impl<'a> Interpreter<'a> {
                         AssignmentOperator::Divide => BinaryOperator::Divide,
                         AssignmentOperator::Assign => unreachable!(),
                     };
-                    evaluate_binary(binary, left, right, expression)?
+                    evaluate_binary(
+                        binary,
+                        left.expect("compound assignment value"),
+                        right,
+                        expression,
+                    )?
                 };
-                self.assign_target(target, result.clone(), expression)?;
+                self.store_target(&target, result.clone(), expression)?;
                 Ok(result)
             }
             ExpressionKind::Call { callee, arguments } => {
                 let name = callable_name(callee).ok_or_else(|| {
                     runtime_error(expression, "a expressão chamada não é uma função")
                 })?;
-                let name_lower = name.to_ascii_lowercase();
-                if name_lower == "leia" {
+                if name == "leia" {
                     self.read_into(arguments, expression)?;
                     return Ok(Value::Null);
                 }
-                if name_lower == "escreva" || name_lower == "escreva_linha" {
+                if name == "escreva" || name == "escreva_linha" {
                     let mut output = String::new();
                     for argument in arguments {
                         let text = self.evaluate(argument)?.to_text();
@@ -801,7 +829,7 @@ impl<'a> Interpreter<'a> {
                         }
                         output.push_str(&text);
                     }
-                    if name_lower == "escreva_linha" {
+                    if name == "escreva_linha" {
                         if self
                             .output_bytes
                             .saturating_add(output.len())
@@ -821,7 +849,7 @@ impl<'a> Interpreter<'a> {
                     self.write_output(&output, expression)?;
                     return Ok(Value::Null);
                 }
-                if name_lower == "limpa" {
+                if name == "limpa" {
                     if !arguments.is_empty() {
                         return Err(runtime_error(expression, "'limpa' não recebe argumentos"));
                     }
@@ -850,12 +878,12 @@ impl<'a> Interpreter<'a> {
                     for argument in arguments {
                         values.push(self.evaluate(argument)?);
                     }
-                    if library.eq_ignore_ascii_case("Matematica") {
+                    if library == "Matematica" {
                         if let Some(result) = call_math_builtin(function_name, &values, expression)?
                         {
                             return Ok(result);
                         }
-                    } else if library.eq_ignore_ascii_case("Texto") {
+                    } else if library == "Texto" {
                         if let Some(result) = call_text_builtin(
                             function_name,
                             &values,
@@ -864,67 +892,67 @@ impl<'a> Interpreter<'a> {
                         )? {
                             return Ok(result);
                         }
-                    } else if library.eq_ignore_ascii_case("Tipos") {
+                    } else if library == "Tipos" {
                         if let Some(result) =
                             call_types_builtin(function_name, &values, expression)?
                         {
                             return Ok(result);
                         }
-                    } else if library.eq_ignore_ascii_case("Calendario") {
+                    } else if library == "Calendario" {
                         if let Some(result) =
                             self.call_calendar_builtin(function_name, &values, expression)?
                         {
                             return Ok(result);
                         }
-                    } else if library.eq_ignore_ascii_case("Arquivos") {
+                    } else if library == "Arquivos" {
                         if let Some(result) =
                             self.call_files_builtin(function_name, &values, expression)?
                         {
                             return Ok(result);
                         }
-                    } else if library.eq_ignore_ascii_case("Objetos") {
+                    } else if library == "Objetos" {
                         if let Some(result) =
                             self.call_objects_builtin(function_name, &values, expression)?
                         {
                             return Ok(result);
                         }
-                    } else if library.eq_ignore_ascii_case("Internet") {
+                    } else if library == "Internet" {
                         if let Some(result) =
                             self.call_internet_builtin(function_name, &values, expression)?
                         {
                             return Ok(result);
                         }
-                    } else if library.eq_ignore_ascii_case("ServicosWeb") {
+                    } else if library == "ServicosWeb" {
                         if let Some(result) =
                             self.call_web_services_builtin(function_name, &values, expression)?
                         {
                             return Ok(result);
                         }
-                    } else if library.eq_ignore_ascii_case("Mouse") {
+                    } else if library == "Mouse" {
                         if let Some(result) =
                             self.call_mouse_builtin(function_name, &values, expression)?
                         {
                             return Ok(result);
                         }
-                    } else if library.eq_ignore_ascii_case("Teclado") {
+                    } else if library == "Teclado" {
                         if let Some(result) =
                             self.call_keyboard_builtin(function_name, &values, expression)?
                         {
                             return Ok(result);
                         }
-                    } else if library.eq_ignore_ascii_case("Graficos") {
+                    } else if library == "Graficos" {
                         if let Some(result) =
                             self.call_graphics_builtin(function_name, &values, expression)?
                         {
                             return Ok(result);
                         }
-                    } else if library.eq_ignore_ascii_case("Sons") {
+                    } else if library == "Sons" {
                         if let Some(result) =
                             self.call_audio_builtin(function_name, &values, expression)?
                         {
                             return Ok(result);
                         }
-                    } else if library.eq_ignore_ascii_case("Util") {
+                    } else if library == "Util" {
                         if let Some(result) =
                             self.call_util_builtin(function_name, &values, expression)?
                         {
@@ -968,10 +996,39 @@ impl<'a> Interpreter<'a> {
                 let library = self.resolve_library(module).ok_or_else(|| {
                     runtime_error(expression, format!("biblioteca '{module}' não incluída"))
                 })?;
-                if library.eq_ignore_ascii_case("Matematica") && name.eq_ignore_ascii_case("PI") {
+                if library == "Matematica" && name == "PI" {
                     Ok(Value::Real(PI))
-                } else if library.eq_ignore_ascii_case("Arquivos") {
-                    match name.to_ascii_uppercase().as_str() {
+                } else if library == "Calendario" {
+                    let value = match name.as_str() {
+                        "DIA_DOMINGO" => 1,
+                        "DIA_SEGUNDA_FEIRA" => 2,
+                        "DIA_TERCA_FEIRA" => 3,
+                        "DIA_QUARTA_FEIRA" => 4,
+                        "DIA_QUINTA_FEIRA" => 5,
+                        "DIA_SEXTA_FEIRA" => 6,
+                        "DIA_SABADO" => 7,
+                        "MES_JANEIRO" => 1,
+                        "MES_FEVEREIRO" => 2,
+                        "MES_MARCO" => 3,
+                        "MES_ABRIL" => 4,
+                        "MES_MAIO" => 5,
+                        "MES_JUNHO" => 6,
+                        "MES_JULHO" => 7,
+                        "MES_AGOSTO" => 8,
+                        "MES_SETEMBRO" => 9,
+                        "MES_OUTUBRO" => 10,
+                        "MES_NOVEMBRO" => 11,
+                        "MES_DEZEMBRO" => 12,
+                        _ => {
+                            return Err(runtime_error(
+                                expression,
+                                format!("constante '{}.{}' não encontrada", module, name),
+                            ));
+                        }
+                    };
+                    Ok(Value::Integer(value))
+                } else if library == "Arquivos" {
+                    match name.as_str() {
                         "MODO_LEITURA" => Ok(Value::Integer(0)),
                         "MODO_ESCRITA" => Ok(Value::Integer(1)),
                         "MODO_ACRESCENTAR" => Ok(Value::Integer(2)),
@@ -980,8 +1037,8 @@ impl<'a> Interpreter<'a> {
                             format!("constante '{}.{}' não encontrada", module, name),
                         )),
                     }
-                } else if library.eq_ignore_ascii_case("Objetos") {
-                    match name.to_ascii_uppercase().as_str() {
+                } else if library == "Objetos" {
+                    match name.as_str() {
                         "TIPO_INTEIRO" => Ok(Value::Integer(1)),
                         "TIPO_CADEIA" => Ok(Value::Integer(2)),
                         "TIPO_CARACTER" => Ok(Value::Integer(3)),
@@ -994,8 +1051,8 @@ impl<'a> Interpreter<'a> {
                             format!("constante '{}.{}' não encontrada", module, name),
                         )),
                     }
-                } else if library.eq_ignore_ascii_case("ServicosWeb") {
-                    match name.to_ascii_uppercase().as_str() {
+                } else if library == "ServicosWeb" {
+                    match name.as_str() {
                         "OBTER" => Ok(Value::Integer(1)),
                         "PUBLICAR" => Ok(Value::Integer(2)),
                         "ATUALIZAR" => Ok(Value::Integer(3)),
@@ -1005,8 +1062,8 @@ impl<'a> Interpreter<'a> {
                             format!("constante '{}.{}' não encontrada", module, name),
                         )),
                     }
-                } else if library.eq_ignore_ascii_case("Mouse") {
-                    match name.to_ascii_uppercase().as_str() {
+                } else if library == "Mouse" {
+                    match name.as_str() {
                         "BOTAO_ESQUERDO" => Ok(Value::Integer(0)),
                         "BOTAO_DIREITO" => Ok(Value::Integer(1)),
                         "BOTAO_MEIO" => Ok(Value::Integer(2)),
@@ -1015,7 +1072,7 @@ impl<'a> Interpreter<'a> {
                             format!("constante '{}.{}' não encontrada", module, name),
                         )),
                     }
-                } else if library.eq_ignore_ascii_case("Teclado") {
+                } else if library == "Teclado" {
                     crate::keyboard::constant_code(name)
                         .map(Value::Integer)
                         .ok_or_else(|| {
@@ -1024,7 +1081,7 @@ impl<'a> Interpreter<'a> {
                                 format!("constante '{}.{}' não encontrada", module, name),
                             )
                         })
-                } else if library.eq_ignore_ascii_case("Graficos") {
+                } else if library == "Graficos" {
                     crate::graphics_constants::constant_value(name)
                         .map(Value::Integer)
                         .ok_or_else(|| {
@@ -1043,16 +1100,15 @@ impl<'a> Interpreter<'a> {
             ExpressionKind::Postfix { target, operator }
             | ExpressionKind::Prefix { target, operator } => {
                 let is_prefix = matches!(&expression.kind, ExpressionKind::Prefix { .. });
-                let old = self.read_target(target)?;
+                let target = self.prepare_target(target)?;
+                let old = target.value.borrow().clone();
                 let amount = match operator {
                     PostfixOperator::Increment => 1,
                     PostfixOperator::Decrement => -1,
                 };
                 let new = match old.clone() {
                     Value::Integer(value) => {
-                        Value::Integer(value.checked_add(amount).ok_or_else(|| {
-                            runtime_error(expression, "estouro em incremento de inteiro")
-                        })?)
+                        Value::Integer((value as i32).wrapping_add(amount as i32) as i64)
                     }
                     Value::Real(value) => Value::Real(value + amount as f64),
                     value => {
@@ -1065,12 +1121,8 @@ impl<'a> Interpreter<'a> {
                         ));
                     }
                 };
-                self.assign_target(target, new, expression)?;
-                if is_prefix {
-                    self.read_target(target)
-                } else {
-                    Ok(old)
-                }
+                self.store_target(&target, new.clone(), expression)?;
+                if is_prefix { Ok(new) } else { Ok(old) }
             }
         }
     }
@@ -1082,47 +1134,62 @@ impl<'a> Interpreter<'a> {
                 "'leia' precisa receber ao menos uma variável",
             ));
         }
-        for target in arguments {
-            if self.target_is_constant(target)? {
+        for source_target in arguments {
+            let target = self.prepare_target(source_target)?;
+            if target.is_constant {
                 return Err(runtime_error(
-                    target,
+                    source_target,
                     "não é possível alterar uma constante com 'leia'",
                 ));
             }
-            if self.target_dimensions(target)? > 0 {
+            if target.dimensions > 0 {
                 return Err(runtime_error(
-                    target,
+                    source_target,
                     "'leia' precisa receber uma variável simples",
                 ));
             }
-            let ty = self.target_type(target)?;
+            let ty = target.ty;
             let text = self.io.read_line().map_err(|message| {
-                runtime_error(target, format!("não foi possível ler a entrada: {message}"))
+                runtime_error(
+                    source_target,
+                    format!("não foi possível ler a entrada: {message}"),
+                )
             })?;
-            let value = parse_input(&text, ty, target)?;
-            self.assign_target(target, value, target)?;
+            let value = parse_input(&text, ty, source_target)?;
+            self.store_target(&target, value, source_target)?;
         }
         Ok(())
     }
 
-    fn read_target(&mut self, target: &Expression) -> Result<Value, Diagnostic> {
+    fn prepare_target(&mut self, target: &Expression) -> Result<PreparedTarget, Diagnostic> {
         match &target.kind {
             ExpressionKind::Variable(name) => self
                 .lookup(name)
-                .map(|binding| binding.value.borrow().clone())
+                .map(|binding| PreparedTarget {
+                    value: binding.value.clone(),
+                    ty: binding.ty,
+                    dimensions: binding.dimensions,
+                    is_constant: binding.is_constant,
+                })
                 .ok_or_else(|| runtime_error(target, format!("variável '{name}' não declarada"))),
             ExpressionKind::Index { target, index } => {
-                let array = self.evaluate(target)?;
-                let index = self.evaluate(index)?.as_integer(target)?;
+                let parent = self.prepare_target(target)?;
+                let array = parent.value.borrow().clone();
                 let Value::Array(values) = array else {
                     return Err(runtime_error(target, "o valor não é um vetor"));
                 };
+                let index = self.evaluate(index)?.as_integer(target)?;
                 let index = usize::try_from(index)
                     .map_err(|_| runtime_error(target, "índice de vetor negativo"))?;
                 values
                     .borrow()
                     .get(index)
-                    .map(|value| value.borrow().clone())
+                    .map(|value| PreparedTarget {
+                        value: value.clone(),
+                        ty: parent.ty,
+                        dimensions: parent.dimensions.saturating_sub(1),
+                        is_constant: parent.is_constant,
+                    })
                     .ok_or_else(|| runtime_error(target, "índice de vetor fora do limite"))
             }
             _ => Err(runtime_error(
@@ -1146,63 +1213,28 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    fn assign_target(
-        &mut self,
-        target: &Expression,
+    fn store_target(
+        &self,
+        target: &PreparedTarget,
         value: Value,
         context: &Expression,
     ) -> Result<(), Diagnostic> {
-        match &target.kind {
-            ExpressionKind::Variable(name) => {
-                let binding = self.lookup(name).cloned().ok_or_else(|| {
-                    runtime_error(target, format!("variável '{name}' não declarada"))
-                })?;
-                if binding.is_constant {
-                    return Err(runtime_error(
-                        target,
-                        format!("não é possível alterar a constante '{name}'"),
-                    ));
-                }
-                if matches!(&*binding.value.borrow(), Value::Array(_)) {
-                    return Err(runtime_error(
-                        target,
-                        "não é possível substituir um vetor inteiro",
-                    ));
-                }
-                let value = value.coerce_to(binding.ty, context)?;
-                self.validate_string_size(&value, context)?;
-                *binding.value.borrow_mut() = value;
-                Ok(())
-            }
-            ExpressionKind::Index { target, index } => {
-                if self.target_is_constant(target)? {
-                    return Err(runtime_error(
-                        context,
-                        "não é possível alterar um vetor constante",
-                    ));
-                }
-                let array = self.evaluate(target)?;
-                let index = self.evaluate(index)?.as_integer(context)?;
-                let Value::Array(values) = array else {
-                    return Err(runtime_error(target, "o valor não é um vetor"));
-                };
-                let index = usize::try_from(index)
-                    .map_err(|_| runtime_error(context, "índice de vetor negativo"))?;
-                let ty = self.target_type(target)?;
-                let value = value.coerce_to(ty, context)?;
-                self.validate_string_size(&value, context)?;
-                let mut values = values.borrow_mut();
-                let slot = values
-                    .get_mut(index)
-                    .ok_or_else(|| runtime_error(context, "índice de vetor fora do limite"))?;
-                *slot.borrow_mut() = value;
-                Ok(())
-            }
-            _ => Err(runtime_error(
-                target,
-                "esperado uma variável para atribuição",
-            )),
+        if target.is_constant {
+            return Err(runtime_error(
+                context,
+                "não é possível alterar uma constante",
+            ));
         }
+        if target.dimensions > 0 {
+            return Err(runtime_error(
+                context,
+                "não é possível substituir um vetor inteiro",
+            ));
+        }
+        let value = value.coerce_to(target.ty, context)?;
+        self.validate_string_size(&value, context)?;
+        *target.value.borrow_mut() = value;
+        Ok(())
     }
 
     fn call_function(
@@ -1228,7 +1260,7 @@ impl<'a> Interpreter<'a> {
             let value = match argument {
                 PreparedArgument::Value {
                     value, dimensions, ..
-                } if dimensions > 0 => Rc::new(RefCell::new(deep_copy_value(value))),
+                } if dimensions > 0 => Rc::new(RefCell::new(value)),
                 PreparedArgument::Value { value, .. } => Rc::new(RefCell::new(value.coerce_to(
                     parameter.ty,
                     &Expression {
@@ -1252,6 +1284,7 @@ impl<'a> Interpreter<'a> {
 
         self.call_depth += 1;
         self.scopes.push(HashMap::new());
+        self.function_scope_indices.push(self.scopes.len() - 1);
         let setup = (|| {
             let function_scope = self.scopes.last_mut().expect("function scope");
             for (name, binding) in parameter_bindings {
@@ -1295,6 +1328,7 @@ impl<'a> Interpreter<'a> {
                 )),
             }
         })();
+        self.function_scope_indices.pop();
         self.scopes.pop();
         self.call_depth -= 1;
         setup
@@ -1444,44 +1478,14 @@ impl<'a> Interpreter<'a> {
         &mut self,
         target: &Expression,
     ) -> Result<(Type, usize, Rc<RefCell<Value>>), Diagnostic> {
-        if self.target_is_constant(target)? {
+        let target_ref = self.prepare_target(target)?;
+        if target_ref.is_constant {
             return Err(runtime_error(
                 target,
                 "não é possível passar uma constante por referência",
             ));
         }
-        match &target.kind {
-            ExpressionKind::Variable(name) => self
-                .lookup(name)
-                .map(|binding| (binding.ty, binding.dimensions, binding.value.clone()))
-                .ok_or_else(|| runtime_error(target, format!("variável '{name}' não declarada"))),
-            ExpressionKind::Index {
-                target: array,
-                index,
-            } => {
-                let value = self.evaluate(array)?;
-                let index = self.evaluate(index)?.as_integer(target)?;
-                let Value::Array(values) = value else {
-                    return Err(runtime_error(array, "o valor não é um vetor"));
-                };
-                let index = usize::try_from(index)
-                    .map_err(|_| runtime_error(target, "índice de vetor negativo"))?;
-                let value = values
-                    .borrow()
-                    .get(index)
-                    .cloned()
-                    .ok_or_else(|| runtime_error(target, "índice de vetor fora do limite"))?;
-                Ok((
-                    self.target_type(array)?,
-                    self.target_dimensions(array)?.saturating_sub(1),
-                    value,
-                ))
-            }
-            _ => Err(runtime_error(
-                target,
-                "esperado uma variável para passagem por referência",
-            )),
-        }
+        Ok((target_ref.ty, target_ref.dimensions, target_ref.value))
     }
 
     fn target_dimensions(&self, target: &Expression) -> Result<usize, Diagnostic> {
@@ -1497,31 +1501,19 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    fn target_is_constant(&self, target: &Expression) -> Result<bool, Diagnostic> {
-        match &target.kind {
-            ExpressionKind::Variable(name) => self
-                .lookup(name)
-                .map(|binding| binding.is_constant)
-                .ok_or_else(|| runtime_error(target, format!("variável '{name}' não declarada"))),
-            ExpressionKind::Index { target, .. } => self.target_is_constant(target),
-            _ => Ok(false),
-        }
-    }
-
     fn lookup(&self, name: &str) -> Option<&Binding> {
-        self.scopes.iter().rev().find_map(|scope| scope.get(name))
+        let function_scope = self.function_scope_indices.last().copied().unwrap_or(0);
+        self.scopes[function_scope..]
+            .iter()
+            .rev()
+            .find_map(|scope| scope.get(name))
+            .or_else(|| self.scopes.first().and_then(|scope| scope.get(name)))
     }
 
     fn resolve_library(&self, module: &str) -> Option<&str> {
         self.libraries
             .iter()
-            .find(|library| {
-                library.name.eq_ignore_ascii_case(module)
-                    || library
-                        .alias
-                        .as_deref()
-                        .is_some_and(|alias| alias.eq_ignore_ascii_case(module))
-            })
+            .find(|library| library.name == module || library.alias.as_deref() == Some(module))
             .map(|library| library.name.as_str())
     }
 
@@ -1531,8 +1523,7 @@ impl<'a> Interpreter<'a> {
         arguments: &[Value],
         expression: &Expression,
     ) -> Result<Option<Value>, Diagnostic> {
-        let function_name = name.to_ascii_lowercase();
-        self.util_start_time.get_or_insert_with(Instant::now);
+        let function_name = name.to_owned();
         let arity = match function_name.as_str() {
             "numero_elementos" | "numero_linhas" | "numero_colunas" | "aguarde" => 1,
             "sorteia" => 2,
@@ -1552,7 +1543,7 @@ impl<'a> Interpreter<'a> {
                 let Value::Array(values) = &arguments[0] else {
                     return Err(runtime_error(expression, "esperado um vetor"));
                 };
-                Value::Integer(values.borrow().len() as i64)
+                Value::Integer(values.borrow().len() as i32 as i64)
             }
             "numero_linhas" => {
                 let Value::Array(rows) = &arguments[0] else {
@@ -1563,7 +1554,7 @@ impl<'a> Interpreter<'a> {
                 {
                     return Err(runtime_error(expression, "esperada uma matriz"));
                 }
-                Value::Integer(rows.borrow().len() as i64)
+                Value::Integer(rows.borrow().len() as i32 as i64)
             }
             "numero_colunas" => {
                 let Value::Array(rows) = &arguments[0] else {
@@ -1579,7 +1570,7 @@ impl<'a> Interpreter<'a> {
                 } else {
                     0
                 };
-                Value::Integer(columns as i64)
+                Value::Integer(columns as i32 as i64)
             }
             "sorteia" => {
                 let minimum = integer_argument(0)?;
@@ -1598,7 +1589,7 @@ impl<'a> Interpreter<'a> {
                 }
                 let span = (i128::from(maximum) - i128::from(minimum) + 1) as u128;
                 let offset = u128::from(self.next_random()) % span;
-                Value::Integer((i128::from(minimum) + offset as i128) as i64)
+                Value::Integer((i128::from(minimum) + offset as i128) as i32 as i64)
             }
             "aguarde" => {
                 let delay = u64::try_from(integer_argument(0)?)
@@ -1619,13 +1610,11 @@ impl<'a> Interpreter<'a> {
                 Value::Null
             }
             "tempo_decorrido" => {
-                let elapsed = self
-                    .util_start_time
-                    .expect("the first utility call starts the timer")
-                    .elapsed()
-                    .as_millis()
-                    .min(i64::MAX as u128) as i64;
-                Value::Integer(elapsed)
+                let elapsed = SystemTime::now()
+                    .duration_since(self.util_start_time)
+                    .unwrap_or_default()
+                    .as_millis() as i32;
+                Value::Integer(i64::from(elapsed))
             }
             "obter_diretorio_usuario" => {
                 let path = std::env::var_os("HOME")
@@ -1654,7 +1643,7 @@ impl<'a> Interpreter<'a> {
         arguments: &[Value],
         expression: &Expression,
     ) -> Result<Option<Value>, Diagnostic> {
-        let function_name = name.to_ascii_lowercase();
+        let function_name = name.to_owned();
         let arity = match function_name.as_str() {
             "dia_mes_atual" | "dia_semana_atual" | "mes_atual" | "ano_atual" | "minuto_atual"
             | "segundo_atual" | "milisegundo_atual" => 0,
@@ -1739,7 +1728,7 @@ impl<'a> Interpreter<'a> {
         arguments: &[Value],
         expression: &Expression,
     ) -> Result<Option<Value>, Diagnostic> {
-        let function_name = name.to_ascii_lowercase();
+        let function_name = name.to_owned();
         let arity = match function_name.as_str() {
             "abrir_arquivo" | "escrever_linha" => 2,
             "fechar_arquivo" | "fim_arquivo" | "ler_linha" | "arquivo_existe"
@@ -1783,7 +1772,7 @@ impl<'a> Interpreter<'a> {
                 Value::Integer(
                     self.io
                         .portugol_file_open(&path, mode)
-                        .map_err(host_error)?,
+                        .map_err(host_error)? as i32 as i64,
                 )
             }
             "fechar_arquivo" => {
@@ -1885,7 +1874,7 @@ impl<'a> Interpreter<'a> {
         arguments: &[Value],
         expression: &Expression,
     ) -> Result<Option<Value>, Diagnostic> {
-        let function_name = name.to_ascii_lowercase();
+        let function_name = name.to_owned();
         let arity = match function_name.as_str() {
             "criar_objeto" | "liberar" => 0,
             "criar_objeto_via_json" | "criar_objeto_via_xml" | "liberar_objeto" | "obter_json" => 1,
@@ -2113,7 +2102,7 @@ impl<'a> Interpreter<'a> {
         arguments: &[Value],
         expression: &Expression,
     ) -> Result<Option<Value>, Diagnostic> {
-        let function_name = name.to_ascii_lowercase();
+        let function_name = name.to_owned();
         let arity = match function_name.as_str() {
             "definir_tempo_limite" | "obter_texto" => 1,
             "baixar_imagem" => 2,
@@ -2170,9 +2159,8 @@ impl<'a> Interpreter<'a> {
                         ),
                     ));
                 }
-                let text = String::from_utf8(response.body).map_err(|_| {
-                    runtime_error(expression, "a resposta não contém texto UTF-8 válido")
-                })?;
+                let text = decode_http_text(&response.headers, &response.body)
+                    .map_err(|message| runtime_error(expression, message))?;
                 if text.is_empty() {
                     return Err(runtime_error(
                         expression,
@@ -2190,6 +2178,43 @@ impl<'a> Interpreter<'a> {
             "baixar_imagem" => {
                 let url = text_argument(0)?;
                 let path = text_argument(1)?;
+                let head = self.send_http_request(
+                    "HEAD",
+                    &url,
+                    Vec::new(),
+                    Vec::new(),
+                    self.internet_timeout_millis,
+                    expression,
+                )?;
+                if !(200..300).contains(&head.status) {
+                    return Err(runtime_error(
+                        expression,
+                        format!(
+                            "não foi possível obter a imagem de '{url}' (HTTP {})",
+                            head.status
+                        ),
+                    ));
+                }
+                let content_type = head
+                    .headers
+                    .iter()
+                    .find(|(key, _)| key.eq_ignore_ascii_case("content-type"))
+                    .map(|(_, value)| {
+                        value
+                            .split(';')
+                            .next()
+                            .unwrap_or(value)
+                            .trim()
+                            .to_ascii_lowercase()
+                    })
+                    .unwrap_or_default();
+                let extension = match content_type.as_str() {
+                    "image/jpeg" | "image/jpg" => "jpg",
+                    "image/png" => "png",
+                    "image/gif" => "gif",
+                    "image/bmp" | "image/x-ms-bmp" => "bmp",
+                    _ => return Err(runtime_error(expression, "formato de imagem não suportado")),
+                };
                 let response = self.send_http_request(
                     "GET",
                     &url,
@@ -2207,29 +2232,50 @@ impl<'a> Interpreter<'a> {
                         ),
                     ));
                 }
-                let content_type = response
-                    .headers
-                    .iter()
-                    .find(|(key, _)| key.eq_ignore_ascii_case("content-type"))
-                    .map(|(_, value)| value.to_ascii_lowercase())
-                    .unwrap_or_default();
-                let (extension, valid_image) = if content_type.starts_with("image/jpeg")
-                    || content_type.starts_with("image/jpg")
-                {
-                    ("jpg", response.body.starts_with(&[0xff, 0xd8, 0xff]))
-                } else {
-                    ("png", response.body.starts_with(b"\x89PNG\r\n\x1a\n"))
+                let valid_image = match extension {
+                    "jpg" => response.body.starts_with(&[0xff, 0xd8, 0xff]),
+                    "png" => response.body.starts_with(b"\x89PNG\r\n\x1a\n"),
+                    "gif" => {
+                        response.body.starts_with(b"GIF87a") || response.body.starts_with(b"GIF89a")
+                    }
+                    "bmp" => response.body.starts_with(b"BM"),
+                    _ => false,
                 };
                 if !valid_image {
                     return Err(runtime_error(
                         expression,
-                        "a resposta não é uma imagem PNG ou JPEG válida",
+                        "a resposta não corresponde ao formato de imagem anunciado",
                     ));
                 }
                 let target = format!("{path}.{extension}");
                 self.io
                     .portugol_file_write_bytes(&target, &response.body)
                     .map_err(|message| runtime_error(expression, message))?;
+                let handle = self
+                    .call_graphics_builtin(
+                        "carregar_imagem",
+                        &[Value::String(target.clone())],
+                        expression,
+                    )?
+                    .and_then(|value| match value {
+                        Value::Integer(handle) => Some(handle),
+                        _ => None,
+                    })
+                    .ok_or_else(|| {
+                        runtime_error(expression, "não foi possível decodificar a imagem")
+                    })?;
+                let save = self.call_graphics_builtin(
+                    "salvar_imagem",
+                    &[Value::Integer(handle), Value::String(target)],
+                    expression,
+                );
+                let release = self.call_graphics_builtin(
+                    "liberar_imagem",
+                    &[Value::Integer(handle)],
+                    expression,
+                );
+                save?;
+                release?;
                 Value::String(extension.to_owned())
             }
             "endereco_disponivel" => {
@@ -2265,7 +2311,7 @@ impl<'a> Interpreter<'a> {
         arguments: &[Value],
         expression: &Expression,
     ) -> Result<Option<Value>, Diagnostic> {
-        let function_name = name.to_ascii_lowercase();
+        let function_name = name.to_owned();
         let arity = match function_name.as_str() {
             "obter_dados" | "excluir_dados" | "abrir_conexao" | "adicionar_parametros" => 1,
             "publicar_dados" | "atualizar_dados" | "adicionar_cabecalho" => 2,
@@ -2369,7 +2415,7 @@ impl<'a> Interpreter<'a> {
         arguments: &[Value],
         expression: &Expression,
     ) -> Result<Option<Value>, Diagnostic> {
-        let function_name = name.to_ascii_lowercase();
+        let function_name = name.to_owned();
         let arity = match function_name.as_str() {
             "botao_pressionado" => 1,
             "algum_botao_pressionado"
@@ -2409,14 +2455,15 @@ impl<'a> Interpreter<'a> {
             "ler_botao" => Value::Integer(
                 self.io
                     .portugol_read_mouse_button()
-                    .map_err(|message| runtime_error(expression, message))?,
+                    .map_err(|message| runtime_error(expression, message))? as i32
+                    as i64,
             ),
             "posicao_x" | "posicao_y" => {
                 let (x, y) = self
                     .io
                     .portugol_mouse_position()
                     .map_err(|message| runtime_error(expression, message))?;
-                Value::Integer(if function_name == "posicao_x" { x } else { y })
+                Value::Integer((if function_name == "posicao_x" { x } else { y }) as i32 as i64)
             }
             "ocultar_cursor" | "exibir_cursor" => {
                 self.io
@@ -2462,8 +2509,12 @@ impl<'a> Interpreter<'a> {
         arguments: &[Value],
         expression: &Expression,
     ) -> Result<Option<Value>, Diagnostic> {
-        let function_name = name.to_ascii_lowercase();
-        let (arity, returns_integer) = match function_name.as_str() {
+        let function_name = if name == "obter_RGB" {
+            "obter_rgb"
+        } else {
+            name
+        };
+        let (arity, returns_integer) = match name {
             "iniciar_modo_grafico" => (1, false),
             "fechar_janela" => (0, false),
             "minimizar_janela" => (0, false),
@@ -2486,7 +2537,7 @@ impl<'a> Interpreter<'a> {
             "transformar_imagem" => (5, true),
             "redimensionar_imagem" => (4, true),
             "obter_cor_pixel" => (3, true),
-            "obter_rgb" => (2, true),
+            "obter_RGB" => (2, true),
             "transformar_porcao_imagem" => (9, true),
             "desenhar_imagem" => (3, false),
             "salvar_imagem" => (2, false),
@@ -2536,7 +2587,7 @@ impl<'a> Interpreter<'a> {
             .portugol_graphics(&function_name, &host_arguments)
             .map_err(|message| runtime_error(expression, message))?;
         let value = match (returns_integer, result) {
-            (true, HostValue::Integer(value)) => Value::Integer(value),
+            (true, HostValue::Integer(value)) => Value::Integer(value as i32 as i64),
             (false, HostValue::Null) => Value::Null,
             (true, _) => {
                 return Err(runtime_error(
@@ -2560,7 +2611,7 @@ impl<'a> Interpreter<'a> {
         arguments: &[Value],
         expression: &Expression,
     ) -> Result<Option<Value>, Diagnostic> {
-        let function_name = name.to_ascii_lowercase();
+        let function_name = name.to_owned();
         let (arity, returns_integer) = match function_name.as_str() {
             "carregar_som" => (1, true),
             "liberar_som" | "pausar_som" | "interromper_som" | "definir_volume" => (1, false),
@@ -2587,7 +2638,7 @@ impl<'a> Interpreter<'a> {
             .portugol_audio(&function_name, &host_arguments)
             .map_err(|message| runtime_error(expression, message))?;
         let value = match (returns_integer, result) {
-            (true, HostValue::Integer(value)) => Value::Integer(value),
+            (true, HostValue::Integer(value)) => Value::Integer(value as i32 as i64),
             (false, HostValue::Null) => Value::Null,
             (true, _) => {
                 return Err(runtime_error(
@@ -2611,7 +2662,7 @@ impl<'a> Interpreter<'a> {
         arguments: &[Value],
         expression: &Expression,
     ) -> Result<Option<Value>, Diagnostic> {
-        let function_name = name.to_ascii_lowercase();
+        let function_name = name.to_owned();
         let arity = match function_name.as_str() {
             "tecla_pressionada" | "caracter_tecla" => 1,
             "alguma_tecla_pressionada" | "ler_tecla" => 0,
@@ -2640,11 +2691,14 @@ impl<'a> Interpreter<'a> {
             "ler_tecla" => Value::Integer(
                 self.io
                     .portugol_read_key()
-                    .map_err(|message| runtime_error(expression, message))?,
+                    .map_err(|message| runtime_error(expression, message))? as i32
+                    as i64,
             ),
             "caracter_tecla" => {
                 let key = arguments[0].as_integer(expression)? as u16;
-                Value::Character(char::from_u32(u32::from(key)).unwrap_or('\0'))
+                Value::Character(char::from_u32(u32::from(key)).ok_or_else(|| {
+                    runtime_error(expression, "surrogate UTF-16 não pode ser representado")
+                })?)
             }
             _ => unreachable!("validated Teclado function"),
         };
@@ -2779,41 +2833,22 @@ fn evaluate_binary(
                 left.to_text(),
                 right.to_text()
             ))),
-            _ => numeric_binary(left, right, expression, i64::checked_add, |a, b| a + b),
+            _ => numeric_binary(left, right, expression, i32::wrapping_add, |a, b| a + b),
         },
-        Op::Subtract => numeric_binary(left, right, expression, i64::checked_sub, |a, b| a - b),
-        Op::Multiply => numeric_binary(left, right, expression, i64::checked_mul, |a, b| a * b),
+        Op::Subtract => numeric_binary(left, right, expression, i32::wrapping_sub, |a, b| a - b),
+        Op::Multiply => numeric_binary(left, right, expression, i32::wrapping_mul, |a, b| a * b),
         Op::Divide => {
             if let (Value::Integer(left), Value::Integer(right)) = (&left, &right) {
                 if *right == 0 {
                     return Err(runtime_error(expression, "divisão por zero"));
                 }
-                return left
-                    .checked_div(*right)
-                    .map(Value::Integer)
-                    .ok_or_else(|| runtime_error(expression, "estouro em divisão inteira"));
+                return Ok(Value::Integer(
+                    (*left as i32).wrapping_div(*right as i32) as i64
+                ));
             }
             let right_number = right.as_number(expression)?;
-            if right_number == 0.0 {
-                return Err(runtime_error(expression, "divisão por zero"));
-            }
             let result = left.as_number(expression)? / right_number;
-            if result.is_finite() {
-                Ok(Value::Real(result))
-            } else {
-                Err(runtime_error(expression, "resultado real fora do limite"))
-            }
-        }
-        Op::IntegerDivide => {
-            let divisor = right.as_integer(expression)?;
-            if divisor == 0 {
-                return Err(runtime_error(expression, "divisão inteira por zero"));
-            }
-            Ok(Value::Integer(
-                left.as_integer(expression)?
-                    .checked_div(divisor)
-                    .ok_or_else(|| runtime_error(expression, "estouro em divisão inteira"))?,
-            ))
+            Ok(Value::Real(result))
         }
         Op::Remainder => {
             let divisor = right.as_integer(expression)?;
@@ -2821,33 +2856,28 @@ fn evaluate_binary(
                 return Err(runtime_error(expression, "resto de divisão por zero"));
             }
             Ok(Value::Integer(
-                left.as_integer(expression)?
-                    .checked_rem(divisor)
-                    .ok_or_else(|| runtime_error(expression, "estouro ao calcular o resto"))?,
+                (left.as_integer(expression)? as i32).wrapping_rem(divisor as i32) as i64,
             ))
         }
         Op::Equal => Ok(Value::Logical(values_equal(&left, &right))),
         Op::NotEqual => Ok(Value::Logical(!values_equal(&left, &right))),
         Op::BitAnd => Ok(Value::Integer(
-            left.as_integer(expression)? & right.as_integer(expression)?,
+            ((left.as_integer(expression)? as i32) & (right.as_integer(expression)? as i32)) as i64,
         )),
         Op::BitOr => Ok(Value::Integer(
-            left.as_integer(expression)? | right.as_integer(expression)?,
+            ((left.as_integer(expression)? as i32) | (right.as_integer(expression)? as i32)) as i64,
         )),
         Op::BitXor => Ok(Value::Integer(
-            left.as_integer(expression)? ^ right.as_integer(expression)?,
+            ((left.as_integer(expression)? as i32) ^ (right.as_integer(expression)? as i32)) as i64,
         )),
         Op::ShiftLeft | Op::ShiftRight => {
             let left = left.as_integer(expression)?;
             let amount = right.as_integer(expression)?;
-            let amount = u32::try_from(amount)
-                .ok()
-                .filter(|amount| *amount < i64::BITS)
-                .ok_or_else(|| runtime_error(expression, "quantidade de deslocamento inválida"))?;
+            let amount = amount as u32 & (i32::BITS - 1);
             Ok(Value::Integer(if operator == Op::ShiftLeft {
-                left.wrapping_shl(amount)
+                (left as i32).wrapping_shl(amount) as i64
             } else {
-                left >> amount
+                ((left as i32) >> amount) as i64
             }))
         }
         Op::Less | Op::LessEqual | Op::Greater | Op::GreaterEqual => {
@@ -2886,20 +2916,17 @@ fn numeric_binary(
     left: Value,
     right: Value,
     expression: &Expression,
-    integer_operation: impl FnOnce(i64, i64) -> Option<i64>,
+    integer_operation: impl FnOnce(i32, i32) -> i32,
     real_operation: impl FnOnce(f64, f64) -> f64,
 ) -> Result<Value, Diagnostic> {
     match (left, right) {
-        (Value::Integer(left), Value::Integer(right)) => integer_operation(left, right)
-            .map(Value::Integer)
-            .ok_or_else(|| runtime_error(expression, "estouro em operação com inteiros")),
+        (Value::Integer(left), Value::Integer(right)) => Ok(Value::Integer(integer_operation(
+            left as i32,
+            right as i32,
+        ) as i64)),
         (left, right) => {
             let result = real_operation(left.as_number(expression)?, right.as_number(expression)?);
-            if result.is_finite() {
-                Ok(Value::Real(result))
-            } else {
-                Err(runtime_error(expression, "resultado real fora do limite"))
-            }
+            Ok(Value::Real(result))
         }
     }
 }
@@ -2982,30 +3009,12 @@ fn call_math_builtin(
     };
     let value = match function_name.as_str() {
         "potencia" => first.powf(second),
-        "raiz" => {
-            if second == 0.0 {
-                return Err(runtime_error(
-                    expression,
-                    "o índice da raiz não pode ser zero",
-                ));
-            }
-            if first < 0.0 {
-                if second.fract() != 0.0 || second.abs().rem_euclid(2.0) != 1.0 {
-                    return Err(runtime_error(
-                        expression,
-                        "não existe raiz real para esse número e índice",
-                    ));
-                }
-                -(-first).powf(1.0 / second)
-            } else {
-                first.powf(1.0 / second)
-            }
-        }
+        "raiz" => first.powf(1.0 / second),
         "arredondar" => {
             let places = arguments[1].as_integer(expression)?.max(0);
             let places = i32::try_from(places).unwrap_or(i32::MAX);
             let factor = 10_f64.powi(places);
-            ((first * factor + 0.5).floor()) / factor
+            java_double_to_long((first * factor + 0.5).floor()) as f64 / factor
         }
         "logaritmo" => {
             if first <= 0.0 || second <= 0.0 || second == 1.0 {
@@ -3020,16 +3029,12 @@ fn call_math_builtin(
         "cosseno" => first.cos(),
         "tangente" => first.tan(),
         "valor_absoluto" => first.abs(),
+        "maior_numero" if first.is_nan() || second.is_nan() => f64::NAN,
         "maior_numero" => first.max(second),
+        "menor_numero" if first.is_nan() || second.is_nan() => f64::NAN,
         "menor_numero" => first.min(second),
         _ => unreachable!(),
     };
-    if !value.is_finite() {
-        return Err(runtime_error(
-            expression,
-            "a operação matemática não produziu um número real válido",
-        ));
-    }
     Ok(Some(Value::Real(value)))
 }
 
@@ -3039,7 +3044,7 @@ fn call_text_builtin(
     expression: &Expression,
     max_string_bytes: usize,
 ) -> Result<Option<Value>, Diagnostic> {
-    let function_name = name.to_ascii_lowercase();
+    let function_name = name.to_owned();
     let arity = match function_name.as_str() {
         "numero_caracteres" | "caixa_alta" | "caixa_baixa" => 1,
         "substituir" | "preencher_a_esquerda" | "posicao_texto" | "extrair_subtexto" => 3,
@@ -3068,7 +3073,7 @@ fn call_text_builtin(
 
     let value = match function_name.as_str() {
         "numero_caracteres" => {
-            let count = i64::try_from(string_argument(0)?.chars().count())
+            let count = i64::try_from(string_argument(0)?.encode_utf16().count())
                 .map_err(|_| runtime_error(expression, "texto excede o limite de caracteres"))?;
             Value::Integer(count)
         }
@@ -3106,10 +3111,15 @@ fn call_text_builtin(
                     ));
                 }
             };
-            let width = usize::try_from(integer_argument(1)?)
-                .map_err(|_| runtime_error(expression, "tamanho de texto negativo"))?;
             let source = string_argument(2)?;
-            let padding = width.saturating_sub(source.chars().count());
+            let width = integer_argument(1)?;
+            let source_units = source.encode_utf16().count();
+            if width <= source_units as i64 {
+                return Ok(Some(Value::String(source)));
+            }
+            let width = usize::try_from(width)
+                .map_err(|_| runtime_error(expression, "tamanho de texto fora do limite"))?;
+            let padding = width.saturating_sub(source_units);
             let padding_bytes = padding
                 .checked_mul(character.len_utf8())
                 .ok_or_else(|| runtime_error(expression, "texto excede o limite permitido"))?;
@@ -3133,25 +3143,24 @@ fn call_text_builtin(
             let source = string_argument(0)?;
             let index = usize::try_from(integer_argument(1)?)
                 .map_err(|_| runtime_error(expression, "índice de texto negativo"))?;
-            let character = source
-                .chars()
+            let unit = source
+                .encode_utf16()
                 .nth(index)
                 .ok_or_else(|| runtime_error(expression, "índice de texto fora do limite"))?;
+            let character = char::from_u32(u32::from(unit)).ok_or_else(|| {
+                runtime_error(
+                    expression,
+                    "um surrogate UTF-16 isolado não pode ser representado",
+                )
+            })?;
             Value::Character(character)
         }
         "posicao_texto" => {
             let search = string_argument(0)?;
             let source = string_argument(1)?;
-            let start = usize::try_from(integer_argument(2)?)
-                .map_err(|_| runtime_error(expression, "posição inicial negativa"))?;
-            let byte_offset = source
-                .char_indices()
-                .nth(start)
-                .map(|(offset, _)| offset)
-                .or_else(|| (start == source.chars().count()).then_some(source.len()));
-            let position = byte_offset
-                .and_then(|offset| source[offset..].find(&search).map(|found| offset + found))
-                .map(|offset| i64::try_from(source[..offset].chars().count()).unwrap_or(i64::MAX))
+            let start = integer_argument(2)?;
+            let position = utf16_index_of(&source, &search, start)
+                .map(|position| position as i32 as i64)
                 .unwrap_or(-1);
             Value::Integer(position)
         }
@@ -3161,21 +3170,17 @@ fn call_text_builtin(
                 .map_err(|_| runtime_error(expression, "posição inicial negativa"))?;
             let end = usize::try_from(integer_argument(2)?)
                 .map_err(|_| runtime_error(expression, "posição final negativa"))?;
-            let character_count = source.chars().count();
+            let units: Vec<u16> = source.encode_utf16().collect();
+            let character_count = units.len();
             if start > end || end > character_count {
                 return Err(runtime_error(
                     expression,
                     "intervalo de texto fora do limite",
                 ));
             }
-            let byte_offset = |character_index: usize| {
-                source
-                    .char_indices()
-                    .nth(character_index)
-                    .map(|(offset, _)| offset)
-                    .unwrap_or(source.len())
-            };
-            Value::String(source[byte_offset(start)..byte_offset(end)].to_owned())
+            let substring = String::from_utf16(&units[start..end])
+                .map_err(|_| runtime_error(expression, "o intervalo divide um caractere UTF-16"))?;
+            Value::String(substring)
         }
         _ => unreachable!("validated text library function"),
     };
@@ -3189,11 +3194,17 @@ fn transform_case(
     expression: &Expression,
 ) -> Result<String, Diagnostic> {
     let mut transformed = String::with_capacity(source.len().min(max_string_bytes));
-    for character in source.chars() {
+    let characters: Vec<char> = source.chars().collect();
+    for (index, character) in characters.iter().copied().enumerate() {
         if uppercase {
             for mapped in character.to_uppercase() {
                 push_bounded_char(&mut transformed, mapped, max_string_bytes, expression)?;
             }
+        } else if character == 'Σ'
+            && has_cased_character_before(&characters, index)
+            && !has_cased_character_after(&characters, index)
+        {
+            push_bounded_char(&mut transformed, 'ς', max_string_bytes, expression)?;
         } else {
             for mapped in character.to_lowercase() {
                 push_bounded_char(&mut transformed, mapped, max_string_bytes, expression)?;
@@ -3201,6 +3212,77 @@ fn transform_case(
         }
     }
     Ok(transformed)
+}
+
+fn has_cased_character_before(characters: &[char], index: usize) -> bool {
+    characters[..index]
+        .iter()
+        .rev()
+        .find(|character| !is_case_ignorable(**character))
+        .is_some_and(|character| character.is_lowercase() || character.is_uppercase())
+}
+
+fn has_cased_character_after(characters: &[char], index: usize) -> bool {
+    characters[index + 1..]
+        .iter()
+        .find(|character| !is_case_ignorable(**character))
+        .is_some_and(|character| character.is_lowercase() || character.is_uppercase())
+}
+
+fn is_case_ignorable(character: char) -> bool {
+    // shortcut: final-sigma context uses a curated Unicode range set; use full Unicode case data if parity requires every code point.
+    if character.is_alphanumeric() || character.is_whitespace() {
+        return false;
+    }
+    character.is_ascii_punctuation()
+        || matches!(
+            character,
+            '\u{00ad}'
+                | '\u{034f}'
+                | '\u{061c}'
+                | '\u{180e}'
+                | '\u{200b}'..='\u{200f}'
+                | '\u{202a}'..='\u{202e}'
+                | '\u{2060}'..='\u{206f}'
+                | '\u{feff}'
+                | '\u{0300}'..='\u{036f}'
+                | '\u{0483}'..='\u{0489}'
+                | '\u{0591}'..='\u{05bd}'
+                | '\u{05bf}'
+                | '\u{05c1}'..='\u{05c2}'
+                | '\u{0610}'..='\u{061a}'
+                | '\u{064b}'..='\u{065f}'
+                | '\u{0670}'
+                | '\u{06d6}'..='\u{06ed}'
+                | '\u{0900}'..='\u{0903}'
+                | '\u{093a}'..='\u{094f}'
+                | '\u{1ab0}'..='\u{1aff}'
+                | '\u{1dc0}'..='\u{1dff}'
+                | '\u{20d0}'..='\u{20ff}'
+                | '\u{2e00}'..='\u{2e7f}'
+                | '\u{3001}'..='\u{303f}'
+                | '\u{fe10}'..='\u{fe1f}'
+                | '\u{fe30}'..='\u{fe4f}'
+                | '\u{fe00}'..='\u{fe0f}'
+                | '\u{ff01}'..='\u{ff0f}'
+                | '\u{ff1a}'..='\u{ff20}'
+                | '\u{ff3b}'..='\u{ff40}'
+                | '\u{ff5b}'..='\u{ff65}'
+                | '\u{1f3fb}'..='\u{1f3ff}'
+        )
+}
+
+fn utf16_index_of(source: &str, search: &str, start: i64) -> Option<usize> {
+    let source: Vec<u16> = source.encode_utf16().collect();
+    let search: Vec<u16> = search.encode_utf16().collect();
+    let start = usize::try_from(start.max(0)).ok()?.min(source.len());
+    if search.is_empty() {
+        return Some(start);
+    }
+    source[start..]
+        .windows(search.len())
+        .position(|window| window == search)
+        .map(|offset| start + offset)
 }
 
 fn push_bounded_char(
@@ -3230,11 +3312,50 @@ fn replace_all_bounded(
     max_string_bytes: usize,
     expression: &Expression,
 ) -> Result<String, Diagnostic> {
-    let occurrences = if search.is_empty() {
-        source.chars().count().saturating_add(1)
-    } else {
-        source.match_indices(search).count()
-    };
+    if search.is_empty() {
+        if replacement.is_empty() {
+            if source.len() > max_string_bytes {
+                return Err(runtime_error(
+                    expression,
+                    format!("texto excede o limite de {max_string_bytes} bytes"),
+                ));
+            }
+            return Ok(source.to_owned());
+        }
+        let source_units = source.encode_utf16().count();
+        if source_units != source.chars().count() {
+            return Err(runtime_error(
+                expression,
+                "a substituição separaria unidades surrogate UTF-16",
+            ));
+        }
+        let occurrences = source_units
+            .checked_add(1)
+            .ok_or_else(|| runtime_error(expression, "texto excede o limite permitido"))?;
+        let output_bytes = source
+            .len()
+            .checked_add(
+                replacement
+                    .len()
+                    .checked_mul(occurrences)
+                    .ok_or_else(|| runtime_error(expression, "texto excede o limite permitido"))?,
+            )
+            .ok_or_else(|| runtime_error(expression, "texto excede o limite permitido"))?;
+        if output_bytes > max_string_bytes {
+            return Err(runtime_error(
+                expression,
+                format!("texto excede o limite de {max_string_bytes} bytes"),
+            ));
+        }
+        let mut output = String::with_capacity(output_bytes);
+        output.push_str(replacement);
+        for character in source.chars() {
+            output.push(character);
+            output.push_str(replacement);
+        }
+        return Ok(output);
+    }
+    let occurrences = source.match_indices(search).count();
     let removed_bytes = search
         .len()
         .checked_mul(occurrences)
@@ -3262,7 +3383,7 @@ fn call_types_builtin(
     arguments: &[Value],
     expression: &Expression,
 ) -> Result<Option<Value>, Diagnostic> {
-    let function_name = name.to_ascii_lowercase();
+    let function_name = name.to_owned();
     let arity = match function_name.as_str() {
         "cadeia_e_real"
         | "cadeia_e_logico"
@@ -3337,16 +3458,23 @@ fn call_types_builtin(
         }
         "cadeia_e_real" => Value::Logical(is_real_text(&text_argument(0)?)),
         "cadeia_e_logico" => {
-            Value::Logical(matches!(text_argument(0)?.as_str(), "verdadeiro" | "falso"))
+            let text = text_argument(0)?;
+            Value::Logical(text.starts_with("verdadeiro") || text.ends_with("falso"))
         }
-        "cadeia_e_caracter" => Value::Logical(text_argument(0)?.chars().count() == 1),
+        "cadeia_e_caracter" => Value::Logical(text_argument(0)?.encode_utf16().count() == 1),
         "cadeia_para_caracter" => {
             let text = text_argument(0)?;
+            if text.encode_utf16().count() != 1 {
+                return Err(runtime_error(
+                    expression,
+                    "a cadeia deve conter um caractere",
+                ));
+            }
             let mut characters = text.chars();
             let character = characters
                 .next()
                 .filter(|_| characters.next().is_none())
-                .ok_or_else(|| runtime_error(expression, "a cadeia deve conter um caractere"))?;
+                .ok_or_else(|| runtime_error(expression, "surrogate UTF-16 não representável"))?;
             Value::Character(character)
         }
         "cadeia_para_inteiro" => {
@@ -3358,7 +3486,7 @@ fn call_types_builtin(
         }
         "cadeia_para_real" => {
             let text = text_argument(0)?;
-            Value::Real(parse_finite_real(&text).ok_or_else(|| {
+            Value::Real(parse_java_double(&text).ok_or_else(|| {
                 runtime_error(expression, format!("'{text}' não é um número real válido"))
             })?)
         }
@@ -3422,17 +3550,8 @@ fn call_types_builtin(
         }),
         "logico_para_inteiro" => Value::Integer(i64::from(logical_argument(0)?)),
         "logico_para_caracter" => Value::Character(if logical_argument(0)? { 'S' } else { 'N' }),
-        "real_para_cadeia" => Value::String(real_argument(0)?.to_string()),
-        "real_para_inteiro" => {
-            let number = real_argument(0)?.trunc();
-            if !number.is_finite() || number < i64::MIN as f64 || number >= i64::MAX as f64 {
-                return Err(runtime_error(
-                    expression,
-                    "número fora do limite de inteiro",
-                ));
-            }
-            Value::Integer(number as i64)
-        }
+        "real_para_cadeia" => Value::String(java_double_to_string(real_argument(0)?)),
+        "real_para_inteiro" => Value::Integer(i64::from(java_double_to_int(real_argument(0)?))),
         _ => unreachable!("validated types library function"),
     };
     Ok(Some(value))
@@ -3481,25 +3600,26 @@ fn is_real_text(text: &str) -> bool {
 }
 
 fn parse_radix_integer(text: &str, radix: u32) -> Result<i64, ()> {
-    let (negative, unsigned) = text
-        .strip_prefix('-')
-        .map_or((false, text), |unsigned| (true, unsigned));
-    let digits = match radix {
-        2 => unsigned
-            .strip_prefix("0b")
-            .or_else(|| unsigned.strip_prefix("0B"))
-            .unwrap_or(unsigned),
-        10 => unsigned,
-        16 => unsigned
-            .strip_prefix("0x")
-            .or_else(|| unsigned.strip_prefix("0X"))
-            .unwrap_or(unsigned),
+    let (negative, unsigned) = text.strip_prefix('-').map_or_else(
+        || (false, text.strip_prefix('+').unwrap_or(text)),
+        |unsigned| (true, unsigned),
+    );
+    let prefixes: &[&str] = match radix {
+        2 => &["0B", "0b"],
+        10 => &[],
+        16 => &["0X", "0x"],
         _ => return Err(()),
     };
+    let mut digits = unsigned.to_owned();
+    for prefix in prefixes {
+        if let Some(start) = digits.find(prefix) {
+            digits.replace_range(start..start + prefix.len(), "");
+        }
+    }
     if digits.is_empty() {
         return Err(());
     }
-    let value = i128::from_str_radix(digits, radix).map_err(|_| ())?;
+    let value = i128::from_str_radix(&digits, radix).map_err(|_| ())?;
     let value = if negative { -value } else { value };
     let value = i64::try_from(value).map_err(|_| ())?;
     Ok(i64::from(value as i32))
@@ -3507,15 +3627,23 @@ fn parse_radix_integer(text: &str, radix: u32) -> Result<i64, ()> {
 
 fn parse_input(text: &str, ty: Type, expression: &Expression) -> Result<Value, Diagnostic> {
     match ty {
-        Type::Integer => text.trim().parse::<i64>().map(Value::Integer).map_err(|_| {
-            runtime_error(
-                expression,
-                format!("'{text}' não é um número inteiro válido"),
-            )
-        }),
+        Type::Void => Err(runtime_error(
+            expression,
+            "o tipo vazio não pode receber entrada",
+        )),
+        Type::Integer => text
+            .trim()
+            .parse::<i32>()
+            .map(|value| Value::Integer(i64::from(value)))
+            .map_err(|_| {
+                runtime_error(
+                    expression,
+                    format!("'{text}' não é um número inteiro válido"),
+                )
+            }),
         Type::Real => {
             let normalized = text.trim().replace(',', ".");
-            parse_finite_real(&normalized)
+            parse_java_double(&normalized)
                 .map(Value::Real)
                 .ok_or_else(|| {
                     runtime_error(expression, format!("'{text}' não é um número real válido"))
@@ -3530,21 +3658,270 @@ fn parse_input(text: &str, ty: Type, expression: &Expression) -> Result<Value, D
             )),
         },
         Type::Character => {
-            let mut characters = text.chars();
-            match (characters.next(), characters.next()) {
-                (Some(value), None) => Ok(Value::Character(value)),
-                _ => Err(runtime_error(
+            if text.encode_utf16().count() == 1 {
+                Ok(Value::Character(
+                    text.chars().next().expect("one UTF-16 unit"),
+                ))
+            } else {
+                Err(runtime_error(
                     expression,
                     "a entrada deve conter exatamente um caractere",
-                )),
+                ))
             }
         }
         Type::String => Ok(Value::String(text.to_owned())),
     }
 }
 
-fn parse_finite_real(text: &str) -> Option<f64> {
-    text.parse::<f64>().ok().filter(|number| number.is_finite())
+fn parse_java_double(source: &str) -> Option<f64> {
+    let text = source.trim_matches(|character: char| character <= '\u{20}');
+    let (negative, unsigned) = text
+        .strip_prefix('-')
+        .map_or((false, text.strip_prefix('+').unwrap_or(text)), |text| {
+            (true, text)
+        });
+    if unsigned == "NaN" {
+        return Some(f64::NAN);
+    }
+    if unsigned == "Infinity" {
+        return Some(if negative {
+            f64::NEG_INFINITY
+        } else {
+            f64::INFINITY
+        });
+    }
+
+    let without_suffix = if unsigned
+        .chars()
+        .last()
+        .is_some_and(|character| matches!(character, 'f' | 'F' | 'd' | 'D'))
+    {
+        &unsigned[..unsigned.len() - 1]
+    } else {
+        unsigned
+    };
+    let sign = if negative { -1.0 } else { 1.0 };
+    let hex = without_suffix
+        .strip_prefix("0x")
+        .or_else(|| without_suffix.strip_prefix("0X"));
+    if let Some(hex) = hex {
+        let exponent_index = hex.find(|character| character == 'p' || character == 'P')?;
+        let (significand, exponent) = hex.split_at(exponent_index);
+        let exponent = parse_saturated_exponent(&exponent[1..])?;
+        let mut mantissa = 0.0;
+        let mut fractional_digits = 0_i32;
+        let mut after_decimal = false;
+        let mut saw_digit = false;
+        for character in significand.chars() {
+            if character == '.' && !after_decimal {
+                after_decimal = true;
+                continue;
+            }
+            let digit = character.to_digit(16)?;
+            saw_digit = true;
+            mantissa = mantissa * 16.0 + f64::from(digit);
+            if after_decimal {
+                fractional_digits += 1;
+            }
+        }
+        if !saw_digit {
+            return None;
+        }
+        if mantissa == 0.0 {
+            return Some(sign * 0.0);
+        }
+        return Some(sign * mantissa * 16_f64.powi(-fractional_digits) * 2_f64.powi(exponent));
+    }
+    if !is_java_decimal_literal(without_suffix) {
+        return None;
+    }
+    let value = without_suffix.parse::<f64>().ok()?;
+    Some(if negative { -value } else { value })
+}
+
+fn parse_saturated_exponent(source: &str) -> Option<i32> {
+    let (negative, digits) = source.strip_prefix('-').map_or(
+        (false, source.strip_prefix('+').unwrap_or(source)),
+        |digits| (true, digits),
+    );
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    Some(
+        source
+            .parse()
+            .unwrap_or(if negative { i32::MIN } else { i32::MAX }),
+    )
+}
+
+fn is_java_decimal_literal(text: &str) -> bool {
+    let (significand, exponent) = text.find(['e', 'E']).map_or((text, None), |index| {
+        (&text[..index], Some(&text[index + 1..]))
+    });
+    if let Some(exponent) = exponent {
+        let digits = exponent.strip_prefix(['+', '-']).unwrap_or(exponent);
+        if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+            return false;
+        }
+    }
+    let mut parts = significand.split('.');
+    let whole = parts.next().unwrap_or_default();
+    let fraction = parts.next();
+    if parts.next().is_some() {
+        return false;
+    }
+    let digits = whole.bytes().chain(fraction.unwrap_or_default().bytes());
+    let mut count = 0;
+    for digit in digits {
+        if !digit.is_ascii_digit() {
+            return false;
+        }
+        count += 1;
+    }
+    count > 0
+}
+
+fn java_double_to_string(value: f64) -> String {
+    if value.is_nan() {
+        return "NaN".to_owned();
+    }
+    if value == f64::INFINITY {
+        return "Infinity".to_owned();
+    }
+    if value == f64::NEG_INFINITY {
+        return "-Infinity".to_owned();
+    }
+    if value == 0.0 {
+        return if value.is_sign_negative() {
+            "-0.0"
+        } else {
+            "0.0"
+        }
+        .to_owned();
+    }
+
+    let magnitude = value.abs();
+    let mut text = if magnitude >= 1e7 || magnitude < 1e-3 {
+        format!("{value:e}")
+    } else {
+        value.to_string()
+    };
+    if let Some((mantissa, exponent)) = text.split_once('e') {
+        let mantissa = if mantissa.contains('.') {
+            mantissa.to_owned()
+        } else {
+            format!("{mantissa}.0")
+        };
+        let exponent = exponent.parse::<i32>().unwrap_or_default();
+        text = format!("{mantissa}E{exponent}");
+    } else if !text.contains('.') {
+        text.push_str(".0");
+    }
+    text
+}
+
+fn java_double_to_int(value: f64) -> i32 {
+    if value.is_nan() {
+        0
+    } else if value >= i32::MAX as f64 {
+        i32::MAX
+    } else if value <= i32::MIN as f64 {
+        i32::MIN
+    } else {
+        value.trunc() as i32
+    }
+}
+
+fn java_double_to_long(value: f64) -> i64 {
+    if value.is_nan() {
+        0
+    } else if value >= i64::MAX as f64 {
+        i64::MAX
+    } else if value <= i64::MIN as f64 {
+        i64::MIN
+    } else {
+        value as i64
+    }
+}
+
+fn decode_http_text(headers: &[(String, String)], body: &[u8]) -> Result<String, String> {
+    let charset = headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("content-type"))
+        .and_then(|(_, content_type)| {
+            content_type.split(';').skip(1).find_map(|parameter| {
+                let (name, value) = parameter.trim().split_once('=')?;
+                name.trim().eq_ignore_ascii_case("charset").then(|| {
+                    value
+                        .trim()
+                        .trim_matches(|character| character == '"' || character == '\'')
+                        .to_ascii_lowercase()
+                })
+            })
+        })
+        .unwrap_or_else(|| "iso-8859-1".to_owned());
+    match charset.as_str() {
+        "utf-8" | "utf8" => Ok(String::from_utf8_lossy(body).into_owned()),
+        "iso-8859-1" | "iso8859-1" | "latin1" | "latin-1" => {
+            Ok(body.iter().map(|byte| char::from(*byte)).collect())
+        }
+        "windows-1252" | "cp1252" => Ok(body
+            .iter()
+            .map(|byte| match *byte {
+                0x80 => '€',
+                0x82 => '‚',
+                0x83 => 'ƒ',
+                0x84 => '„',
+                0x85 => '…',
+                0x86 => '†',
+                0x87 => '‡',
+                0x88 => 'ˆ',
+                0x89 => '‰',
+                0x8a => 'Š',
+                0x8b => '‹',
+                0x8c => 'Œ',
+                0x8e => 'Ž',
+                0x91 => '‘',
+                0x92 => '’',
+                0x93 => '“',
+                0x94 => '”',
+                0x95 => '•',
+                0x96 => '–',
+                0x97 => '—',
+                0x98 => '˜',
+                0x99 => '™',
+                0x9a => 'š',
+                0x9b => '›',
+                0x9c => 'œ',
+                0x9e => 'ž',
+                0x9f => 'Ÿ',
+                byte => char::from(byte),
+            })
+            .collect()),
+        "us-ascii" | "ascii" => Ok(body
+            .iter()
+            .map(|byte| {
+                if byte.is_ascii() {
+                    char::from(*byte)
+                } else {
+                    '\u{fffd}'
+                }
+            })
+            .collect()),
+        "utf-16le" | "utf16le" => Ok(String::from_utf16_lossy(
+            &body
+                .chunks_exact(2)
+                .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+                .collect::<Vec<_>>(),
+        )),
+        "utf-16be" | "utf16be" => Ok(String::from_utf16_lossy(
+            &body
+                .chunks_exact(2)
+                .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
+                .collect::<Vec<_>>(),
+        )),
+        _ => Err(format!("charset HTTP não suportado: {charset}")),
+    }
 }
 
 fn runtime_error<T: HasLocation>(located: &T, message: impl Into<String>) -> Diagnostic {
@@ -3595,6 +3972,7 @@ fn type_name(ty: Type) -> &'static str {
         Type::Logical => "logico",
         Type::Character => "caracter",
         Type::String => "cadeia",
+        Type::Void => "vazio",
     }
 }
 
@@ -3606,19 +3984,6 @@ fn value_type(value: &Value) -> Option<Type> {
         Value::Character(_) => Some(Type::Character),
         Value::String(_) => Some(Type::String),
         Value::Array(_) | Value::Null => None,
-    }
-}
-
-fn deep_copy_value(value: Value) -> Value {
-    match value {
-        Value::Array(values) => Value::Array(Rc::new(RefCell::new(
-            values
-                .borrow()
-                .iter()
-                .map(|value| Rc::new(RefCell::new(deep_copy_value(value.borrow().clone()))))
-                .collect(),
-        ))),
-        value => value,
     }
 }
 

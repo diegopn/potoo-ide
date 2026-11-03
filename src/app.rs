@@ -1,5 +1,5 @@
 use crate::components::{
-    content_panel::{self, Language, SourceDocument, SyntaxTags},
+    content_panel::{self, Language, ProjectTemplate, SourceDocument, SyntaxTags},
     header, icon, sidebar,
     sidebar::ProjectFile,
     start_page,
@@ -10,6 +10,7 @@ use crate::learning::{
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
+use std::io::{self, Write};
 use std::{
     cell::{Cell, RefCell},
     fs,
@@ -24,6 +25,56 @@ use std::{
     },
     time::Duration,
 };
+
+const MAX_EXECUTION_EVENTS_PER_TICK: usize = 128;
+static NEXT_ATOMIC_SAVE_ID: AtomicU64 = AtomicU64::new(1);
+
+fn atomic_write(path: &Path, contents: &[u8]) -> io::Result<()> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let file_name = path.file_name().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "destination has no file name")
+    })?;
+    let mut created = None;
+    for _ in 0..16 {
+        let id = NEXT_ATOMIC_SAVE_ID.fetch_add(1, Ordering::Relaxed);
+        let temporary = parent.join(format!(
+            ".{}.{}.{}.tmp",
+            file_name.to_string_lossy(),
+            std::process::id(),
+            id
+        ));
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+        {
+            Ok(file) => {
+                created = Some((temporary, file));
+                break;
+            }
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error),
+        }
+    }
+    let (temporary, mut file) = created.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "could not allocate temporary save file",
+        )
+    })?;
+    let result = (|| {
+        file.write_all(contents)?;
+        file.sync_all()?;
+        fs::rename(&temporary, path)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(temporary);
+    }
+    result
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum UiLanguage {
@@ -118,18 +169,23 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Programas recentes" => "Recent programs",
             "Remover dos recentes" => "Remove from recent list",
             "Comece um novo programa" => "Start a new program",
+            "Retome um trabalho existente" => "Continue existing work",
             "Projeto Portugol" => "Portugol project",
             "Projeto VisuAlg" => "VisuAlg project",
             "Projeto Potigol" => "Potigol project",
+            "Projeto G-Portugol" => "G-Portugol project",
             "Comece com um arquivo .por" => "Start with a .por file",
             "Comece com um arquivo .alg" => "Start with a .alg file",
-            "Criar programa inicial (.por)" => "Create a starter program (.por)",
-            "Criar programa inicial (.alg)" => "Create a starter program (.alg)",
+            "Dialetos do Portugol: G-Portugol, Portugol 2.0 e VisuAlg" => {
+                "Portugol dialects: G-Portugol, Portugol 2.0, and VisuAlg"
+            }
+            "3 variantes" => "3 variants",
+            "2 variantes" => "2 variants",
             "Criar programa inicial (.poti)" => "Create a starter program (.poti)",
             "Selecionar uma pasta" => "Choose a folder",
             "Abra um projeto que não aparece na lista." => "Open a project that is not listed.",
-            "Abra um arquivo .por, .alg ou .poti diretamente no editor." => {
-                "Open a .por, .alg, or .poti file directly in the editor."
+            "Abra um arquivo .por, .alg, .poti ou .gpt diretamente no editor." => {
+                "Open a .por, .alg, .poti, or .gpt file directly in the editor."
             }
             "Projeto" => "Project",
             "Abrir um programa recente" => "Open a recent program",
@@ -179,13 +235,27 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Criar item no projeto" => "Create project item",
             "Novo projeto" => "New project",
             "Criar projeto" => "Create project",
-            "Criar um projeto Portugol, VisuAlg ou Potigol" => {
-                "Create a Portugol, VisuAlg, or Potigol project"
+            "Criar um projeto Portugol, VisuAlg, Potigol ou G-Portugol" => {
+                "Create a Portugol, VisuAlg, Potigol, or G-Portugol project"
             }
             "Selecione a pseudolinguagem do projeto" => "Select the project's pseudolanguage",
+            "Pseudolinguagem" => "Pseudolanguage",
+            "Variante do Portugol" => "Portugol variant",
+            "Variante do Potigol" => "Potigol variant",
+            "Esta análise do Potigol é heurística e pode não reconhecer todos os casos da linguagem." => {
+                "Potigol analysis here is heuristic and may not recognize every language construct."
+            }
+            "Uma rotina executa ações sem devolver um resultado; cada linguagem define como seus parâmetros são passados." => {
+                "A routine performs actions without returning a result; each language defines how its parameters are passed."
+            }
+            "Portugol 2.0" => "Portugol 2.0",
+            "G-Portugol" => "G-Portugol",
+            "Potigol Clássico" => "Classic Potigol",
+            "Potigol Jerimum (Jogos 2D)" => "Potigol Jerimum (2D Games)",
             "Arquivo inicial .por" => "Initial .por file",
             "Arquivo inicial .alg" => "Initial .alg file",
             "Arquivo inicial .poti" => "Initial .poti file",
+            "Arquivo inicial .gpt" => "Initial .gpt file",
             "Crie uma pasta para reunir seus programas e exercícios." => {
                 "Create a folder to keep your programs and exercises together."
             }
@@ -213,8 +283,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Não foi possível criar o projeto" => "Could not create the project",
             "Projeto criado" => "Project created",
             "Novo arquivo" => "New file",
-            "Criar um arquivo Portugol, VisuAlg ou Potigol" => {
-                "Create a Portugol, VisuAlg, or Potigol file"
+            "Criar um arquivo Portugol, VisuAlg, Potigol ou G-Portugol" => {
+                "Create a Portugol, VisuAlg, Potigol, or G-Portugol file"
             }
             "Nova pasta" => "New folder",
             "Criar uma pasta no projeto" => "Create a folder in the project",
@@ -363,8 +433,20 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "O tipo `vazio` indica que a função não devolve um valor." => {
                 "The `vazio` type means the function does not return a value."
             }
+            "Esta função não declara um tipo de retorno." => {
+                "This function does not declare a return type."
+            }
             "Ela devolve um valor do tipo" => "It returns a value of type",
             "Esse tipo representa texto." => "This type represents text.",
+            "Esse tipo representa texto no G-Portugol." => {
+                "This type represents text in G-Portugol."
+            }
+            "A função produz texto, representado pelo tipo `literal` no G-Portugol." => {
+                "The function produces text, represented by the `literal` type in G-Portugol."
+            }
+            "Os parâmetros recebem os dados usados pela função; a ausência de tipo indica que ela não devolve resultado." => {
+                "Parameters receive the data used by the function; no declared type means it does not return a result."
+            }
             "O retorno não foi identificado." => "The return type could not be identified.",
             "Ele executa ações e não devolve um valor como resultado." => {
                 "It performs actions and does not return a value."
@@ -380,6 +462,9 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "escreva e escreval mostram na saída os valores e textos informados." => {
                 "escreva and escreval display the given values and text in the output."
+            }
+            "imprima mostra na saída os valores e textos informados." => {
+                "imprima displays the given values and text in the output."
             }
             "A atribuição calcula o lado direito e atualiza o valor da variável à esquerda." => {
                 "An assignment evaluates the right side and updates the variable on the left."
@@ -397,8 +482,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Parâmetros são os dados recebidos pela função. `vazio` informa que nenhum resultado é devolvido." => {
                 "Parameters are the data received by a function. `vazio` means no result is returned."
             }
-            "A função produz um valor de texto, representado pelo tipo `cadeia` no Portugol Studio." => {
-                "The function produces text, represented by the `cadeia` type in Portugol Studio."
+            "A função produz um valor de texto, representado pelo tipo `cadeia` em Portugol 2.0." => {
+                "The function produces text, represented by the `cadeia` type in Portugol 2.0."
             }
             "A função devolve um resultado do tipo `{return_type}`. Seus parâmetros recebem os dados usados no cálculo." => {
                 "The function returns a `{return_type}` value. Its parameters receive the data used in the calculation."
@@ -542,8 +627,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Esta pasta não contém arquivos visíveis." => {
                 "This folder contains no visible files."
             }
-            "Nenhum programa .por, .alg ou .poti nesta pasta. Os demais arquivos aparecem na lista." => {
-                "No .por, .alg, or .poti programs in this folder. Other files appear in the list."
+            "Nenhum programa .por, .alg, .poti ou .gpt nesta pasta. Os demais arquivos aparecem na lista." => {
+                "No .por, .alg, .poti, or .gpt programs in this folder. Other files appear in the list."
             }
             "Fechar arquivo" => "Close file",
             "Escolha um nome e a linguagem do novo arquivo." => {
@@ -575,13 +660,18 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
                 "Save your files before quitting, or discard the changes to close Potoo IDE."
             }
             "Nenhum problema detectado" => "No problems detected",
+            "Abrindo arquivo…" => "Opening file…",
+            "Abrindo pasta…" => "Opening folder…",
+            "Não foi possível atualizar os arquivos do projeto" => {
+                "Could not refresh the project files"
+            }
             "Os erros de sintaxe e execução aparecerão aqui." => {
                 "Syntax and runtime errors will appear here."
             }
             "Arquivo aberto" => "File opened",
             "Arquivo salvo" => "File saved",
-            "Pasta aberta. Crie um arquivo .por, .alg ou .poti para começar." => {
-                "Folder opened. Create a .por, .alg, or .poti file to get started."
+            "Pasta aberta. Crie um arquivo .por, .alg, .poti ou .gpt para começar." => {
+                "Folder opened. Create a .por, .alg, .poti, or .gpt file to get started."
             }
             "Novo arquivo criado" => "New file created",
             "Já existe um arquivo com esse nome." => "A file with that name already exists.",
@@ -613,8 +703,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Não foi possível abrir a pasta" => "Could not open folder",
             "Não foi possível salvar o arquivo" => "Could not save file",
             "Não foi possível criar o arquivo" => "Could not create file",
-            "O editor abre apenas arquivos .por, .alg e .poti." => {
-                "The editor opens only .por, .alg, and .poti files."
+            "O editor abre apenas arquivos .por, .alg, .poti e .gpt." => {
+                "The editor opens only .por, .alg, .poti, and .gpt files."
             }
             "Abra uma pasta de projeto antes de criar arquivos." => {
                 "Open a project folder before creating files."
@@ -625,9 +715,11 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Use um nome simples, sem pastas ou caracteres especiais." => {
                 "Use a simple name without folders or special characters."
             }
-            "Use a extensão .por, .alg ou .poti." => "Use the .por, .alg, or .poti extension.",
-            "Salve o código com a extensão .por, .alg ou .poti." => {
-                "Save the code with the .por, .alg, or .poti extension."
+            "Use a extensão .por, .alg, .poti ou .gpt." => {
+                "Use the .por, .alg, .poti, or .gpt extension."
+            }
+            "Salve o código com a extensão .por, .alg, .poti ou .gpt." => {
+                "Save the code with the .por, .alg, .poti, or .gpt extension."
             }
             "Selecione uma pasta local para abrir." => "Choose a local folder to open.",
             "Selecione um arquivo local." => "Choose a local file.",
@@ -636,8 +728,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Não foi possível abrir a janela de salvamento" => "Could not open the save dialog",
             "Abrir arquivo de código" => "Open source file",
-            "Portugol, VisuAlg e Potigol (*.por, *.alg, *.poti)" => {
-                "Portugol, VisuAlg, and Potigol (*.por, *.alg, *.poti)"
+            "Portugol, VisuAlg, Potigol e G-Portugol (*.por, *.alg, *.poti, *.gpt)" => {
+                "Portugol, VisuAlg, Potigol, and G-Portugol (*.por, *.alg, *.poti, *.gpt)"
             }
             "Não foi possível abrir o arquivo de código" => "Could not open the source file",
             "novo-arquivo" => "new-file",
@@ -659,20 +751,25 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Programas recentes" => "Programas recientes",
             "Remover dos recentes" => "Quitar de recientes",
             "Comece um novo programa" => "Empieza un programa nuevo",
+            "Retome um trabalho existente" => "Retoma un trabajo existente",
             "Projeto Portugol" => "Proyecto Portugol",
             "Projeto VisuAlg" => "Proyecto VisuAlg",
             "Projeto Potigol" => "Proyecto Potigol",
+            "Projeto G-Portugol" => "Proyecto G-Portugol",
             "Comece com um arquivo .por" => "Empieza con un archivo .por",
             "Comece com um arquivo .alg" => "Empieza con un archivo .alg",
-            "Criar programa inicial (.por)" => "Crear un programa inicial (.por)",
-            "Criar programa inicial (.alg)" => "Crear un programa inicial (.alg)",
+            "Dialetos do Portugol: G-Portugol, Portugol 2.0 e VisuAlg" => {
+                "Dialectos de Portugol: G-Portugol, Portugol 2.0 y VisuAlg"
+            }
+            "3 variantes" => "3 variantes",
+            "2 variantes" => "2 variantes",
             "Criar programa inicial (.poti)" => "Crear un programa inicial (.poti)",
             "Selecionar uma pasta" => "Seleccionar una carpeta",
             "Abra um projeto que não aparece na lista." => {
                 "Abre un proyecto que no aparece en la lista."
             }
-            "Abra um arquivo .por, .alg ou .poti diretamente no editor." => {
-                "Abre un archivo .por, .alg o .poti directamente en el editor."
+            "Abra um arquivo .por, .alg, .poti ou .gpt diretamente no editor." => {
+                "Abre un archivo .por, .alg, .poti o .gpt directamente en el editor."
             }
             "Projeto" => "Proyecto",
             "Abrir um programa recente" => "Abrir un programa reciente",
@@ -722,13 +819,27 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Criar item no projeto" => "Crear elemento del proyecto",
             "Novo projeto" => "Nuevo proyecto",
             "Criar projeto" => "Crear proyecto",
-            "Criar um projeto Portugol, VisuAlg ou Potigol" => {
-                "Crear un proyecto Portugol, VisuAlg o Potigol"
+            "Criar um projeto Portugol, VisuAlg, Potigol ou G-Portugol" => {
+                "Crear un proyecto Portugol, VisuAlg, Potigol o G-Portugol"
             }
             "Selecione a pseudolinguagem do projeto" => "Selecciona el pseudolenguaje del proyecto",
+            "Pseudolinguagem" => "Pseudolenguaje",
+            "Variante do Portugol" => "Variante de Portugol",
+            "Variante do Potigol" => "Variante de Potigol",
+            "Esta análise do Potigol é heurística e pode não reconhecer todos os casos da linguagem." => {
+                "El análisis de Potigol es heurístico y puede no reconocer todos los casos del lenguaje."
+            }
+            "Uma rotina executa ações sem devolver um resultado; cada linguagem define como seus parâmetros são passados." => {
+                "Una rutina realiza acciones sin devolver un resultado; cada lenguaje define cómo se pasan sus parámetros."
+            }
+            "Portugol 2.0" => "Portugol 2.0",
+            "G-Portugol" => "G-Portugol",
+            "Potigol Clássico" => "Potigol clásico",
+            "Potigol Jerimum (Jogos 2D)" => "Potigol Jerimum (juegos 2D)",
             "Arquivo inicial .por" => "Archivo inicial .por",
             "Arquivo inicial .alg" => "Archivo inicial .alg",
             "Arquivo inicial .poti" => "Archivo inicial .poti",
+            "Arquivo inicial .gpt" => "Archivo inicial .gpt",
             "Crie uma pasta para reunir seus programas e exercícios." => {
                 "Crea una carpeta para reunir tus programas y ejercicios."
             }
@@ -760,8 +871,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Não foi possível criar o projeto" => "No se pudo crear el proyecto",
             "Projeto criado" => "Proyecto creado",
             "Novo arquivo" => "Nuevo archivo",
-            "Criar um arquivo Portugol, VisuAlg ou Potigol" => {
-                "Crear un archivo Portugol, VisuAlg o Potigol"
+            "Criar um arquivo Portugol, VisuAlg, Potigol ou G-Portugol" => {
+                "Crear un archivo Portugol, VisuAlg, Potigol o G-Portugol"
             }
             "Nova pasta" => "Nueva carpeta",
             "Criar uma pasta no projeto" => "Crear una carpeta en el proyecto",
@@ -914,8 +1025,20 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "O tipo `vazio` indica que a função não devolve um valor." => {
                 "El tipo `vazio` indica que la función no devuelve ningún valor."
             }
+            "Esta função não declara um tipo de retorno." => {
+                "Esta función no declara un tipo de retorno."
+            }
             "Ela devolve um valor do tipo" => "Devuelve un valor del tipo",
             "Esse tipo representa texto." => "Este tipo representa texto.",
+            "Esse tipo representa texto no G-Portugol." => {
+                "Este tipo representa texto en G-Portugol."
+            }
+            "A função produz texto, representado pelo tipo `literal` no G-Portugol." => {
+                "La función produce texto, representado por el tipo `literal` en G-Portugol."
+            }
+            "Os parâmetros recebem os dados usados pela função; a ausência de tipo indica que ela não devolve resultado." => {
+                "Los parámetros reciben los datos usados por la función; no declarar un tipo indica que no devuelve un resultado."
+            }
             "O retorno não foi identificado." => "No se pudo identificar el tipo de retorno.",
             "Ele executa ações e não devolve um valor como resultado." => {
                 "Ejecuta acciones y no devuelve un valor como resultado."
@@ -931,6 +1054,9 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "escreva e escreval mostram na saída os valores e textos informados." => {
                 "escreva y escreval muestran los valores y textos indicados en la salida."
+            }
+            "imprima mostra na saída os valores e textos informados." => {
+                "imprima muestra los valores y textos indicados en la salida."
             }
             "A atribuição calcula o lado direito e atualiza o valor da variável à esquerda." => {
                 "La asignación evalúa el lado derecho y actualiza la variable de la izquierda."
@@ -948,8 +1074,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Parâmetros são os dados recebidos pela função. `vazio` informa que nenhum resultado é devolvido." => {
                 "Los parámetros son los datos que recibe la función. `vazio` indica que no devuelve un resultado."
             }
-            "A função produz um valor de texto, representado pelo tipo `cadeia` no Portugol Studio." => {
-                "La función produce texto, representado por el tipo `cadeia` en Portugol Studio."
+            "A função produz um valor de texto, representado pelo tipo `cadeia` em Portugol 2.0." => {
+                "La función produce texto, representado por el tipo `cadeia` en Portugol 2.0."
             }
             "A função devolve um resultado do tipo `{return_type}`. Seus parâmetros recebem os dados usados no cálculo." => {
                 "La función devuelve un valor `{return_type}`. Sus parámetros reciben los datos usados en el cálculo."
@@ -1101,8 +1227,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Esta pasta não contém arquivos visíveis." => {
                 "Esta carpeta no tiene archivos visibles."
             }
-            "Nenhum programa .por, .alg ou .poti nesta pasta. Os demais arquivos aparecem na lista." => {
-                "No hay programas .por, .alg o .poti en esta carpeta. Los demás archivos aparecen en la lista."
+            "Nenhum programa .por, .alg, .poti ou .gpt nesta pasta. Os demais arquivos aparecem na lista." => {
+                "No hay programas .por, .alg, .poti o .gpt en esta carpeta. Los demás archivos aparecen en la lista."
             }
             "Fechar arquivo" => "Cerrar archivo",
             "Escolha um nome e a linguagem do novo arquivo." => {
@@ -1136,13 +1262,18 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
                 "Guarda tus archivos antes de salir o descarta los cambios para cerrar Potoo IDE."
             }
             "Nenhum problema detectado" => "No se detectaron problemas",
+            "Abrindo arquivo…" => "Abriendo archivo…",
+            "Abrindo pasta…" => "Abriendo carpeta…",
+            "Não foi possível atualizar os arquivos do projeto" => {
+                "No se pudieron actualizar los archivos del proyecto"
+            }
             "Os erros de sintaxe e execução aparecerão aqui." => {
                 "Los errores de sintaxis y ejecución aparecerán aquí."
             }
             "Arquivo aberto" => "Archivo abierto",
             "Arquivo salvo" => "Archivo guardado",
-            "Pasta aberta. Crie um arquivo .por, .alg ou .poti para começar." => {
-                "Carpeta abierta. Crea un archivo .por, .alg o .poti para empezar."
+            "Pasta aberta. Crie um arquivo .por, .alg, .poti ou .gpt para começar." => {
+                "Carpeta abierta. Crea un archivo .por, .alg, .poti o .gpt para empezar."
             }
             "Novo arquivo criado" => "Archivo nuevo creado",
             "Já existe um arquivo com esse nome." => "Ya existe un archivo con ese nombre.",
@@ -1176,8 +1307,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Não foi possível abrir a pasta" => "No se pudo abrir la carpeta",
             "Não foi possível salvar o arquivo" => "No se pudo guardar el archivo",
             "Não foi possível criar o arquivo" => "No se pudo crear el archivo",
-            "O editor abre apenas arquivos .por, .alg e .poti." => {
-                "El editor solo abre archivos .por, .alg y .poti."
+            "O editor abre apenas arquivos .por, .alg, .poti e .gpt." => {
+                "El editor solo abre archivos .por, .alg, .poti y .gpt."
             }
             "Abra uma pasta de projeto antes de criar arquivos." => {
                 "Abre una carpeta de proyecto antes de crear archivos."
@@ -1190,9 +1321,11 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Use um nome simples, sem pastas ou caracteres especiais." => {
                 "Usa un nombre sencillo, sin carpetas ni caracteres especiales."
             }
-            "Use a extensão .por, .alg ou .poti." => "Usa la extensión .por, .alg o .poti.",
-            "Salve o código com a extensão .por, .alg ou .poti." => {
-                "Guarda el código con la extensión .por, .alg o .poti."
+            "Use a extensão .por, .alg, .poti ou .gpt." => {
+                "Usa la extensión .por, .alg, .poti o .gpt."
+            }
+            "Salve o código com a extensão .por, .alg, .poti ou .gpt." => {
+                "Guarda el código con la extensión .por, .alg, .poti o .gpt."
             }
             "Selecione uma pasta local para abrir." => "Selecciona una carpeta local para abrir.",
             "Selecione um arquivo local." => "Selecciona un archivo local.",
@@ -1203,8 +1336,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
                 "No se pudo abrir la ventana para guardar"
             }
             "Abrir arquivo de código" => "Abrir archivo de código",
-            "Portugol, VisuAlg e Potigol (*.por, *.alg, *.poti)" => {
-                "Portugol, VisuAlg y Potigol (*.por, *.alg, *.poti)"
+            "Portugol, VisuAlg, Potigol e G-Portugol (*.por, *.alg, *.poti, *.gpt)" => {
+                "Portugol, VisuAlg, Potigol y G-Portugol (*.por, *.alg, *.poti, *.gpt)"
             }
             "Não foi possível abrir o arquivo de código" => {
                 "No se pudo abrir el archivo de código"
@@ -1272,20 +1405,23 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Programas recentes",
     "Remover dos recentes",
     "Comece um novo programa",
+    "Retome um trabalho existente",
     "Projeto Portugol",
     "Projeto VisuAlg",
     "Projeto Potigol",
+    "Projeto G-Portugol",
     "Comece com um arquivo .por",
     "Comece com um arquivo .alg",
-    "Criar programa inicial (.por)",
-    "Criar programa inicial (.alg)",
+    "Dialetos do Portugol: G-Portugol, Portugol 2.0 e VisuAlg",
+    "3 variantes",
+    "2 variantes",
     "Criar programa inicial (.poti)",
     "Pressione Esc para cancelar a execução.",
     "Analisando linha…",
     "Aguardando a próxima linha…",
     "Selecionar uma pasta",
     "Abra um projeto que não aparece na lista.",
-    "Abra um arquivo .por, .alg ou .poti diretamente no editor.",
+    "Abra um arquivo .por, .alg, .poti ou .gpt diretamente no editor.",
     "Projeto",
     "Abrir um programa recente",
     "O arquivo ou a pasta recente não está mais disponível.",
@@ -1324,11 +1460,19 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Criar item no projeto",
     "Novo projeto",
     "Criar projeto",
-    "Criar um projeto Portugol, VisuAlg ou Potigol",
+    "Criar um projeto Portugol, VisuAlg, Potigol ou G-Portugol",
     "Selecione a pseudolinguagem do projeto",
+    "Pseudolinguagem",
+    "Variante do Portugol",
+    "Variante do Potigol",
+    "Portugol 2.0",
+    "G-Portugol",
+    "Potigol Clássico",
+    "Potigol Jerimum (Jogos 2D)",
     "Arquivo inicial .por",
     "Arquivo inicial .alg",
     "Arquivo inicial .poti",
+    "Arquivo inicial .gpt",
     "Crie uma pasta para reunir seus programas e exercícios.",
     "Nome do projeto",
     "Por exemplo: Meu primeiro projeto",
@@ -1348,7 +1492,7 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Não foi possível criar o projeto",
     "Projeto criado",
     "Novo arquivo",
-    "Criar um arquivo Portugol, VisuAlg ou Potigol",
+    "Criar um arquivo Portugol, VisuAlg, Potigol ou G-Portugol",
     "Nova pasta",
     "Criar uma pasta no projeto",
     "Criar pasta",
@@ -1409,26 +1553,32 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "recebe",
     "nenhum parâmetro",
     "O tipo `vazio` indica que a função não devolve um valor.",
+    "Esta função não declara um tipo de retorno.",
     "Ela devolve um valor do tipo",
     "Esse tipo representa texto.",
+    "Esse tipo representa texto no G-Portugol.",
+    "A função produz texto, representado pelo tipo `literal` no G-Portugol.",
+    "Os parâmetros recebem os dados usados pela função; a ausência de tipo indica que ela não devolve resultado.",
     "O retorno não foi identificado.",
     "Ele executa ações e não devolve um valor como resultado.",
     "A declaração define o nome e o tipo de um dado usado pelo algoritmo.",
     "determina qual bloco será executado conforme resulte em verdadeiro ou falso.",
     "leia solicita um valor e o armazena na variável informada antes de o programa continuar.",
     "escreva e escreval mostram na saída os valores e textos informados.",
+    "imprima mostra na saída os valores e textos informados.",
     "A atribuição calcula o lado direito e atualiza o valor da variável à esquerda.",
     "Esta função não devolve valor; retorne encerra sua execução.",
     "retorne encerra a rotina e pode entregar um resultado a quem a chamou.",
     "retorne encerra a função e entrega um valor do tipo",
     "a quem a chamou",
     "Parâmetros são os dados recebidos pela função. `vazio` informa que nenhum resultado é devolvido.",
-    "A função produz um valor de texto, representado pelo tipo `cadeia` no Portugol Studio.",
+    "A função produz um valor de texto, representado pelo tipo `cadeia` em Portugol 2.0.",
     "A função devolve um resultado do tipo `{return_type}`. Seus parâmetros recebem os dados usados no cálculo.",
     "A função devolve um resultado do tipo",
     "Seus parâmetros recebem os dados usados no cálculo.",
     "Parâmetros são os dados recebidos pela função; o tipo de retorno descreve o resultado produzido.",
-    "No VisuAlg, procedimento é uma rotina de ações. Parâmetros por referência podem alterar a variável enviada por quem chamou.",
+    "Uma rotina executa ações sem devolver um resultado; cada linguagem define como seus parâmetros são passados.",
+    "Esta análise do Potigol é heurística e pode não reconhecer todos os casos da linguagem.",
     "O tipo define quais valores podem ser guardados; o formato indica se há um valor, um vetor ou uma matriz.",
     "Atribuir associa um novo valor a uma variável; o operador determina como o valor é calculado.",
     "O retorno leva o resultado da função de volta ao ponto que a chamou.",
@@ -1503,7 +1653,7 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "2 espaços",
     "4 espaços",
     "Esta pasta não contém arquivos visíveis.",
-    "Nenhum programa .por, .alg ou .poti nesta pasta. Os demais arquivos aparecem na lista.",
+    "Nenhum programa .por, .alg, .poti ou .gpt nesta pasta. Os demais arquivos aparecem na lista.",
     "Fechar arquivo",
     "Escolha um nome e a linguagem do novo arquivo.",
     "Crie um arquivo dentro do projeto atual.",
@@ -1524,29 +1674,32 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Salve os arquivos abertos antes de trocar de pasta ou descarte as alterações para continuar.",
     "Salve os arquivos antes de sair ou descarte as alterações para fechar o Potoo IDE.",
     "Nenhum problema detectado",
+    "Abrindo arquivo…",
+    "Abrindo pasta…",
+    "Não foi possível atualizar os arquivos do projeto",
     "Arquivo aberto",
     "Arquivo salvo",
-    "Pasta aberta. Crie um arquivo .por, .alg ou .poti para começar.",
+    "Pasta aberta. Crie um arquivo .por, .alg, .poti ou .gpt para começar.",
     "Novo arquivo criado",
     "Já existe um arquivo com esse nome.",
     "Não foi possível abrir o arquivo",
     "Não foi possível abrir a pasta",
     "Não foi possível salvar o arquivo",
     "Não foi possível criar o arquivo",
-    "O editor abre apenas arquivos .por, .alg e .poti.",
+    "O editor abre apenas arquivos .por, .alg, .poti e .gpt.",
     "Abra uma pasta de projeto antes de criar arquivos.",
     "Crie ou abra um arquivo antes de salvar.",
     "Não foi possível salvar as configurações",
     "Não foi possível salvar a sessão",
     "Use um nome simples, sem pastas ou caracteres especiais.",
-    "Use a extensão .por, .alg ou .poti.",
-    "Salve o código com a extensão .por, .alg ou .poti.",
+    "Use a extensão .por, .alg, .poti ou .gpt.",
+    "Salve o código com a extensão .por, .alg, .poti ou .gpt.",
     "Selecione uma pasta local para abrir.",
     "Selecione um arquivo local.",
     "Escolha um caminho local para salvar o arquivo.",
     "Não foi possível abrir a janela de salvamento",
     "Abrir arquivo de código",
-    "Portugol, VisuAlg e Potigol (*.por, *.alg, *.poti)",
+    "Portugol, VisuAlg, Potigol e G-Portugol (*.por, *.alg, *.poti, *.gpt)",
     "Não foi possível abrir o arquivo de código",
     "novo-arquivo",
     "caminho de configuração inválido",
@@ -1633,7 +1786,20 @@ pub(crate) enum MainWindowMsg {
     RecentSelected(PathBuf),
     RecentRemoved(PathBuf),
     ProjectSwitchDecision(bool),
-    CreateProject(PathBuf, String, Language),
+    ProjectScanCompleted {
+        project_generation: u64,
+        scan_generation: u64,
+        root: PathBuf,
+        load_project: bool,
+        result: Result<Vec<ProjectFile>, String>,
+    },
+    DocumentReadCompleted {
+        project_generation: u64,
+        path: PathBuf,
+        standalone: bool,
+        result: Result<String, String>,
+    },
+    CreateProject(PathBuf, String, ProjectTemplate),
     CreateFile(String, Language, PathBuf),
     CreateFolder(String, PathBuf),
     RenameProjectItem(PathBuf),
@@ -1666,6 +1832,7 @@ pub(crate) enum MainWindowMsg {
     StopDebug,
     ExecutionEvent(u64, ExecutionEvent),
     ExecutionLost(u64),
+    FileSelectionResolved(u64, Result<String, String>),
     SubmitProgramInput(String),
     SourceChanged(String),
     CursorMoved(usize),
@@ -1726,6 +1893,20 @@ fn invalidate_learning_hint(generation: &mut u64, hint: &mut Option<LearningHint
     *generation = generation.wrapping_add(1).max(1);
     *hint = None;
     *generation
+}
+
+fn project_scan_is_current(
+    current_project_generation: u64,
+    current_scan_generation: u64,
+    current_root: Option<&Path>,
+    project_generation: u64,
+    scan_generation: u64,
+    root: &Path,
+    loading_project: bool,
+) -> bool {
+    current_project_generation == project_generation
+        && current_scan_generation == scan_generation
+        && (loading_project || current_root == Some(root))
 }
 
 #[derive(Default)]
@@ -1843,7 +2024,13 @@ pub(crate) struct MainWindow {
     project_root: Option<PathBuf>,
     project_name: String,
     project_files: Vec<ProjectFile>,
+    project_generation: u64,
+    project_scan_generation: u64,
     pending_project: Option<PathBuf>,
+    pending_project_scan: Option<(PathBuf, Vec<ProjectFile>)>,
+    approved_project_switch: Option<PathBuf>,
+    project_load_pending: bool,
+    project_refresh_needed: bool,
     pending_close_document_id: Option<u64>,
     pending_close_after_save_id: Option<u64>,
     pending_save_as_id: Option<u64>,
@@ -1869,9 +2056,13 @@ pub(crate) struct MainWindow {
     active_execution_id: Option<u64>,
     debugging_active: bool,
     execution_document_id: Option<u64>,
+    execution_line: Option<usize>,
+    execution_project_root: Option<PathBuf>,
     debugger_document_id: Option<u64>,
     execution_input: Option<Sender<String>>,
     execution_control: Option<Sender<ControlAction>>,
+    execution_cancellable: Option<gtk::gio::Cancellable>,
+    file_selection_cancellable: Option<(u64, gtk::gio::Cancellable)>,
     input_requested: bool,
     input_prompt: Option<InputPrompt>,
     debugger_snapshot: Option<DebuggerSnapshot>,
@@ -1891,6 +2082,10 @@ pub(crate) struct MainWindow {
     learning_worker: LearningAnalysisWorker,
     recent_paths: Vec<PathBuf>,
     start_page_visible: bool,
+}
+
+fn execution_reply_is_current(reply_execution_id: u64, active_execution_id: Option<u64>) -> bool {
+    active_execution_id == Some(reply_execution_id)
 }
 
 impl MainWindow {
@@ -1942,12 +2137,12 @@ impl MainWindow {
         }
     }
 
-    fn forget_recent(&mut self, path: &Path) {
+    fn forget_recent(&mut self, path: &Path) -> Result<(), String> {
         self.recent_paths.retain(|recent| recent != path);
-        let _ = persist_recent_paths(&self.recent_paths);
+        persist_recent_paths(&self.recent_paths)
     }
 
-    fn finish_language_change(&mut self) {
+    fn finish_language_change(&mut self, sender: ComponentSender<Self>) {
         let Some(language) = self.pending_ui_language else {
             return;
         };
@@ -1973,7 +2168,7 @@ impl MainWindow {
             .filter_map(|document| document.path.clone().map(|path| (document.id, path)))
             .collect::<Vec<_>>();
         for (id, path) in dirty_files {
-            if !self.save_document(id, path) {
+            if !self.save_document(id, path, sender.clone()) {
                 self.abort_language_change(false);
                 return;
             }
@@ -2375,6 +2570,17 @@ impl MainWindow {
         }
     }
 
+    fn cancel_file_selection(&mut self, execution_id: u64) {
+        if self
+            .file_selection_cancellable
+            .as_ref()
+            .is_some_and(|(picker_execution_id, _)| *picker_execution_id == execution_id)
+            && let Some((_, cancellable)) = self.file_selection_cancellable.take()
+        {
+            cancellable.cancel();
+        }
+    }
+
     fn start_execution(&mut self, sender: ComponentSender<Self>, debugging: bool) {
         if self.active_execution_id.is_some() {
             return;
@@ -2391,6 +2597,7 @@ impl MainWindow {
         self.debugger_snapshot = None;
         self.debugger_learning_hint = None;
         self.debugging_active = debugging;
+        self.execution_line = None;
         self.execution_diagnostics.clear();
         self.execution_diagnostics_document_id = None;
         self.schedule_learning_refresh(sender.clone(), Duration::from_millis(20));
@@ -2407,19 +2614,28 @@ impl MainWindow {
         self.active_execution_id = Some(execution_id);
         self.execution_document_id = Some(document.id);
         self.debugger_document_id = debugging.then_some(document.id);
+        let execution_root = self.project_root.clone().or_else(|| {
+            document
+                .path
+                .as_deref()
+                .and_then(Path::parent)
+                .map(Path::to_path_buf)
+        });
+        self.execution_project_root = execution_root.clone();
 
         let running = execution::start(
             document.contents,
             document.language,
             document.path.clone(),
-            self.project_root.clone(),
+            execution_root,
             debugging,
         );
         self.execution_input = Some(running.input);
         self.execution_control = Some(running.control);
+        self.execution_cancellable = Some(running.cancellable);
         let events = running.events;
         gtk::glib::timeout_add_local(Duration::from_millis(16), move || {
-            loop {
+            for _ in 0..MAX_EXECUTION_EVENTS_PER_TICK {
                 match events.try_recv() {
                     Ok(event) => {
                         let finished = matches!(&event, ExecutionEvent::Finished { .. });
@@ -2437,7 +2653,25 @@ impl MainWindow {
                     }
                 }
             }
+            gtk::glib::ControlFlow::Continue
         });
+    }
+
+    fn send_execution_control(&self, action: ControlAction) {
+        if action == ControlAction::Stop
+            && let Some((execution_id, cancellable)) = &self.file_selection_cancellable
+            && self.active_execution_id == Some(*execution_id)
+        {
+            cancellable.cancel();
+        }
+        if action == ControlAction::Stop
+            && let Some(cancellable) = &self.execution_cancellable
+        {
+            cancellable.cancel();
+        }
+        if let Some(control) = &self.execution_control {
+            let _ = control.send(action);
+        }
     }
 
     fn create_document(
@@ -2462,7 +2696,7 @@ impl MainWindow {
         id
     }
 
-    fn open_document(&mut self, path: PathBuf) {
+    fn open_document(&mut self, path: PathBuf, sender: ComponentSender<Self>) {
         let standalone = self
             .project_root
             .as_ref()
@@ -2476,58 +2710,203 @@ impl MainWindow {
             self.start_page_visible = false;
             return;
         }
-
-        let Some(language) = Language::from_path(&path) else {
+        if Language::from_path(&path).is_none() {
             self.output_status = self
-                .text("O editor abre apenas arquivos .por, .alg e .poti.")
+                .text("O editor abre apenas arquivos .por, .alg, .poti e .gpt.")
                 .to_string();
             return;
-        };
-        match fs::read_to_string(&path) {
-            Ok(contents) => {
-                if self.project_root.is_none() {
-                    self.project_root = path.parent().map(Path::to_path_buf);
-                    if let Some(root) = &self.project_root {
-                        self.project_name = root
-                            .file_name()
-                            .map(|name| name.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| root.display().to_string());
-                        self.project_files = scan_project_files(root).unwrap_or_default();
-                    }
-                }
-                let name = path
-                    .file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| path.display().to_string());
-                self.create_document(Some(path), name, language, contents.clone(), contents);
-                self.start_page_visible = false;
-                if standalone {
-                    if let Some(path) = self
-                        .active_document()
-                        .and_then(|document| document.path.clone())
-                    {
-                        self.remember_recent(path);
-                    }
-                }
-                self.output_status = self.text("Arquivo aberto").to_string();
-            }
+        }
+        let project_generation = self.project_generation;
+        self.output_status = self.text("Abrindo arquivo…").to_string();
+        std::thread::spawn(move || {
+            let result = fs::read_to_string(&path).map_err(|error| error.to_string());
+            sender.input(MainWindowMsg::DocumentReadCompleted {
+                project_generation,
+                path,
+                standalone,
+                result,
+            });
+        });
+    }
+
+    fn schedule_project_scan(
+        &mut self,
+        root: PathBuf,
+        load_project: bool,
+        sender: ComponentSender<Self>,
+    ) {
+        if !load_project && self.project_load_pending {
+            return;
+        }
+        self.project_scan_generation = self.project_scan_generation.wrapping_add(1).max(1);
+        let scan_generation = self.project_scan_generation;
+        let project_generation = self.project_generation;
+        if load_project {
+            self.project_load_pending = true;
+        }
+        std::thread::spawn(move || {
+            let result = scan_project_files(&root).map_err(|error| error.to_string());
+            sender.input(MainWindowMsg::ProjectScanCompleted {
+                project_generation,
+                scan_generation,
+                root,
+                load_project,
+                result,
+            });
+        });
+    }
+
+    fn refresh_project_scan(&mut self, root: PathBuf, sender: ComponentSender<Self>) {
+        if self.project_load_pending {
+            self.project_refresh_needed = true;
+            return;
+        }
+        self.schedule_project_scan(root, false, sender);
+    }
+
+    fn load_project(
+        &mut self,
+        root: PathBuf,
+        discard_changes_confirmed: bool,
+        sender: ComponentSender<Self>,
+    ) {
+        self.project_generation = self.project_generation.wrapping_add(1).max(1);
+        self.pending_project_scan = None;
+        self.approved_project_switch = discard_changes_confirmed.then(|| root.clone());
+        self.project_refresh_needed = false;
+        self.output_status = self.text("Abrindo pasta…").to_string();
+        self.schedule_project_scan(root, true, sender);
+    }
+
+    fn finish_document_read(
+        &mut self,
+        project_generation: u64,
+        path: PathBuf,
+        standalone: bool,
+        result: Result<String, String>,
+        sender: ComponentSender<Self>,
+    ) {
+        if project_generation != self.project_generation {
+            return;
+        }
+        if let Some(document) = self
+            .documents
+            .iter()
+            .find(|document| document.path.as_ref() == Some(&path))
+        {
+            self.active_document_id = Some(document.id);
+            self.start_page_visible = false;
+            return;
+        }
+        let contents = match result {
+            Ok(contents) => contents,
             Err(error) => {
                 self.output_status =
                     format!("{}: {error}", self.text("Não foi possível abrir o arquivo"));
-            }
-        }
-    }
-
-    fn load_project(&mut self, root: PathBuf) {
-        let files = match scan_project_files(&root) {
-            Ok(files) => files,
-            Err(error) => {
-                self.output_status =
-                    format!("{}: {error}", self.text("Não foi possível abrir a pasta"));
                 return;
             }
         };
+        if self.project_root.is_none()
+            && let Some(root) = path.parent().map(Path::to_path_buf)
+        {
+            self.project_name = root
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| root.display().to_string());
+            self.project_root = Some(root.clone());
+            self.schedule_project_scan(root, false, sender);
+        }
+        let Some(language) = Language::from_path(&path) else {
+            return;
+        };
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string());
+        self.create_document(
+            Some(path.clone()),
+            name,
+            language,
+            contents.clone(),
+            contents,
+        );
+        self.start_page_visible = false;
+        if standalone {
+            self.remember_recent(path);
+        }
+        self.output_status = self.text("Arquivo aberto").to_string();
+    }
 
+    fn finish_project_scan(
+        &mut self,
+        project_generation: u64,
+        scan_generation: u64,
+        root: PathBuf,
+        load_project: bool,
+        result: Result<Vec<ProjectFile>, String>,
+        sender: ComponentSender<Self>,
+    ) {
+        if !project_scan_is_current(
+            self.project_generation,
+            self.project_scan_generation,
+            self.project_root.as_deref(),
+            project_generation,
+            scan_generation,
+            &root,
+            load_project,
+        ) {
+            return;
+        }
+        let refresh_after_load = if load_project {
+            self.project_load_pending = false;
+            std::mem::take(&mut self.project_refresh_needed)
+        } else {
+            false
+        };
+        let files = match result {
+            Ok(files) => files,
+            Err(error) => {
+                self.pending_project_scan = None;
+                if load_project {
+                    self.approved_project_switch = None;
+                }
+                let message = if load_project {
+                    "Não foi possível abrir a pasta"
+                } else {
+                    "Não foi possível atualizar os arquivos do projeto"
+                };
+                self.output_status = format!("{}: {error}", self.text(message));
+                if refresh_after_load && let Some(current_root) = self.project_root.clone() {
+                    self.refresh_project_scan(current_root, sender);
+                }
+                return;
+            }
+        };
+        if !load_project {
+            self.project_files = files;
+            return;
+        }
+        if self.documents.iter().any(SourceDocument::is_dirty)
+            && self.approved_project_switch.as_deref() != Some(root.as_path())
+        {
+            self.pending_project = Some(root.clone());
+            self.pending_project_scan = Some((root, files));
+            self.project_refresh_needed = refresh_after_load;
+            return;
+        }
+        self.approved_project_switch = None;
+        self.apply_loaded_project(root.clone(), files, sender.clone());
+        if refresh_after_load {
+            self.refresh_project_scan(root, sender);
+        }
+    }
+
+    fn apply_loaded_project(
+        &mut self,
+        root: PathBuf,
+        files: Vec<ProjectFile>,
+        sender: ComponentSender<Self>,
+    ) {
         self.project_name = root
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
@@ -2555,15 +2934,15 @@ impl MainWindow {
                 .map(|file| file.path.clone())
         });
         if let Some(path) = first_source_file {
-            self.open_document(path);
+            self.open_document(path, sender);
         } else {
             self.output_status = self
-                .text("Pasta aberta. Crie um arquivo .por, .alg ou .poti para começar.")
+                .text("Pasta aberta. Crie um arquivo .por, .alg, .poti ou .gpt para começar.")
                 .to_string();
         }
     }
 
-    fn save_document(&mut self, id: u64, path: PathBuf) -> bool {
+    fn save_document(&mut self, id: u64, path: PathBuf, sender: ComponentSender<Self>) -> bool {
         let Some(index) = self.documents.iter().position(|doc| doc.id == id) else {
             return false;
         };
@@ -2579,7 +2958,7 @@ impl MainWindow {
             .project_root
             .as_ref()
             .map_or(true, |root| !path.starts_with(root));
-        match fs::write(&path, self.documents[index].contents.as_bytes()) {
+        match atomic_write(&path, self.documents[index].contents.as_bytes()) {
             Ok(()) => {
                 let document = &mut self.documents[index];
                 document.path = Some(path.clone());
@@ -2598,10 +2977,8 @@ impl MainWindow {
                             .unwrap_or_else(|| root.display().to_string());
                     }
                 }
-                if let Some(root) = &self.project_root {
-                    if let Ok(files) = scan_project_files(root) {
-                        self.project_files = files;
-                    }
+                if let Some(root) = self.project_root.clone() {
+                    self.refresh_project_scan(root, sender);
                 }
                 if standalone {
                     self.remember_recent(path.clone());
@@ -2619,7 +2996,13 @@ impl MainWindow {
         }
     }
 
-    fn create_project_file(&mut self, name: String, language: Language, relative_folder: PathBuf) {
+    fn create_project_file(
+        &mut self,
+        name: String,
+        language: Language,
+        relative_folder: PathBuf,
+        sender: ComponentSender<Self>,
+    ) {
         let Some(root) = self.project_root.clone() else {
             self.output_status = self
                 .text("Abra uma pasta de projeto antes de criar itens.")
@@ -2655,9 +3038,7 @@ impl MainWindow {
                     String::new(),
                 );
                 self.new_file_language = language;
-                if let Ok(files) = scan_project_files(&root) {
-                    self.project_files = files;
-                }
+                self.refresh_project_scan(root, sender);
                 self.output_status = self.text("Novo arquivo criado").to_string();
                 self.save_preferences();
             }
@@ -2671,7 +3052,12 @@ impl MainWindow {
         }
     }
 
-    fn create_project_folder(&mut self, name: String, relative_folder: PathBuf) {
+    fn create_project_folder(
+        &mut self,
+        name: String,
+        relative_folder: PathBuf,
+        sender: ComponentSender<Self>,
+    ) {
         let Some(root) = self.project_root.clone() else {
             self.output_status = self
                 .text("Abra uma pasta de projeto antes de criar itens.")
@@ -2694,9 +3080,7 @@ impl MainWindow {
 
         match fs::create_dir(folder.join(name)) {
             Ok(()) => {
-                if let Ok(files) = scan_project_files(&root) {
-                    self.project_files = files;
-                }
+                self.refresh_project_scan(root, sender);
                 self.output_status = self.text("Pasta criada").to_string();
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -2731,7 +3115,7 @@ impl MainWindow {
         Ok(item.is_directory)
     }
 
-    fn rename_project_item(&mut self, path: PathBuf, name: String) {
+    fn rename_project_item(&mut self, path: PathBuf, name: String, sender: ComponentSender<Self>) {
         let is_directory = match self.validate_project_item(&path) {
             Ok(is_directory) => is_directory,
             Err(error) => {
@@ -2787,15 +3171,13 @@ impl MainWindow {
             document.path = Some(new_path.join(relative_path));
         }
 
-        if let Some(root) = self.project_root.as_deref()
-            && let Ok(files) = scan_project_files(root)
-        {
-            self.project_files = files;
+        if let Some(root) = self.project_root.clone() {
+            self.refresh_project_scan(root, sender);
         }
         self.output_status = self.text("Item renomeado.").to_string();
     }
 
-    fn delete_project_item(&mut self, path: PathBuf) {
+    fn delete_project_item(&mut self, path: PathBuf, sender: ComponentSender<Self>) {
         let is_directory = match self.validate_project_item(&path) {
             Ok(is_directory) => is_directory,
             Err(error) => {
@@ -2828,13 +3210,10 @@ impl MainWindow {
             self.close_document(id);
         }
 
-        if let Some(root) = self.project_root.as_deref()
-            && let Ok(files) = scan_project_files(root)
-        {
-            self.project_files = files;
-        } else {
-            self.project_files
-                .retain(|item| item.path != path && !item.path.starts_with(&path));
+        self.project_files
+            .retain(|item| item.path != path && !item.path.starts_with(&path));
+        if let Some(root) = self.project_root.clone() {
+            self.refresh_project_scan(root, sender);
         }
         self.output_status = self.text("Item excluído.").to_string();
     }
@@ -2843,7 +3222,7 @@ impl MainWindow {
         &mut self,
         parent: PathBuf,
         name: String,
-        language: Language,
+        template: ProjectTemplate,
         sender: ComponentSender<Self>,
     ) {
         let name = name.trim();
@@ -2864,10 +3243,18 @@ impl MainWindow {
             return;
         }
 
-        let source_path = root.join(language.file_name());
-        if let Err(error) = fs::write(&source_path, language.sample()) {
-            self.output_status =
-                format!("{}: {error}", self.text("Não foi possível criar o projeto"));
+        let source_path = root.join(template.file_name());
+        if let Err(error) = fs::write(&source_path, template.sample()) {
+            let _ = fs::remove_file(&source_path);
+            let cleanup_error = fs::remove_dir(&root).err();
+            self.output_status = match cleanup_error {
+                Some(cleanup_error) => format!(
+                    "{}: {error} ({}: {cleanup_error})",
+                    self.text("Não foi possível criar o projeto"),
+                    self.text("Não foi possível remover a pasta incompleta")
+                ),
+                None => format!("{}: {error}", self.text("Não foi possível criar o projeto")),
+            };
             return;
         }
 
@@ -2893,13 +3280,13 @@ impl MainWindow {
         }
     }
 
-    fn request_save(&mut self) {
+    fn request_save(&mut self, sender: ComponentSender<Self>) {
         match self
             .active_document()
             .map(|document| (document.id, document.path.clone()))
         {
             Some((id, Some(path))) => {
-                self.save_document(id, path);
+                self.save_document(id, path, sender);
             }
             Some((id, _)) => self.pending_save_as_id = Some(id),
             None => {
@@ -2928,6 +3315,7 @@ pub struct MainUi {
     dark_theme: Rc<Cell<bool>>,
     default_new_language: Rc<Cell<Language>>,
     project_root_for_new_items: Rc<RefCell<Option<PathBuf>>>,
+    project_files_for_new_items: Rc<RefCell<Vec<ProjectFile>>>,
     settings: SettingsUi,
     project_title: gtk::Label,
     run_button: gtk::Button,
@@ -3007,12 +3395,211 @@ pub struct MainUi {
     displayed_input_requested: bool,
     displayed_output_status: String,
     displayed_debugger_snapshot: Option<DebuggerSnapshot>,
+    displayed_execution_line: Option<usize>,
     displayed_debugger_learning_hint: Option<LearningHint>,
     displayed_debugger_analysis_state: &'static str,
     displayed_learning_hint: Option<LearningHint>,
     displayed_learning_loading: bool,
     displayed_right_panel_section: Option<RightPanelSection>,
     displayed_right_panel_collapsed: bool,
+}
+
+impl MainWindow {
+    fn handle_execution_event(
+        &mut self,
+        execution_id: u64,
+        event: ExecutionEvent,
+        sender: ComponentSender<Self>,
+    ) {
+        if execution_reply_is_current(execution_id, self.active_execution_id) {
+            match event {
+                ExecutionEvent::Output(text) => self.output_text.push_str(&text),
+                ExecutionEvent::ClearOutput => self.output_text.clear(),
+                ExecutionEvent::InputRequested(prompt) => {
+                    if let (Some(name), Some(data_type)) =
+                        (&prompt.variable_name, &prompt.data_type)
+                    {
+                        self.output_status =
+                            format!("{} {name} ({data_type})", self.text("Entrada solicitada:"));
+                    }
+                    self.input_prompt = Some(prompt);
+                    self.input_requested = true;
+                }
+                ExecutionEvent::FileSelectionRequested {
+                    extensions,
+                    allow_all_files,
+                } => {
+                    self.input_prompt = None;
+                    self.input_requested = true;
+                    if self.execution_input.is_none() {
+                        self.input_requested = false;
+                        self.output_status = self
+                            .text("Não foi possível enviar a entrada ao programa.")
+                            .to_string();
+                        return;
+                    }
+                    let cancellable = gtk::gio::Cancellable::new();
+                    self.file_selection_cancellable = Some((execution_id, cancellable.clone()));
+                    show_portugol_file_selection_dialog(
+                        &self.window,
+                        self.ui_language,
+                        execution_id,
+                        self.execution_project_root.clone(),
+                        extensions,
+                        allow_all_files,
+                        cancellable,
+                        sender.clone(),
+                    );
+                }
+                ExecutionEvent::HostRequest { request, response } => {
+                    let result = match request {
+                        execution::HostRequest::GraphicsWindowIsOpen => {
+                            Ok(Some(potoo_portugol_interpreter::HostValue::Logical(
+                                self.graphics_host.is_open(),
+                            )))
+                        }
+                        execution::HostRequest::Audio {
+                            function,
+                            arguments,
+                        } => {
+                            let root = self.execution_project_root.clone();
+                            self.audio_host
+                                .handle(root.as_deref(), &function, &arguments)
+                                .map(Some)
+                        }
+                        execution::HostRequest::Graphics {
+                            function,
+                            arguments,
+                        } => {
+                            let root = self.execution_project_root.clone();
+                            self.graphics_host
+                                .graphics(root.as_deref(), &function, &arguments)
+                                .map(Some)
+                        }
+                        request => self
+                            .graphics_host
+                            .handle_input_request(request, response.clone()),
+                    };
+                    match result {
+                        Ok(Some(value)) => {
+                            let _ = response.send(Ok(value));
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            let _ = response.send(Err(error));
+                        }
+                    }
+                }
+                ExecutionEvent::LineChanged(line) => self.execution_line = Some(line),
+                ExecutionEvent::Debugger(snapshot) => {
+                    self.debugging_active = true;
+                    self.debugger_document_id = self.execution_document_id;
+                    self.right_panel_section = RightPanelSection::Debugger;
+                    self.right_panel_collapsed = false;
+                    self.output_status =
+                        format!("{} {}", self.text("Pausado na linha"), snapshot.line);
+                    if self.execution_document_id == self.active_document_id {
+                        self.debugger_learning_hint = self
+                            .learning_hint
+                            .as_ref()
+                            .filter(|hint| hint.line == snapshot.line)
+                            .cloned();
+                        if self.learning_cursor_line != snapshot.line
+                            || (self.debugger_learning_hint.is_none() && !self.learning_loading)
+                        {
+                            self.learning_cursor_line = snapshot.line;
+                            self.schedule_learning_refresh(
+                                sender.clone(),
+                                Duration::from_millis(40),
+                            );
+                        }
+                    } else {
+                        self.debugger_learning_hint = None;
+                    }
+                    self.debugger_snapshot = Some(snapshot);
+                }
+                ExecutionEvent::Finished { result, stopped } => {
+                    self.cancel_file_selection(execution_id);
+                    self.audio_host.stop_all();
+                    self.graphics_host.finish();
+                    let finished_document_id = self.execution_document_id;
+                    let source_matches_execution = finished_document_id
+                        .and_then(|id| self.documents.iter().find(|document| document.id == id))
+                        .is_some_and(|document| {
+                            self.execution_source_fingerprint
+                                == Some(Self::source_fingerprint(&document.contents))
+                        });
+                    self.active_execution_id = None;
+                    self.debugging_active = false;
+                    self.execution_document_id = None;
+                    self.execution_line = None;
+                    self.execution_project_root = None;
+                    self.debugger_document_id = None;
+                    self.execution_source_fingerprint = None;
+                    self.execution_input = None;
+                    self.execution_control = None;
+                    self.execution_cancellable = None;
+                    self.input_requested = false;
+                    self.input_prompt = None;
+                    match result {
+                        Ok(()) => {
+                            self.execution_diagnostics.clear();
+                            self.execution_diagnostics_document_id = None;
+                            self.output_status = if stopped {
+                                self.text("Execução interrompida.").to_string()
+                            } else {
+                                self.text("Execução concluída.").to_string()
+                            };
+                        }
+                        Err(diagnostics) => {
+                            self.problem_text = format_diagnostics(&diagnostics);
+                            self.output_status =
+                                self.text("O programa terminou com um erro.").to_string();
+                            if source_matches_execution {
+                                self.execution_diagnostics = diagnostics;
+                                self.execution_diagnostics_document_id = finished_document_id;
+                                self.schedule_learning_refresh(
+                                    sender.clone(),
+                                    Duration::from_millis(20),
+                                );
+                            } else {
+                                self.execution_diagnostics.clear();
+                                self.execution_diagnostics_document_id = None;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn handle_execution_lost(&mut self, execution_id: u64) {
+        if execution_reply_is_current(execution_id, self.active_execution_id) {
+            self.cancel_file_selection(execution_id);
+            self.audio_host.stop_all();
+            self.graphics_host.finish();
+            self.active_execution_id = None;
+            self.debugging_active = false;
+            self.execution_document_id = None;
+            self.execution_line = None;
+            self.execution_project_root = None;
+            self.debugger_document_id = None;
+            self.execution_source_fingerprint = None;
+            self.execution_input = None;
+            self.execution_control = None;
+            self.execution_cancellable = None;
+            self.input_requested = false;
+            self.input_prompt = None;
+            self.debugger_snapshot = None;
+            self.debugger_learning_hint = None;
+            self.problem_text = self
+                .text("O interpretador foi encerrado antes de concluir o programa.")
+                .to_string();
+            self.output_status = self
+                .text("Não foi possível concluir a execução.")
+                .to_string();
+        }
+    }
 }
 
 impl SimpleComponent for MainWindow {
@@ -3099,10 +3686,7 @@ impl SimpleComponent for MainWindow {
         if !start_page_visible {
             root.maximize();
         }
-        let project_files = restored_root
-            .as_deref()
-            .and_then(|root| scan_project_files(root).ok())
-            .unwrap_or_default();
+        let project_files = Vec::new();
         let project_name = restored_root
             .as_deref()
             .and_then(Path::file_name)
@@ -3139,7 +3723,13 @@ impl SimpleComponent for MainWindow {
             project_root: restored_root,
             project_name,
             project_files,
+            project_generation: 0,
+            project_scan_generation: 0,
             pending_project: None,
+            pending_project_scan: None,
+            approved_project_switch: None,
+            project_load_pending: false,
+            project_refresh_needed: false,
             pending_close_document_id: None,
             pending_close_after_save_id: None,
             pending_save_as_id: None,
@@ -3183,9 +3773,13 @@ impl SimpleComponent for MainWindow {
             active_execution_id: None,
             debugging_active: false,
             execution_document_id: None,
+            execution_line: None,
+            execution_project_root: None,
             debugger_document_id: None,
             execution_input: None,
             execution_control: None,
+            execution_cancellable: None,
+            file_selection_cancellable: None,
             input_requested: false,
             input_prompt: None,
             debugger_snapshot: None,
@@ -3206,16 +3800,21 @@ impl SimpleComponent for MainWindow {
             recent_paths,
             start_page_visible,
         };
+        let project_files_for_new_items = Rc::new(RefCell::new(model.project_files.clone()));
         let mut widgets = build_window_content(
             root.clone(),
             model.project_root.clone(),
             model.start_page_visible,
             &model.recent_paths,
+            project_files_for_new_items,
             sender.clone(),
             preferences,
             initial_dark,
         );
         root.set_child(Some(&widgets.content));
+        if let Some(project_root) = model.project_root.clone() {
+            model.schedule_project_scan(project_root, false, sender.clone());
+        }
         content_panel::rebuild_editor_tabs(
             &widgets.editor_tabs,
             &model.documents,
@@ -3262,6 +3861,8 @@ impl SimpleComponent for MainWindow {
             MainWindowMsg::ProjectSelected(_)
                 | MainWindowMsg::RecentSelected(_)
                 | MainWindowMsg::ProjectSwitchDecision(_)
+                | MainWindowMsg::ProjectScanCompleted { .. }
+                | MainWindowMsg::DocumentReadCompleted { .. }
                 | MainWindowMsg::CreateProject(_, _, _)
                 | MainWindowMsg::CreateFile(_, _, _)
                 | MainWindowMsg::CreateFolder(_, _)
@@ -3286,14 +3887,16 @@ impl SimpleComponent for MainWindow {
                     self.pending_ui_language = Some(language);
                     self.reopen_settings_after_language_restart = self.settings_visible;
                     self.settings_visible = false;
-                    self.finish_language_change();
+                    self.finish_language_change(sender.clone());
                 }
             }
             MainWindowMsg::ProjectSelected(path) => {
                 if self.documents.iter().any(SourceDocument::is_dirty) {
                     self.pending_project = Some(path);
+                    self.pending_project_scan = None;
+                    self.approved_project_switch = None;
                 } else {
-                    self.load_project(path);
+                    self.load_project(path, false, sender.clone());
                 }
             }
             MainWindowMsg::RecentSelected(path) => {
@@ -3301,37 +3904,91 @@ impl SimpleComponent for MainWindow {
                     if path.is_dir() {
                         if self.documents.iter().any(SourceDocument::is_dirty) {
                             self.pending_project = Some(path);
+                            self.pending_project_scan = None;
+                            self.approved_project_switch = None;
                         } else {
-                            self.load_project(path);
+                            self.load_project(path, false, sender.clone());
                         }
                     } else {
-                        self.open_document(path);
+                        self.open_document(path, sender.clone());
                     }
                 } else {
-                    self.forget_recent(&path);
-                    self.output_status = self
-                        .text("O arquivo ou a pasta recente não está mais disponível.")
-                        .to_string();
+                    self.output_status = match self.forget_recent(&path) {
+                        Ok(()) => self
+                            .text("O arquivo ou a pasta recente não está mais disponível.")
+                            .to_string(),
+                        Err(error) => format!(
+                            "{}: {error}",
+                            self.text("Não foi possível atualizar programas recentes")
+                        ),
+                    };
                 }
             }
-            MainWindowMsg::RecentRemoved(path) => self.forget_recent(&path),
+            MainWindowMsg::RecentRemoved(path) => {
+                if let Err(error) = self.forget_recent(&path) {
+                    self.output_status = format!(
+                        "{}: {error}",
+                        self.text("Não foi possível atualizar programas recentes")
+                    );
+                }
+            }
             MainWindowMsg::ProjectSwitchDecision(discard_changes) => {
                 if discard_changes {
                     if let Some(path) = self.pending_project.take() {
-                        self.load_project(path);
+                        if let Some((scanned_path, files)) = self.pending_project_scan.take()
+                            && scanned_path == path
+                        {
+                            let refresh_after = std::mem::take(&mut self.project_refresh_needed);
+                            self.approved_project_switch = None;
+                            self.apply_loaded_project(path.clone(), files, sender.clone());
+                            if refresh_after {
+                                self.refresh_project_scan(path, sender.clone());
+                            }
+                        } else {
+                            self.load_project(path, true, sender.clone());
+                        }
                     }
                 } else {
                     self.pending_project = None;
+                    self.pending_project_scan = None;
+                    self.approved_project_switch = None;
+                    self.project_refresh_needed = false;
                 }
             }
-            MainWindowMsg::CreateProject(parent, name, language) => {
-                self.create_project(parent, name, language, sender.clone());
+            MainWindowMsg::ProjectScanCompleted {
+                project_generation,
+                scan_generation,
+                root,
+                load_project,
+                result,
+            } => self.finish_project_scan(
+                project_generation,
+                scan_generation,
+                root,
+                load_project,
+                result,
+                sender.clone(),
+            ),
+            MainWindowMsg::DocumentReadCompleted {
+                project_generation,
+                path,
+                standalone,
+                result,
+            } => self.finish_document_read(
+                project_generation,
+                path,
+                standalone,
+                result,
+                sender.clone(),
+            ),
+            MainWindowMsg::CreateProject(parent, name, template) => {
+                self.create_project(parent, name, template, sender.clone());
             }
             MainWindowMsg::CreateFile(name, language, relative_folder) => {
-                self.create_project_file(name, language, relative_folder)
+                self.create_project_file(name, language, relative_folder, sender.clone())
             }
             MainWindowMsg::CreateFolder(name, relative_folder) => {
-                self.create_project_folder(name, relative_folder)
+                self.create_project_folder(name, relative_folder, sender.clone())
             }
             MainWindowMsg::RenameProjectItem(path) => match self.validate_project_item(&path) {
                 Ok(is_directory) => show_rename_project_item_dialog(
@@ -3345,7 +4002,7 @@ impl SimpleComponent for MainWindow {
                 Err(error) => self.output_status = error,
             },
             MainWindowMsg::RenameProjectItemConfirmed(path, name) => {
-                self.rename_project_item(path, name);
+                self.rename_project_item(path, name, sender.clone());
             }
             MainWindowMsg::DeleteProjectItem(path) => match self.validate_project_item(&path) {
                 Ok(is_directory) => {
@@ -3384,9 +4041,9 @@ impl SimpleComponent for MainWindow {
                 Err(error) => self.output_status = error,
             },
             MainWindowMsg::DeleteProjectItemConfirmed(path) => {
-                self.delete_project_item(path);
+                self.delete_project_item(path, sender.clone());
             }
-            MainWindowMsg::OpenFile(path) => self.open_document(path),
+            MainWindowMsg::OpenFile(path) => self.open_document(path, sender.clone()),
             MainWindowMsg::ActivateDocument(id) => {
                 if self.documents.iter().any(|doc| doc.id == id) {
                     self.active_document_id = Some(id);
@@ -3426,7 +4083,7 @@ impl SimpleComponent for MainWindow {
                         .find(|document| document.id == id)
                         .and_then(|document| document.path.clone())
                     {
-                        self.save_document(id, path);
+                        self.save_document(id, path, sender.clone());
                         if self
                             .documents
                             .iter()
@@ -3441,15 +4098,15 @@ impl SimpleComponent for MainWindow {
                     }
                 }
             }
-            MainWindowMsg::SaveCurrent => self.request_save(),
+            MainWindowMsg::SaveCurrent => self.request_save(sender.clone()),
             MainWindowMsg::SaveAsSelected(id, path) => {
                 let language_save = self.pending_language_save_as_id == Some(id);
                 self.pending_save_as_id = None;
-                let saved = self.save_document(id, path);
+                let saved = self.save_document(id, path, sender.clone());
                 if language_save {
                     self.pending_language_save_as_id = None;
                     if saved {
-                        self.finish_language_change();
+                        self.finish_language_change(sender.clone());
                     } else {
                         self.abort_language_change(false);
                     }
@@ -3524,10 +4181,8 @@ impl SimpleComponent for MainWindow {
             MainWindowMsg::CloseSettings => self.settings_visible = false,
             MainWindowMsg::Run => {
                 if self.active_execution_id.is_some() {
-                    if let Some(control) = &self.execution_control {
-                        let _ = control.send(ControlAction::Stop);
-                        self.output_status = self.text("Interrompendo execução…").to_string();
-                    }
+                    self.send_execution_control(ControlAction::Stop);
+                    self.output_status = self.text("Interrompendo execução…").to_string();
                 } else {
                     self.start_execution(sender.clone(), false);
                 }
@@ -3547,177 +4202,48 @@ impl SimpleComponent for MainWindow {
                         self.output_status = self.text("Executando o programa…").to_string();
                     }
                 }
+                self.debugging_active = false;
                 self.debugger_snapshot = None;
             }
             MainWindowMsg::StepDebug => {
-                if let Some(control) = &self.execution_control {
-                    let _ = control.send(ControlAction::Step);
-                }
+                self.send_execution_control(ControlAction::Step);
                 self.debugger_snapshot = None;
             }
             MainWindowMsg::StopDebug => {
-                if let Some(control) = &self.execution_control {
-                    let _ = control.send(ControlAction::Stop);
-                }
+                self.send_execution_control(ControlAction::Stop);
                 self.debugger_snapshot = None;
             }
             MainWindowMsg::ExecutionEvent(execution_id, event) => {
-                if self.active_execution_id == Some(execution_id) {
-                    match event {
-                        ExecutionEvent::Output(text) => self.output_text.push_str(&text),
-                        ExecutionEvent::ClearOutput => self.output_text.clear(),
-                        ExecutionEvent::InputRequested(prompt) => {
-                            if let (Some(name), Some(data_type)) =
-                                (&prompt.variable_name, &prompt.data_type)
-                            {
-                                self.output_status = format!(
-                                    "{} {name} ({data_type})",
-                                    self.text("Entrada solicitada:")
-                                );
-                            }
-                            self.input_prompt = Some(prompt);
-                            self.input_requested = true;
-                        }
-                        ExecutionEvent::FileSelectionRequested {
-                            extensions,
-                            allow_all_files,
-                        } => {
-                            self.input_prompt = None;
-                            self.input_requested = true;
-                            show_portugol_file_selection_dialog(
-                                &self.window,
-                                self.ui_language,
-                                self.project_root.clone(),
-                                extensions,
-                                allow_all_files,
-                                sender.clone(),
-                            );
-                        }
-                        ExecutionEvent::HostRequest { request, response } => {
-                            let result = match request {
-                                execution::HostRequest::Audio {
-                                    function,
-                                    arguments,
-                                } => {
-                                    let root = self.project_root.clone();
-                                    self.audio_host
-                                        .handle(root.as_deref(), &function, &arguments)
-                                        .map(Some)
-                                }
-                                execution::HostRequest::Graphics {
-                                    function,
-                                    arguments,
-                                } => {
-                                    let root = self.project_root.clone();
-                                    self.graphics_host
-                                        .graphics(root.as_deref(), &function, &arguments)
-                                        .map(Some)
-                                }
-                                request => self
-                                    .graphics_host
-                                    .handle_input_request(request, response.clone()),
-                            };
-                            match result {
-                                Ok(Some(value)) => {
-                                    let _ = response.send(Ok(value));
-                                }
-                                Ok(None) => {}
-                                Err(error) => {
-                                    let _ = response.send(Err(error));
-                                }
-                            }
-                        }
-                        ExecutionEvent::Debugger(snapshot) => {
-                            self.output_status =
-                                format!("{} {}", self.text("Pausado na linha"), snapshot.line);
-                            if self.execution_document_id == self.active_document_id {
-                                self.debugger_learning_hint = self
-                                    .learning_hint
-                                    .as_ref()
-                                    .filter(|hint| hint.line == snapshot.line)
-                                    .cloned();
-                                if self.learning_cursor_line != snapshot.line
-                                    || (self.debugger_learning_hint.is_none()
-                                        && !self.learning_loading)
-                                {
-                                    self.learning_cursor_line = snapshot.line;
-                                    self.schedule_learning_refresh(
-                                        sender.clone(),
-                                        Duration::from_millis(40),
-                                    );
-                                }
-                            } else {
-                                self.debugger_learning_hint = None;
-                            }
-                            self.debugger_snapshot = Some(snapshot);
-                        }
-                        ExecutionEvent::Finished { result, stopped } => {
-                            self.audio_host.stop_all();
-                            self.graphics_host.finish();
-                            let finished_document_id = self.execution_document_id;
-                            let source_matches_execution = finished_document_id
-                                .and_then(|id| {
-                                    self.documents.iter().find(|document| document.id == id)
-                                })
-                                .is_some_and(|document| {
-                                    self.execution_source_fingerprint
-                                        == Some(Self::source_fingerprint(&document.contents))
-                                });
-                            self.active_execution_id = None;
-                            self.debugging_active = false;
-                            self.execution_document_id = None;
-                            self.execution_source_fingerprint = None;
-                            self.execution_input = None;
-                            self.execution_control = None;
-                            self.input_requested = false;
-                            self.input_prompt = None;
-                            match result {
-                                Ok(()) => {
-                                    self.execution_diagnostics.clear();
-                                    self.execution_diagnostics_document_id = None;
-                                    self.output_status = if stopped {
-                                        self.text("Execução interrompida.").to_string()
-                                    } else {
-                                        self.text("Execução concluída.").to_string()
-                                    };
-                                }
-                                Err(diagnostics) => {
-                                    self.problem_text = format_diagnostics(&diagnostics);
-                                    self.output_status =
-                                        self.text("O programa terminou com um erro.").to_string();
-                                    if source_matches_execution {
-                                        self.execution_diagnostics = diagnostics;
-                                        self.execution_diagnostics_document_id =
-                                            finished_document_id;
-                                        self.schedule_learning_refresh(
-                                            sender.clone(),
-                                            Duration::from_millis(20),
-                                        );
-                                    } else {
-                                        self.execution_diagnostics.clear();
-                                        self.execution_diagnostics_document_id = None;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                self.handle_execution_event(execution_id, event, sender.clone());
             }
             MainWindowMsg::ExecutionLost(execution_id) => {
-                if self.active_execution_id == Some(execution_id) {
-                    self.active_execution_id = None;
-                    self.debugging_active = false;
-                    self.execution_document_id = None;
-                    self.execution_source_fingerprint = None;
-                    self.execution_input = None;
-                    self.execution_control = None;
-                    self.input_requested = false;
-                    self.problem_text = self
-                        .text("O interpretador foi encerrado antes de concluir o programa.")
-                        .to_string();
-                    self.output_status = self
-                        .text("Não foi possível concluir a execução.")
-                        .to_string();
+                self.handle_execution_lost(execution_id);
+            }
+            MainWindowMsg::FileSelectionResolved(execution_id, selection) => {
+                if execution_reply_is_current(execution_id, self.active_execution_id) {
+                    if self.file_selection_cancellable.as_ref().is_some_and(
+                        |(picker_execution_id, _)| *picker_execution_id == execution_id,
+                    ) {
+                        self.file_selection_cancellable = None;
+                    }
+                    if self.input_requested {
+                        let input = selection.unwrap_or_else(|error| {
+                            self.output_status = error;
+                            String::new()
+                        });
+                        if self
+                            .execution_input
+                            .as_ref()
+                            .is_some_and(|input_sender| input_sender.send(input).is_ok())
+                        {
+                            self.input_requested = false;
+                            self.input_prompt = None;
+                        } else {
+                            self.output_status = self
+                                .text("Não foi possível enviar a entrada ao programa.")
+                                .to_string();
+                        }
+                    }
                 }
             }
             MainWindowMsg::SubmitProgramInput(input) => {
@@ -3856,6 +4382,8 @@ impl SimpleComponent for MainWindow {
         let ui = widgets;
         ui.project_root_for_new_items
             .replace(self.project_root.clone());
+        ui.project_files_for_new_items
+            .replace(self.project_files.clone());
 
         if ui.displayed_right_panel_section != Some(self.right_panel_section)
             || ui.displayed_right_panel_collapsed != self.right_panel_collapsed
@@ -3972,13 +4500,23 @@ impl SimpleComponent for MainWindow {
                 });
             ui.displayed_learning_loading = self.learning_loading;
         }
-        if ui.displayed_active_document_id != active_document_id {
+        let active_document_changed = ui.displayed_active_document_id != active_document_id;
+        if active_document_changed {
             ui.code_buffer.set_text(
                 active_document
                     .map(|document| document.contents.as_str())
                     .unwrap_or_default(),
             );
             ui.displayed_active_document_id = active_document_id;
+        }
+        if active_document_changed || ui.displayed_execution_line != self.execution_line {
+            if self.execution_document_id == self.active_document_id
+                && let Some(line) = self.execution_line
+                && let Some(iter) = ui.code_buffer.iter_at_line(line.saturating_sub(1) as i32)
+            {
+                ui.code_buffer.place_cursor(&iter);
+            }
+            ui.displayed_execution_line = self.execution_line;
         }
         if ui.displayed_language != active_language {
             ui.status_language
@@ -4508,7 +5046,7 @@ fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (String, String, 
         .map(|symbol| format_learning_symbol(symbol, hint.language, language, true))
         .collect::<Vec<_>>();
     let name = hint.name.as_deref().unwrap_or("?");
-    let explanation = match hint.topic {
+    let mut explanation = match hint.topic {
         LearningTopic::Function => {
             if has_syntax_error && hint.name.is_none() {
                 text(
@@ -4527,6 +5065,13 @@ fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (String, String, 
                         "{declaration}. {}",
                         text("O tipo `vazio` indica que a função não devolve um valor.")
                     ),
+                    Some(return_type @ "literal") if hint.language == Language::GPortugol => {
+                        format!(
+                            "{declaration}. {} `{return_type}`. {}",
+                            text("Ela devolve um valor do tipo"),
+                            text("Esse tipo representa texto no G-Portugol.")
+                        )
+                    }
                     Some(return_type) => format!(
                         "{declaration}. {} `{return_type}`.{}",
                         text("Ela devolve um valor do tipo"),
@@ -4535,6 +5080,10 @@ fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (String, String, 
                         } else {
                             String::new()
                         }
+                    ),
+                    None if hint.language == Language::GPortugol => format!(
+                        "{declaration}. {}",
+                        text("Esta função não declara um tipo de retorno.")
                     ),
                     None => format!("{declaration}. {}", text("O retorno não foi identificado.")),
                 }
@@ -4589,7 +5138,11 @@ fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (String, String, 
             "leia solicita um valor e o armazena na variável informada antes de o programa continuar.",
         ),
         LearningTopic::Output => {
-            text("escreva e escreval mostram na saída os valores e textos informados.")
+            if hint.language == Language::GPortugol {
+                text("imprima mostra na saída os valores e textos informados.")
+            } else {
+                text("escreva e escreval mostram na saída os valores e textos informados.")
+            }
         }
         LearningTopic::Assignment => {
             text("A atribuição calcula o lado direito e atualiza o valor da variável à esquerda.")
@@ -4614,19 +5167,25 @@ fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (String, String, 
                 "Parâmetros são os dados recebidos pela função. `vazio` informa que nenhum resultado é devolvido.",
             ),
             Some("cadeia") => text(
-                "A função produz um valor de texto, representado pelo tipo `cadeia` no Portugol Studio.",
+                "A função produz um valor de texto, representado pelo tipo `cadeia` em Portugol 2.0.",
             ),
+            Some("literal") if hint.language == Language::GPortugol => {
+                text("A função produz texto, representado pelo tipo `literal` no G-Portugol.")
+            }
             Some(return_type) => format!(
                 "{} `{return_type}`. {}",
                 text("A função devolve um resultado do tipo"),
                 text("Seus parâmetros recebem os dados usados no cálculo.")
+            ),
+            None if hint.language == Language::GPortugol => text(
+                "Os parâmetros recebem os dados usados pela função; a ausência de tipo indica que ela não devolve resultado.",
             ),
             None => text(
                 "Parâmetros são os dados recebidos pela função; o tipo de retorno descreve o resultado produzido.",
             ),
         },
         LearningTopic::Procedure => text(
-            "No VisuAlg, procedimento é uma rotina de ações. Parâmetros por referência podem alterar a variável enviada por quem chamou.",
+            "Uma rotina executa ações sem devolver um resultado; cada linguagem define como seus parâmetros são passados.",
         ),
         LearningTopic::Variable => text(
             "O tipo define quais valores podem ser guardados; o formato indica se há um valor, um vetor ou uma matriz.",
@@ -4645,6 +5204,13 @@ fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (String, String, 
             text("Uma instrução é executada na ordem definida pelo algoritmo.")
         }
     };
+
+    if hint.language == Language::Potigol {
+        explanation.push(' ');
+        explanation.push_str(&text(
+            "Esta análise do Potigol é heurística e pode não reconhecer todos os casos da linguagem.",
+        ));
+    }
 
     let experiment = match hint.topic {
         LearningTopic::Function if !hint.parameters.is_empty() => format!(
@@ -4709,7 +5275,7 @@ fn format_learning_symbol(
                     text("vetor com índices de"),
                     text("até")
                 ),
-                (Language::Portugol, Some(lower), Some(upper)) => format!(
+                (Language::Portugol | Language::GPortugol, Some(lower), Some(upper)) => format!(
                     "; {} {} {} {}",
                     text("vetor com"),
                     upper.saturating_sub(lower).saturating_add(1),
@@ -4727,9 +5293,10 @@ fn format_learning_symbol(
     };
     let type_explanation = match symbol.type_name.as_str() {
         "cadeia" => format!(" ({})", text("tipo usado para guardar texto")),
+        "literal" => format!(" ({})", text("tipo usado para guardar texto")),
         "inteiro" => format!(" ({})", text("número sem parte decimal")),
         "real" => format!(" ({})", text("número que pode ter parte decimal")),
-        "logico" => format!(" ({})", text("valor verdadeiro ou falso")),
+        "logico" | "lógico" => format!(" ({})", text("valor verdadeiro ou falso")),
         "caracter" | "caractere" => format!(" ({})", text("um caractere")),
         _ => String::new(),
     };
@@ -4811,6 +5378,7 @@ fn build_window_content(
     initial_project_root: Option<PathBuf>,
     initial_start_page: bool,
     initial_recent_paths: &[PathBuf],
+    project_files_for_new_items: Rc<RefCell<Vec<ProjectFile>>>,
     sender: ComponentSender<MainWindow>,
     preferences: Preferences,
     initial_dark: bool,
@@ -5160,7 +5728,7 @@ fn build_window_content(
         show_new_project_dialog(
             &window_for_new_project,
             language_for_new_project.get(),
-            default_new_language_for_project.get(),
+            ProjectTemplate::default_for_language(default_new_language_for_project.get()),
             true,
             dark_theme_for_project.get(),
             sender_for_new_project.clone(),
@@ -5175,25 +5743,10 @@ fn build_window_content(
         show_new_project_dialog(
             &window_for_start_portugol,
             language_for_start_portugol.get(),
-            Language::Portugol,
+            ProjectTemplate::Portugol20,
             false,
             dark_for_start_portugol.get(),
             sender_for_start_portugol.clone(),
-        );
-    });
-
-    let sender_for_start_visualg = sender.clone();
-    let window_for_start_visualg = window.clone();
-    let dark_for_start_visualg = dark_theme.clone();
-    let language_for_start_visualg = ui_language_state.clone();
-    start_page.visualg_button.connect_clicked(move |_| {
-        show_new_project_dialog(
-            &window_for_start_visualg,
-            language_for_start_visualg.get(),
-            Language::Visualg,
-            false,
-            dark_for_start_visualg.get(),
-            sender_for_start_visualg.clone(),
         );
     });
 
@@ -5205,7 +5758,7 @@ fn build_window_content(
         show_new_project_dialog(
             &window_for_start_potigol,
             language_for_start_potigol.get(),
-            Language::Potigol,
+            ProjectTemplate::PotigolClassic,
             false,
             dark_for_start_potigol.get(),
             sender_for_start_potigol.clone(),
@@ -5244,6 +5797,7 @@ fn build_window_content(
     let window_for_new_file = window.clone();
     let default_new_language_for_new_file = default_new_language.clone();
     let project_root_for_new_file = project_root_for_new_items.clone();
+    let project_files_for_new_file = project_files_for_new_items.clone();
     let dark_theme_for_new_file = dark_theme.clone();
     let language_for_new_file = ui_language_state.clone();
     let popover_for_new_file = new_item_popover.clone();
@@ -5256,7 +5810,11 @@ fn build_window_content(
             &window_for_new_file,
             default_new_language_for_new_file.get(),
             language_for_new_file.get(),
-            project_directory_options(&project_root, language_for_new_file.get()),
+            project_directory_options(
+                &project_root,
+                language_for_new_file.get(),
+                &project_files_for_new_file.borrow(),
+            ),
             dark_theme_for_new_file.get(),
             sender_for_new_file.clone(),
         );
@@ -5278,6 +5836,7 @@ fn build_window_content(
     let sender_for_new_folder = sender.clone();
     let window_for_new_folder = window.clone();
     let project_root_for_new_folder = project_root_for_new_items.clone();
+    let project_files_for_new_folder = project_files_for_new_items.clone();
     let dark_theme_for_new_folder = dark_theme.clone();
     let language_for_new_folder = ui_language_state.clone();
     let popover_for_new_folder = new_item_popover.clone();
@@ -5289,7 +5848,11 @@ fn build_window_content(
         show_new_folder_dialog(
             &window_for_new_folder,
             language_for_new_folder.get(),
-            project_directory_options(&project_root, language_for_new_folder.get()),
+            project_directory_options(
+                &project_root,
+                language_for_new_folder.get(),
+                &project_files_for_new_folder.borrow(),
+            ),
             dark_theme_for_new_folder.get(),
             sender_for_new_folder.clone(),
         );
@@ -5383,6 +5946,7 @@ fn build_window_content(
         dark_theme,
         default_new_language,
         project_root_for_new_items,
+        project_files_for_new_items,
         settings,
         project_title,
         run_button,
@@ -5463,6 +6027,7 @@ fn build_window_content(
         displayed_input_requested: false,
         displayed_output_status: tr(ui_language, "Pronto para executar").to_string(),
         displayed_debugger_snapshot: None,
+        displayed_execution_line: None,
         displayed_debugger_learning_hint: None,
         displayed_debugger_analysis_state: "idle",
         displayed_learning_hint: None,
@@ -5949,11 +6514,12 @@ fn show_open_file_dialog(
     let filter = gtk::FileFilter::new();
     filter.set_name(Some(tr(
         language,
-        "Portugol, VisuAlg e Potigol (*.por, *.alg, *.poti)",
+        "Portugol, VisuAlg, Potigol e G-Portugol (*.por, *.alg, *.poti, *.gpt)",
     )));
     filter.add_suffix("por");
     filter.add_suffix("alg");
     filter.add_suffix("poti");
+    filter.add_suffix("gpt");
     let filters = gtk::gio::ListStore::new::<gtk::FileFilter>();
     filters.append(&filter);
     dialog.set_filters(Some(&filters));
@@ -5979,16 +6545,18 @@ fn show_open_file_dialog(
 fn show_portugol_file_selection_dialog(
     parent: &gtk::ApplicationWindow,
     language: UiLanguage,
+    execution_id: u64,
     project_root: Option<PathBuf>,
     formats: Vec<String>,
     allow_all_files: bool,
+    cancellable: gtk::gio::Cancellable,
     sender: ComponentSender<MainWindow>,
 ) {
     let Some(project_root) = project_root else {
-        sender.input(MainWindowMsg::FileOperationFailed(
-            tr(language, "Abra um projeto antes de selecionar um arquivo.").to_owned(),
+        sender.input(MainWindowMsg::FileSelectionResolved(
+            execution_id,
+            Err(tr(language, "Abra um projeto antes de selecionar um arquivo.").to_owned()),
         ));
-        sender.input(MainWindowMsg::SubmitProgramInput(String::new()));
         return;
     };
 
@@ -6005,16 +6573,12 @@ fn show_portugol_file_selection_dialog(
             });
         let filter = gtk::FileFilter::new();
         filter.set_name(Some(label));
-        for suffix in suffixes.split(',') {
-            let raw_suffix = suffix.trim();
-            if raw_suffix == "*" || raw_suffix == "*.*" {
-                filter.add_pattern("*");
-            } else {
-                let suffix = raw_suffix.trim_start_matches('*').trim_start_matches('.');
-                if !suffix.is_empty() {
-                    filter.add_suffix(suffix);
-                }
+        if let Some(normalized_suffixes) = execution::normalize_file_selection_suffixes(suffixes) {
+            for normalized_suffix in normalized_suffixes {
+                filter.add_suffix(&normalized_suffix);
             }
+        } else {
+            filter.add_pattern("*");
         }
         filters.append(&filter);
     }
@@ -6025,53 +6589,139 @@ fn show_portugol_file_selection_dialog(
         filters.append(&all_files);
     }
     dialog.set_filters(Some(&filters));
-    dialog.open(
-        Some(parent),
-        None::<&gtk::gio::Cancellable>,
-        move |result| {
-            let selected = match result {
-                Ok(file) => file.path().map(|path| {
+    dialog.open(Some(parent), Some(&cancellable), move |result| {
+        let selection = match result {
+            Ok(file) => file
+                .path()
+                .map(|path| {
                     let canonical_root = fs::canonicalize(&project_root).unwrap_or(project_root);
                     let canonical_path = fs::canonicalize(&path).unwrap_or(path.clone());
                     canonical_path
                         .strip_prefix(&canonical_root)
                         .map(|relative| relative.to_string_lossy().replace('\\', "/"))
                         .unwrap_or_else(|_| canonical_path.to_string_lossy().into_owned())
-                }),
-                Err(error) if error.matches(gtk::gio::IOErrorEnum::Cancelled) => {
-                    Some(String::new())
-                }
-                Err(error) => {
-                    sender.input(MainWindowMsg::FileOperationFailed(format!(
-                        "{}: {error}",
-                        tr(language, "Não foi possível selecionar o arquivo")
-                    )));
-                    Some(String::new())
-                }
+                })
+                .ok_or_else(|| tr(language, "Selecione um arquivo local.").to_owned()),
+            Err(error) if error.matches(gtk::gio::IOErrorEnum::Cancelled) => Ok(String::new()),
+            Err(error) => Err(format!(
+                "{}: {error}",
+                tr(language, "Não foi possível selecionar o arquivo")
+            )),
+        };
+        sender.input(MainWindowMsg::FileSelectionResolved(
+            execution_id,
+            selection,
+        ));
+    });
+}
+
+fn update_project_template_selector(
+    template: ProjectTemplate,
+    ui_language: UiLanguage,
+    field: &gtk::Box,
+    label: &gtk::Label,
+    portugol_options: &gtk::Box,
+    portugol_buttons: [&gtk::Button; 3],
+    potigol_options: &gtk::Box,
+    potigol_buttons: [&gtk::Button; 2],
+) {
+    match template {
+        ProjectTemplate::GPortugol | ProjectTemplate::Portugol20 | ProjectTemplate::Visualg => {
+            label.set_text(tr(ui_language, "Variante do Portugol"));
+            portugol_options.set_visible(true);
+            potigol_options.set_visible(false);
+            let selected = match template {
+                ProjectTemplate::GPortugol => 0,
+                ProjectTemplate::Portugol20 => 1,
+                ProjectTemplate::Visualg => 2,
+                _ => unreachable!(),
             };
-            if let Some(path) = selected {
-                sender.input(MainWindowMsg::SubmitProgramInput(path));
-            } else {
-                sender.input(MainWindowMsg::FileOperationFailed(
-                    tr(language, "Selecione um arquivo local.").to_owned(),
-                ));
-                sender.input(MainWindowMsg::SubmitProgramInput(String::new()));
+            set_selected_variant_button(&portugol_buttons, selected);
+            for button in potigol_buttons {
+                button.remove_css_class("selected");
             }
-        },
-    );
+        }
+        ProjectTemplate::PotigolClassic | ProjectTemplate::PotigolJerimum => {
+            label.set_text(tr(ui_language, "Variante do Potigol"));
+            portugol_options.set_visible(false);
+            potigol_options.set_visible(true);
+            let selected = if template == ProjectTemplate::PotigolJerimum {
+                1
+            } else {
+                0
+            };
+            set_selected_variant_button(&potigol_buttons, selected);
+            for button in portugol_buttons {
+                button.remove_css_class("selected");
+            }
+        }
+    }
+    field.set_visible(true);
+}
+
+fn project_template_variant_index(template: ProjectTemplate) -> u32 {
+    match template {
+        ProjectTemplate::GPortugol | ProjectTemplate::PotigolClassic => 0,
+        ProjectTemplate::Portugol20 | ProjectTemplate::PotigolJerimum => 1,
+        ProjectTemplate::Visualg => 2,
+    }
+}
+
+fn project_template_for_variant(language: Language, selected: u32) -> Option<ProjectTemplate> {
+    match (language, selected) {
+        (Language::Potigol, 0) => Some(ProjectTemplate::PotigolClassic),
+        (Language::Potigol, 1) => Some(ProjectTemplate::PotigolJerimum),
+        (Language::Potigol, _) => None,
+        (_, 0) => Some(ProjectTemplate::GPortugol),
+        (_, 1) => Some(ProjectTemplate::Portugol20),
+        (_, 2) => Some(ProjectTemplate::Visualg),
+        (_, _) => None,
+    }
+}
+
+fn set_selected_variant_button(buttons: &[&gtk::Button], selected: usize) {
+    for (index, button) in buttons.iter().enumerate() {
+        if index == selected {
+            button.add_css_class("selected");
+        } else {
+            button.remove_css_class("selected");
+        }
+    }
+}
+
+fn connect_project_template_choices(
+    buttons: &[gtk::Button],
+    templates: &[ProjectTemplate],
+    selected_template: Rc<Cell<ProjectTemplate>>,
+) {
+    for (button, template) in buttons.iter().zip(templates) {
+        let selected_button = (*button).clone();
+        let button_for_connection = selected_button.clone();
+        let buttons = buttons.to_vec();
+        let selected_template = selected_template.clone();
+        let template = *template;
+        button_for_connection.connect_clicked(move |_| {
+            selected_template.set(template);
+            for choice in &buttons {
+                choice.remove_css_class("selected");
+            }
+            selected_button.add_css_class("selected");
+        });
+    }
 }
 
 fn show_new_project_dialog(
     parent: &gtk::ApplicationWindow,
     ui_language: UiLanguage,
-    default_language: Language,
+    default_template: ProjectTemplate,
     show_language_selector: bool,
     initial_dark: bool,
     sender: ComponentSender<MainWindow>,
 ) {
     let dialog = gtk::Window::new();
     dialog.set_title(Some(tr(ui_language, "Criar projeto")));
-    dialog.set_default_size(680, if show_language_selector { 450 } else { 360 });
+    let default_language = default_template.language();
+    dialog.set_default_size(680, if show_language_selector { 520 } else { 430 });
     dialog.set_resizable(false);
     dialog.set_transient_for(Some(parent));
     dialog.set_modal(true);
@@ -6128,54 +6778,222 @@ fn show_new_project_dialog(
     language_label.add_css_class("potoo-project-field-label");
     let language_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     language_row.set_margin_top(1);
-    let portugol_button =
-        language_option_button("Portugol", tr(ui_language, "Arquivo inicial .por"));
-    let visualg_button = language_option_button("VisuAlg", tr(ui_language, "Arquivo inicial .alg"));
-    let potigol_button =
-        language_option_button("Potigol", tr(ui_language, "Arquivo inicial .poti"));
-    for button in [&portugol_button, &visualg_button, &potigol_button] {
+    let portugol_button = language_option_button("Portugol", tr(ui_language, "3 variantes"));
+    let potigol_button = language_option_button("Potigol", tr(ui_language, "2 variantes"));
+    for button in [&portugol_button, &potigol_button] {
         button.add_css_class("potoo-project-language-choice");
         button.set_hexpand(true);
     }
     match default_language {
-        Language::Portugol => portugol_button.add_css_class("selected"),
-        Language::Visualg => visualg_button.add_css_class("selected"),
+        Language::Portugol | Language::GPortugol | Language::Visualg => {
+            portugol_button.add_css_class("selected")
+        }
         Language::Potigol => potigol_button.add_css_class("selected"),
     }
     language_row.append(&portugol_button);
-    language_row.append(&visualg_button);
     language_row.append(&potigol_button);
     language_field.append(&language_label);
     language_field.append(&language_row);
     content.append(&language_field);
 
-    let selected_language = Rc::new(Cell::new(default_language));
-    let visualg_button_for_portugol = visualg_button.clone();
+    let selected_template = Rc::new(Cell::new(default_template));
+    let portugol_options = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    portugol_options.set_homogeneous(true);
+    portugol_options.set_hexpand(true);
+    let portugol_variant_buttons = [
+        language_option_button("G-Portugol", ".gpt"),
+        language_option_button("Portugol 2.0", ".por"),
+        language_option_button("VisuAlg", ".alg"),
+    ];
+    let potigol_options = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    potigol_options.set_homogeneous(true);
+    potigol_options.set_hexpand(true);
+    let potigol_variant_buttons = [
+        language_option_button("Potigol Clássico", ".poti"),
+        language_option_button("Potigol Jerimum (Jogos 2D)", ".poti"),
+    ];
+    for button in portugol_variant_buttons
+        .iter()
+        .chain(potigol_variant_buttons.iter())
+    {
+        button.add_css_class("potoo-project-language-choice");
+        button.set_hexpand(true);
+    }
+    for button in &portugol_variant_buttons {
+        portugol_options.append(button);
+    }
+    for button in &potigol_variant_buttons {
+        potigol_options.append(button);
+    }
+    let variant_field = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    variant_field.add_css_class("potoo-dialog-field");
+    variant_field.set_margin_bottom(16);
+    let variant_label = gtk::Label::new(None);
+    variant_label.set_xalign(0.0);
+    variant_label.add_css_class("potoo-project-field-label");
+    let portugol_variant_picker =
+        gtk::DropDown::from_strings(&["G-Portugol", "Portugol 2.0", "VisuAlg"]);
+    portugol_variant_picker.add_css_class("potoo-settings-picker");
+    portugol_variant_picker.set_hexpand(true);
+    portugol_variant_picker.set_selected(project_template_variant_index(default_template));
+    let potigol_variant_picker =
+        gtk::DropDown::from_strings(&["Potigol Clássico", "Potigol Jerimum (Jogos 2D)"]);
+    potigol_variant_picker.add_css_class("potoo-settings-picker");
+    potigol_variant_picker.set_hexpand(true);
+    potigol_variant_picker.set_selected(if default_template == ProjectTemplate::PotigolJerimum {
+        1
+    } else {
+        0
+    });
+    variant_field.append(&variant_label);
+    variant_field.append(&portugol_options);
+    variant_field.append(&potigol_options);
+    variant_field.append(&portugol_variant_picker);
+    variant_field.append(&potigol_variant_picker);
+    content.append(&variant_field);
+    update_project_template_selector(
+        default_template,
+        ui_language,
+        &variant_field,
+        &variant_label,
+        &portugol_options,
+        [
+            &portugol_variant_buttons[0],
+            &portugol_variant_buttons[1],
+            &portugol_variant_buttons[2],
+        ],
+        &potigol_options,
+        [&potigol_variant_buttons[0], &potigol_variant_buttons[1]],
+    );
+    portugol_variant_picker.set_visible(false);
+    potigol_variant_picker.set_visible(false);
+    if show_language_selector {
+        portugol_options.set_visible(false);
+        potigol_options.set_visible(false);
+        match default_language {
+            Language::Portugol | Language::GPortugol | Language::Visualg => {
+                portugol_variant_picker.set_visible(true)
+            }
+            Language::Potigol => potigol_variant_picker.set_visible(true),
+        }
+    }
+    connect_project_template_choices(
+        &portugol_variant_buttons,
+        &[
+            ProjectTemplate::GPortugol,
+            ProjectTemplate::Portugol20,
+            ProjectTemplate::Visualg,
+        ],
+        selected_template.clone(),
+    );
+    connect_project_template_choices(
+        &potigol_variant_buttons,
+        &[
+            ProjectTemplate::PotigolClassic,
+            ProjectTemplate::PotigolJerimum,
+        ],
+        selected_template.clone(),
+    );
+    if show_language_selector {
+        let selected_template_for_portugol = selected_template.clone();
+        portugol_variant_picker.connect_selected_notify(move |picker| {
+            if let Some(template) =
+                project_template_for_variant(Language::Portugol, picker.selected())
+            {
+                selected_template_for_portugol.set(template);
+            }
+        });
+        let selected_template_for_potigol = selected_template.clone();
+        potigol_variant_picker.connect_selected_notify(move |picker| {
+            if let Some(template) =
+                project_template_for_variant(Language::Potigol, picker.selected())
+            {
+                selected_template_for_potigol.set(template);
+            }
+        });
+    }
+
     let potigol_button_for_portugol = potigol_button.clone();
-    let selected_language_for_portugol = selected_language.clone();
+    let selected_template_for_portugol = selected_template.clone();
+    let variant_field_for_portugol = variant_field.clone();
+    let variant_label_for_portugol = variant_label.clone();
+    let portugol_options_for_portugol = portugol_options.clone();
+    let portugol_buttons_for_portugol = portugol_variant_buttons.clone();
+    let potigol_options_for_portugol = potigol_options.clone();
+    let potigol_buttons_for_portugol = potigol_variant_buttons.clone();
+    let show_variant_picker_for_portugol = show_language_selector;
+    let portugol_picker_for_portugol = portugol_variant_picker.clone();
+    let potigol_picker_for_portugol = potigol_variant_picker.clone();
     portugol_button.connect_clicked(move |button| {
         button.add_css_class("selected");
-        visualg_button_for_portugol.remove_css_class("selected");
         potigol_button_for_portugol.remove_css_class("selected");
-        selected_language_for_portugol.set(Language::Portugol);
-    });
-    let portugol_button_for_visualg = portugol_button.clone();
-    let potigol_button_for_visualg = potigol_button.clone();
-    let selected_language_for_visualg = selected_language.clone();
-    visualg_button.connect_clicked(move |button| {
-        button.add_css_class("selected");
-        portugol_button_for_visualg.remove_css_class("selected");
-        potigol_button_for_visualg.remove_css_class("selected");
-        selected_language_for_visualg.set(Language::Visualg);
+        let template = ProjectTemplate::Portugol20;
+        selected_template_for_portugol.set(template);
+        update_project_template_selector(
+            template,
+            ui_language,
+            &variant_field_for_portugol,
+            &variant_label_for_portugol,
+            &portugol_options_for_portugol,
+            [
+                &portugol_buttons_for_portugol[0],
+                &portugol_buttons_for_portugol[1],
+                &portugol_buttons_for_portugol[2],
+            ],
+            &potigol_options_for_portugol,
+            [
+                &potigol_buttons_for_portugol[0],
+                &potigol_buttons_for_portugol[1],
+            ],
+        );
+        if show_variant_picker_for_portugol {
+            portugol_options_for_portugol.set_visible(false);
+            potigol_options_for_portugol.set_visible(false);
+            portugol_picker_for_portugol.set_visible(true);
+            potigol_picker_for_portugol.set_visible(false);
+            portugol_picker_for_portugol.set_selected(1);
+        }
     });
     let portugol_button_for_potigol = portugol_button.clone();
-    let visualg_button_for_potigol = visualg_button.clone();
-    let selected_language_for_potigol = selected_language.clone();
+    let selected_template_for_potigol = selected_template.clone();
+    let variant_field_for_potigol = variant_field.clone();
+    let variant_label_for_potigol = variant_label.clone();
+    let portugol_options_for_potigol = portugol_options.clone();
+    let portugol_buttons_for_potigol = portugol_variant_buttons.clone();
+    let potigol_options_for_potigol = potigol_options.clone();
+    let potigol_buttons_for_potigol = potigol_variant_buttons.clone();
+    let show_variant_picker_for_potigol = show_language_selector;
+    let portugol_picker_for_potigol = portugol_variant_picker.clone();
+    let potigol_picker_for_potigol = potigol_variant_picker.clone();
     potigol_button.connect_clicked(move |button| {
         button.add_css_class("selected");
         portugol_button_for_potigol.remove_css_class("selected");
-        visualg_button_for_potigol.remove_css_class("selected");
-        selected_language_for_potigol.set(Language::Potigol);
+        let template = ProjectTemplate::PotigolClassic;
+        selected_template_for_potigol.set(template);
+        update_project_template_selector(
+            template,
+            ui_language,
+            &variant_field_for_potigol,
+            &variant_label_for_potigol,
+            &portugol_options_for_potigol,
+            [
+                &portugol_buttons_for_potigol[0],
+                &portugol_buttons_for_potigol[1],
+                &portugol_buttons_for_potigol[2],
+            ],
+            &potigol_options_for_potigol,
+            [
+                &potigol_buttons_for_potigol[0],
+                &potigol_buttons_for_potigol[1],
+            ],
+        );
+        if show_variant_picker_for_potigol {
+            portugol_options_for_potigol.set_visible(false);
+            potigol_options_for_potigol.set_visible(false);
+            portugol_picker_for_potigol.set_visible(false);
+            potigol_picker_for_potigol.set_visible(true);
+            potigol_picker_for_potigol.set_selected(0);
+        }
     });
 
     let location_field = gtk::Box::new(gtk::Orientation::Vertical, 6);
@@ -6216,6 +7034,7 @@ fn show_new_project_dialog(
     actions.set_hexpand(true);
     let open_project_button = gtk::Button::new();
     open_project_button.add_css_class("potoo-project-open-button");
+    open_project_button.set_visible(show_language_selector);
     open_project_button.set_tooltip_text(Some(tr(ui_language, "Abrir projeto")));
     let open_project_content = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     open_project_content.append(&icon("folder-open"));
@@ -6295,7 +7114,7 @@ fn show_new_project_dialog(
     let dialog_for_create = dialog.clone();
     let name_for_create = name.clone();
     let error_for_create = error_label.clone();
-    let selected_language_for_create = selected_language.clone();
+    let selected_template_for_create = selected_template.clone();
     let selected_folder_for_create = selected_folder.clone();
     create_button.connect_clicked(move |_| {
         let project_name = name_for_create.text().to_string();
@@ -6306,7 +7125,7 @@ fn show_new_project_dialog(
         sender.input(MainWindowMsg::CreateProject(
             selected_folder_for_create.borrow().clone(),
             project_name,
-            selected_language_for_create.get(),
+            selected_template_for_create.get(),
         ));
         dialog_for_create.close();
     });
@@ -6333,25 +7152,22 @@ fn project_default_directory() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
-fn project_directory_options(root: &Path, language: UiLanguage) -> Vec<(String, PathBuf)> {
+fn project_directory_options(
+    root: &Path,
+    language: UiLanguage,
+    files: &[ProjectFile],
+) -> Vec<(String, PathBuf)> {
     let root_label = root
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| tr(language, "Pasta do projeto").to_string());
     let mut folders = vec![(root_label, PathBuf::new())];
-    if let Ok(files) = scan_project_files(root) {
-        folders.extend(
-            files
-                .into_iter()
-                .filter(|file| file.is_directory)
-                .map(|file| {
-                    (
-                        file.relative_path.clone(),
-                        PathBuf::from(file.relative_path),
-                    )
-                }),
-        );
-    }
+    folders.extend(files.iter().filter(|file| file.is_directory).map(|file| {
+        (
+            file.relative_path.clone(),
+            PathBuf::from(&file.relative_path),
+        )
+    }));
     folders
 }
 
@@ -6419,7 +7235,7 @@ fn show_new_file_dialog(
 ) {
     let dialog = gtk::Window::new();
     dialog.set_title(Some(tr(ui_language, "Novo arquivo")));
-    dialog.set_default_size(680, 450);
+    dialog.set_default_size(680, 510);
     dialog.set_resizable(false);
     dialog.set_transient_for(Some(parent));
     dialog.set_modal(true);
@@ -6468,56 +7284,119 @@ fn show_new_file_dialog(
     let language_field = gtk::Box::new(gtk::Orientation::Vertical, 6);
     language_field.add_css_class("potoo-dialog-field");
     language_field.set_margin_bottom(16);
-    let language_label = gtk::Label::new(Some(tr(ui_language, "Linguagem")));
+    let language_label = gtk::Label::new(Some(tr(ui_language, "Pseudolinguagem")));
     language_label.set_xalign(0.0);
     language_label.add_css_class("potoo-project-field-label");
     let language_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     language_row.set_margin_top(1);
-    let portugol_button = language_option_button("Portugol", ".por");
-    let visualg_button = language_option_button("VisuAlg", ".alg");
-    let potigol_button = language_option_button("Potigol", ".poti");
-    for button in [&portugol_button, &visualg_button, &potigol_button] {
+    let portugol_button = language_option_button("Portugol", tr(ui_language, "3 variantes"));
+    let potigol_button = language_option_button("Potigol", tr(ui_language, "2 variantes"));
+    for button in [&portugol_button, &potigol_button] {
         button.add_css_class("potoo-project-language-choice");
         button.set_hexpand(true);
     }
-    match default_language {
-        Language::Portugol => portugol_button.add_css_class("selected"),
-        Language::Visualg => visualg_button.add_css_class("selected"),
+    let default_template = ProjectTemplate::default_for_language(default_language);
+    match default_template.language() {
+        Language::Portugol | Language::Visualg | Language::GPortugol => {
+            portugol_button.add_css_class("selected")
+        }
         Language::Potigol => potigol_button.add_css_class("selected"),
     }
     language_row.append(&portugol_button);
-    language_row.append(&visualg_button);
     language_row.append(&potigol_button);
     language_field.append(&language_label);
     language_field.append(&language_row);
     content.append(&language_field);
-    let selected_language = Rc::new(Cell::new(default_language));
-    let visualg_for_portugol = visualg_button.clone();
+
+    let selected_template = Rc::new(Cell::new(default_template));
+    let variant_field = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    variant_field.add_css_class("potoo-dialog-field");
+    variant_field.set_margin_bottom(16);
+    let variant_label = gtk::Label::new(None);
+    variant_label.set_xalign(0.0);
+    variant_label.add_css_class("potoo-project-field-label");
+    let portugol_variant_picker =
+        gtk::DropDown::from_strings(&["G-Portugol", "Portugol 2.0", "VisuAlg"]);
+    portugol_variant_picker.add_css_class("potoo-settings-picker");
+    portugol_variant_picker.set_hexpand(true);
+    portugol_variant_picker.set_selected(match default_template {
+        ProjectTemplate::GPortugol => 0,
+        ProjectTemplate::Visualg => 2,
+        _ => 1,
+    });
+    let potigol_variant_picker =
+        gtk::DropDown::from_strings(&["Potigol Clássico", "Potigol Jerimum (Jogos 2D)"]);
+    potigol_variant_picker.add_css_class("potoo-settings-picker");
+    potigol_variant_picker.set_hexpand(true);
+    potigol_variant_picker.set_selected(if default_template == ProjectTemplate::PotigolJerimum {
+        1
+    } else {
+        0
+    });
+    variant_field.append(&variant_label);
+    variant_field.append(&portugol_variant_picker);
+    variant_field.append(&potigol_variant_picker);
+    content.append(&variant_field);
+    match default_template.language() {
+        Language::Portugol | Language::Visualg | Language::GPortugol => {
+            variant_label.set_text(tr(ui_language, "Variante do Portugol"));
+            potigol_variant_picker.set_visible(false);
+        }
+        Language::Potigol => {
+            variant_label.set_text(tr(ui_language, "Variante do Potigol"));
+            portugol_variant_picker.set_visible(false);
+        }
+    }
+    portugol_variant_picker.connect_selected_notify({
+        let selected_template = selected_template.clone();
+        move |picker| {
+            if let Some(template) =
+                project_template_for_variant(Language::Portugol, picker.selected())
+            {
+                selected_template.set(template);
+            }
+        }
+    });
+    potigol_variant_picker.connect_selected_notify({
+        let selected_template = selected_template.clone();
+        move |picker| {
+            if let Some(template) =
+                project_template_for_variant(Language::Potigol, picker.selected())
+            {
+                selected_template.set(template);
+            }
+        }
+    });
+
     let potigol_for_portugol = potigol_button.clone();
-    let selected_for_portugol = selected_language.clone();
+    let selected_for_portugol = selected_template.clone();
+    let variant_label_for_portugol = variant_label.clone();
+    let portugol_picker_for_portugol = portugol_variant_picker.clone();
+    let potigol_picker_for_portugol = potigol_variant_picker.clone();
     portugol_button.connect_clicked(move |button| {
         button.add_css_class("selected");
-        visualg_for_portugol.remove_css_class("selected");
         potigol_for_portugol.remove_css_class("selected");
-        selected_for_portugol.set(Language::Portugol);
-    });
-    let portugol_for_visualg = portugol_button.clone();
-    let potigol_for_visualg = potigol_button.clone();
-    let selected_for_visualg = selected_language.clone();
-    visualg_button.connect_clicked(move |button| {
-        button.add_css_class("selected");
-        portugol_for_visualg.remove_css_class("selected");
-        potigol_for_visualg.remove_css_class("selected");
-        selected_for_visualg.set(Language::Visualg);
+        let template = ProjectTemplate::Portugol20;
+        selected_for_portugol.set(template);
+        variant_label_for_portugol.set_text(tr(ui_language, "Variante do Portugol"));
+        portugol_picker_for_portugol.set_visible(true);
+        potigol_picker_for_portugol.set_visible(false);
+        portugol_picker_for_portugol.set_selected(1);
     });
     let portugol_for_potigol = portugol_button.clone();
-    let visualg_for_potigol = visualg_button.clone();
-    let selected_for_potigol = selected_language.clone();
+    let selected_for_potigol = selected_template.clone();
+    let variant_label_for_potigol = variant_label.clone();
+    let portugol_picker_for_potigol = portugol_variant_picker.clone();
+    let potigol_picker_for_potigol = potigol_variant_picker.clone();
     potigol_button.connect_clicked(move |button| {
         button.add_css_class("selected");
         portugol_for_potigol.remove_css_class("selected");
-        visualg_for_potigol.remove_css_class("selected");
-        selected_for_potigol.set(Language::Potigol);
+        let template = ProjectTemplate::PotigolClassic;
+        selected_for_potigol.set(template);
+        variant_label_for_potigol.set_text(tr(ui_language, "Variante do Potigol"));
+        portugol_picker_for_potigol.set_visible(false);
+        potigol_picker_for_potigol.set_visible(true);
+        potigol_picker_for_potigol.set_selected(0);
     });
 
     let folder_field = gtk::Box::new(gtk::Orientation::Vertical, 6);
@@ -6557,7 +7436,7 @@ fn show_new_file_dialog(
     cancel_button.connect_clicked(move |_| dialog_for_cancel.close());
     let dialog_for_create = dialog.clone();
     let name_for_create = name.clone();
-    let selected_language_for_create = selected_language.clone();
+    let selected_template_for_create = selected_template.clone();
     let folder_picker_for_create = folder_picker.clone();
     create_button.connect_clicked(move |_| {
         let relative_folder = folder_options
@@ -6566,7 +7445,7 @@ fn show_new_file_dialog(
             .unwrap_or_default();
         sender.input(MainWindowMsg::CreateFile(
             name_for_create.text().to_string(),
-            selected_language_for_create.get(),
+            selected_template_for_create.get().language(),
             relative_folder,
         ));
         dialog_for_create.close();
@@ -7052,8 +7931,9 @@ fn new_source_path(
 
     let requested_path = Path::new(name);
     let language = match requested_path.extension() {
-        Some(_) => Language::from_path(requested_path)
-            .ok_or_else(|| tr(ui_language, "Use a extensão .por, .alg ou .poti.").to_string())?,
+        Some(_) => Language::from_path(requested_path).ok_or_else(|| {
+            tr(ui_language, "Use a extensão .por, .alg, .poti ou .gpt.").to_string()
+        })?,
         None => default_language,
     };
     let file_name = if requested_path.extension().is_some() {
@@ -7136,7 +8016,9 @@ fn normalized_project_item_name(
         return match requested_path.extension() {
             None => Ok(format!("{name}.{}", language.extension())),
             Some(_) if Language::from_path(requested_path).is_some() => Ok(name.to_string()),
-            Some(_) => Err(tr(ui_language, "Use a extensão .por, .alg ou .poti.").to_string()),
+            Some(_) => {
+                Err(tr(ui_language, "Use a extensão .por, .alg, .poti ou .gpt.").to_string())
+            }
         };
     }
 
@@ -7154,7 +8036,7 @@ fn supported_save_path(
             .ok_or_else(|| {
                 tr(
                     ui_language,
-                    "Salve o código com a extensão .por, .alg ou .poti.",
+                    "Salve o código com a extensão .por, .alg, .poti ou .gpt.",
                 )
                 .to_string()
             }),
@@ -7225,9 +8107,14 @@ fn scan_source_directory(
 
 #[cfg(test)]
 mod ui_language_tests {
-    use super::{UI_TRANSLATION_KEYS, UiLanguage, learning_copy, tr, translate_known_text};
+    use super::{
+        UI_TRANSLATION_KEYS, UiLanguage, learning_copy, new_source_path,
+        normalized_project_item_name, project_scan_is_current, supported_save_path, tr,
+        translate_known_text,
+    };
     use crate::components::content_panel::Language;
     use crate::learning::{LearningTopic, learning_hint};
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn detects_supported_system_locales() {
@@ -7302,6 +8189,44 @@ mod ui_language_tests {
     }
 
     #[test]
+    fn gportugol_creation_save_and_rename_preserve_dialect_extensions() {
+        let root = Path::new("/tmp/potoo-project");
+        let (created, language) = new_source_path(
+            root,
+            "principal",
+            Language::GPortugol,
+            UiLanguage::Portuguese,
+        )
+        .expect("a G-Portugol starter file should be created with its own extension");
+        assert_eq!(created, root.join("principal.gpt"));
+        assert_eq!(language, Language::GPortugol);
+
+        let (saved, language) = supported_save_path(
+            PathBuf::from("/tmp/edited.gpt"),
+            Language::Portugol,
+            UiLanguage::Portuguese,
+        )
+        .expect("G-Portugol files should be saveable");
+        assert_eq!(saved, PathBuf::from("/tmp/edited.gpt"));
+        assert_eq!(language, Language::GPortugol);
+        assert_eq!(
+            normalized_project_item_name(&created, "renamed", false, UiLanguage::Portuguese),
+            Ok("renamed.gpt".to_string())
+        );
+        assert_eq!(
+            new_source_path(
+                root,
+                "main.por",
+                Language::GPortugol,
+                UiLanguage::Portuguese
+            )
+            .expect("the .por extension must remain associated with Portugol 2.0")
+            .1,
+            Language::Portugol
+        );
+    }
+
+    #[test]
     fn learning_copy_teaches_dialect_types_and_array_shapes() {
         let portugol = "programa {\n funcao vazio registrar(inteiro valor) {}\n funcao cadeia nome(inteiro valor) { retorne \"Ana\" }\n funcao vazio inicio() {\n  inteiro valores[3]\n  inteiro matriz[2][3]\n }\n}";
         let void_function = learning_hint(portugol, 2, Language::Portugol);
@@ -7329,6 +8254,139 @@ mod ui_language_tests {
         let vector = learning_hint(visualg, 3, Language::Visualg);
         let (visualg_text, _, _) = learning_copy(&vector, UiLanguage::Portuguese);
         assert!(visualg_text.contains("índices de 2 até 5"));
+    }
+
+    #[test]
+    fn learning_copy_uses_gportugol_terms_and_types() {
+        let source = "algoritmo aula;\n\
+variáveis\n\
+  texto: literal;\n\
+  valores: matriz[4] de caracteres;\n\
+fim-variáveis\n\
+início\n\
+  imprima(\"Olá\");\n\
+fim\n\
+função nome(): literal\n\
+início\n\
+  retorne \"Ana\";\n\
+fim";
+
+        let (text_variable, _, _) = learning_copy(
+            &learning_hint(source, 3, Language::GPortugol),
+            UiLanguage::English,
+        );
+        assert!(text_variable.contains("literal"));
+        assert!(text_variable.contains("type used to store text"));
+
+        let (vector, _, _) = learning_copy(
+            &learning_hint(source, 4, Language::GPortugol),
+            UiLanguage::Portuguese,
+        );
+        assert!(vector.contains("índices de 0 até 3"));
+
+        let (output, _, _) = learning_copy(
+            &learning_hint(source, 7, Language::GPortugol),
+            UiLanguage::English,
+        );
+        assert!(output.contains("imprima"));
+        assert!(!output.contains("escreva"));
+
+        let (function, concept, _) = learning_copy(
+            &learning_hint(source, 9, Language::GPortugol),
+            UiLanguage::English,
+        );
+        assert!(function.contains("literal"));
+        assert!(concept.contains("literal"));
+        assert!(concept.contains("G-Portugol"));
+    }
+
+    #[test]
+    fn learning_copy_discloses_potigol_heuristics_and_uses_neutral_procedure_concept() {
+        let potigol = learning_copy(
+            &learning_hint("soma = 1 + 2", 1, Language::Potigol),
+            UiLanguage::Portuguese,
+        );
+        assert!(potigol.0.contains("heurística"));
+
+        let procedure_hint = super::LearningHint {
+            line: 1,
+            column: 1,
+            language: Language::Portugol,
+            topic: LearningTopic::Procedure,
+            name: Some("registrar".to_owned()),
+            return_type: None,
+            parameters: Vec::new(),
+            variables: Vec::new(),
+            expression: None,
+            experiment_expression: None,
+            problems: Vec::new(),
+        };
+        let procedure = learning_copy(&procedure_hint, UiLanguage::Portuguese);
+        assert!(procedure.1.contains("rotina"));
+        assert!(!procedure.1.contains("VisuAlg"));
+    }
+
+    #[test]
+    fn atomic_save_replaces_file_contents_without_leaving_temporary_files() {
+        let directory = std::env::temp_dir().join(format!(
+            "potoo-atomic-save-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("programa.por");
+        std::fs::write(&path, "versão antiga").unwrap();
+
+        super::atomic_write(&path, "versão nova".as_bytes()).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "versão nova");
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 1);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn project_scan_results_are_rejected_when_the_workspace_generation_is_stale() {
+        let old_root = Path::new("/tmp/old-project");
+        let new_root = Path::new("/tmp/new-project");
+        assert!(project_scan_is_current(
+            4,
+            9,
+            Some(old_root),
+            4,
+            9,
+            new_root,
+            true
+        ));
+        assert!(!project_scan_is_current(
+            5,
+            9,
+            Some(old_root),
+            4,
+            9,
+            new_root,
+            true
+        ));
+        assert!(!project_scan_is_current(
+            4,
+            10,
+            Some(old_root),
+            4,
+            9,
+            old_root,
+            false
+        ));
+        assert!(!project_scan_is_current(
+            4,
+            9,
+            Some(old_root),
+            4,
+            9,
+            new_root,
+            false
+        ));
     }
 }
 
@@ -7371,6 +8429,17 @@ mod input_cancel_tests {
         assert!(escape_key);
         assert_eq!(entry.text(), "");
         assert_eq!(cancel_count.get(), 1);
+    }
+}
+
+#[cfg(test)]
+mod file_picker_execution_tests {
+    use super::execution_reply_is_current;
+
+    #[test]
+    fn old_file_picker_reply_is_rejected_after_a_new_execution_starts() {
+        assert!(!execution_reply_is_current(41, Some(42)));
+        assert!(execution_reply_is_current(42, Some(42)));
     }
 }
 

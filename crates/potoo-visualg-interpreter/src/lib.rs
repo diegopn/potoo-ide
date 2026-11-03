@@ -112,8 +112,13 @@ pub trait RuntimeIo {
     fn write(&mut self, text: &str);
     fn read_line(&mut self, prompt: &InputPrompt) -> Result<String, String>;
 
-    /// Clears the host output area when the program calls `limpatela`.
+    /// Clears the host output area when a host maps `limpatela` to that area.
     fn clear_output(&mut self) {}
+
+    /// Clears the simulated console without requiring the host to erase output history.
+    fn clear_screen(&mut self) {
+        self.clear_output();
+    }
 
     /// Allows a host to interrupt a CPU-bound loop while the program is running.
     fn should_stop(&mut self) -> bool {
@@ -150,6 +155,9 @@ pub trait RuntimeIo {
     fn on_execution_event(&mut self, _event: &ExecutionEvent) -> Result<ControlAction, String> {
         Ok(ControlAction::Continue)
     }
+
+    /// Notifies the host of the current source line during timed execution.
+    fn on_line_changed(&mut self, _line: usize) {}
 }
 
 /// Limits the resources used by one program execution.

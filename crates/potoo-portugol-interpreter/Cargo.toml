@@ -3,10 +3,13 @@ name = "potoo-portugol-interpreter"
 version = "0.1.0"
 description = "A reusable Portugol interpreter written in Rust"
 license = "GPL-3.0-or-later"
-repository = "https://github.com/diegopn/potoo-portugol-interpreter"
+repository = "https://github.com/diegopn/potoo-ide"
 readme = "README.md"
 edition = "2024"
 rust-version = "1.93"
+
+[dependencies]
+indexmap = "=2.14.2"
 
 [lib]
 name = "potoo_portugol_interpreter"

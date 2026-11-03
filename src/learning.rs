@@ -5,6 +5,7 @@ use crate::{
     execution::{DiagnosticKind as ExecutionDiagnosticKind, ExecutionDiagnostic},
 };
 
+mod gportugol;
 mod portugol;
 mod visualg;
 
@@ -186,9 +187,15 @@ where
         .lines()
         .nth(one_based_line.saturating_sub(1))
         .unwrap_or("");
-    let line = match language {
-        Language::Potigol => line.split_once('#').map_or(line, |(before, _)| before),
-        _ => line.split_once("//").map_or(line, |(before, _)| before),
+    let cleaned_gportugol_line;
+    let line = if language == Language::GPortugol {
+        cleaned_gportugol_line = gportugol::source_line_code(source, one_based_line);
+        cleaned_gportugol_line.as_str()
+    } else {
+        match language {
+            Language::Potigol => line.split_once('#').map_or(line, |(before, _)| before),
+            _ => line.split_once("//").map_or(line, |(before, _)| before),
+        }
     }
     .trim();
     let (facts, column, mut problems) = match language {
@@ -242,12 +249,38 @@ where
                 }
             }
         }
+        Language::GPortugol => {
+            match gportugol::analyze_source_line_cancellable(source, one_based_line, &is_cancelled)
+            {
+                Ok(Some(analysis)) => {
+                    let column = analysis.column;
+                    (Some(gportugol_facts(analysis)), column, Vec::new())
+                }
+                Ok(None) => (None, 1, Vec::new()),
+                Err(diagnostics) => {
+                    let problems = diagnostics
+                        .into_iter()
+                        .filter(|diagnostic| diagnostic.span.start.line == one_based_line)
+                        .map(|diagnostic| LearningProblem {
+                            kind: LearningProblemKind::Syntax,
+                            severity: LearningSeverity::Error,
+                            line: diagnostic.span.start.line,
+                            column: diagnostic.span.start.column,
+                            text: LearningProblemText::InterpreterDiagnostic,
+                            message: diagnostic.message,
+                            suggestion: None,
+                        })
+                        .collect();
+                    (None, 1, problems)
+                }
+            }
+        }
         Language::Potigol => (None, 1, Vec::new()),
     };
     if is_cancelled() {
         return None;
     }
-    let facts = facts.unwrap_or_else(|| fallback_facts(line));
+    let facts = facts.unwrap_or_else(|| fallback_facts(line, language));
     let expression = (facts.topic == LearningTopic::Decision).then(|| extract_condition(line));
     let experiment_expression = expression.as_deref().and_then(suggest_condition_change);
     for diagnostic in runtime_diagnostics
@@ -325,12 +358,12 @@ fn portugol_facts(analysis: SourceLineAnalysis) -> LearningFacts {
         parameters: analysis
             .parameters
             .into_iter()
-            .map(portugol_symbol)
+            .map(learning_symbol)
             .collect(),
         variables: analysis
             .variables
             .into_iter()
-            .map(portugol_symbol)
+            .map(learning_symbol)
             .collect(),
     }
 }
@@ -355,13 +388,47 @@ fn visualg_facts(analysis: SourceLineAnalysis) -> LearningFacts {
         parameters: analysis
             .parameters
             .into_iter()
-            .map(visualg_symbol)
+            .map(learning_symbol)
             .collect(),
-        variables: analysis.variables.into_iter().map(visualg_symbol).collect(),
+        variables: analysis
+            .variables
+            .into_iter()
+            .map(learning_symbol)
+            .collect(),
     }
 }
 
-fn portugol_symbol(symbol: SourceSymbol) -> LearningSymbol {
+fn gportugol_facts(analysis: SourceLineAnalysis) -> LearningFacts {
+    let topic = match analysis.construct {
+        SourceConstruct::Function => LearningTopic::Function,
+        SourceConstruct::Procedure => LearningTopic::Procedure,
+        SourceConstruct::VariableDeclaration => LearningTopic::Variable,
+        SourceConstruct::Assignment => LearningTopic::Assignment,
+        SourceConstruct::Input => LearningTopic::Input,
+        SourceConstruct::Output => LearningTopic::Output,
+        SourceConstruct::Decision => LearningTopic::Decision,
+        SourceConstruct::Loop => LearningTopic::Loop,
+        SourceConstruct::Return => LearningTopic::Return,
+        SourceConstruct::Program | SourceConstruct::Other => LearningTopic::Program,
+    };
+    LearningFacts {
+        topic,
+        name: analysis.name,
+        return_type: analysis.return_type,
+        parameters: analysis
+            .parameters
+            .into_iter()
+            .map(learning_symbol)
+            .collect(),
+        variables: analysis
+            .variables
+            .into_iter()
+            .map(learning_symbol)
+            .collect(),
+    }
+}
+
+fn learning_symbol(symbol: SourceSymbol) -> LearningSymbol {
     LearningSymbol {
         name: symbol.name,
         type_name: symbol.type_name,
@@ -379,68 +446,89 @@ fn portugol_symbol(symbol: SourceSymbol) -> LearningSymbol {
     }
 }
 
-fn visualg_symbol(symbol: SourceSymbol) -> LearningSymbol {
-    LearningSymbol {
-        name: symbol.name,
-        type_name: symbol.type_name,
-        is_constant: symbol.is_constant,
-        by_reference: symbol.by_reference,
-        dimensions: symbol
-            .dimensions
-            .into_iter()
-            .map(|dimension| LearningDimension {
-                lower_bound: dimension.lower_bound,
-                upper_bound: dimension.upper_bound,
-            })
-            .collect(),
-        initializer: symbol.initializer,
-    }
-}
-
-fn fallback_facts(line: &str) -> LearningFacts {
+fn fallback_facts(line: &str, language: Language) -> LearningFacts {
     let normalized = line.to_lowercase();
-    let topic = if starts_with_any(&normalized, &["funcao ", "procedimento "]) {
+    let gportugol = language == Language::GPortugol;
+    let topic = if starts_with_any(
+        &normalized,
+        if gportugol {
+            &["função "]
+        } else {
+            &["funcao ", "procedimento "]
+        },
+    ) {
         if normalized.starts_with("procedimento ") {
             LearningTopic::Procedure
         } else {
             LearningTopic::Function
         }
-    } else if starts_with_any(&normalized, &["se ", "senao", "caso ", "escolha "]) {
+    } else if starts_with_any(
+        &normalized,
+        if gportugol {
+            &["se ", "senão"]
+        } else {
+            &["se ", "senao", "caso ", "escolha "]
+        },
+    ) {
         LearningTopic::Decision
     } else if starts_with_any(
         &normalized,
-        &[
-            "para ",
-            "enquanto ",
-            "repita",
-            "fimenquanto",
-            "fimpara",
-            "fimrepita",
-        ],
+        if gportugol {
+            &["para ", "enquanto ", "repita"]
+        } else {
+            &[
+                "para ",
+                "enquanto ",
+                "repita",
+                "fimenquanto",
+                "fimpara",
+                "fimrepita",
+            ]
+        },
     ) {
         LearningTopic::Loop
-    } else if starts_with_any(&normalized, &["leia", "input("]) {
+    } else if starts_with_any(&normalized, &["leia", "input("])
+        || (gportugol && normalized.contains("leia("))
+    {
         LearningTopic::Input
-    } else if starts_with_any(&normalized, &["escreva", "escreval", "print("]) {
+    } else if starts_with_any(
+        &normalized,
+        if gportugol {
+            &["imprima("]
+        } else {
+            &["escreva", "escreval", "print("]
+        },
+    ) {
         LearningTopic::Output
     } else if normalized.contains(": inteiro")
         || normalized.contains(": real")
         || normalized.contains(": caractere")
         || normalized.contains(": logico")
+        || (gportugol
+            && [": caractere", ": literal", ": lógico"]
+                .iter()
+                .any(|ty| normalized.contains(ty)))
         || starts_with_any(
             &normalized,
-            &[
-                "inteiro ",
-                "real ",
-                "caracter ",
-                "caractere ",
-                "logico ",
-                "cadeia ",
-            ],
+            if gportugol {
+                &["inteiro ", "real ", "caractere ", "literal ", "lógico "]
+            } else {
+                &[
+                    "inteiro ",
+                    "real ",
+                    "caracter ",
+                    "caractere ",
+                    "logico ",
+                    "cadeia ",
+                ]
+            },
         )
     {
         LearningTopic::Variable
-    } else if normalized.contains("<-") || normalized.contains(" = ") {
+    } else if normalized.contains("<-")
+        || normalized.contains(" = ")
+        || (gportugol && normalized.contains(":="))
+    {
         LearningTopic::Assignment
     } else if normalized.starts_with("retorne") {
         LearningTopic::Return
@@ -620,7 +708,7 @@ fn declared_array_bounds(
                     );
                 }
             }
-            Language::Potigol => continue,
+            Language::Potigol | Language::GPortugol => continue,
         }
     }
     Some(arrays)
@@ -846,7 +934,11 @@ fn extract_condition(line: &str) -> String {
     if let Some(keyword_length) = keyword_length {
         condition = condition[keyword_length..].trim();
     }
-    if let Some(end) = condition.to_lowercase().find(" entao") {
+    if let Some(end) = condition
+        .to_lowercase()
+        .find(" então")
+        .or_else(|| condition.to_lowercase().find(" entao"))
+    {
         condition = condition[..end].trim();
     }
     condition = condition.trim_end_matches(['{', ';']).trim();
@@ -948,6 +1040,88 @@ mod tests {
         assert_eq!(vector.variables[0].type_name, "inteiro");
         assert_eq!(vector.variables[0].dimensions[0].lower_bound, Some(2));
         assert_eq!(vector.variables[0].dimensions[0].upper_bound, Some(5));
+    }
+
+    #[test]
+    fn gportugol_learning_hint_identifies_constructs_and_symbols() {
+        let source = "algoritmo aula;\n\
+variáveis\n\
+  idade: inteiro;\n\
+  valores: matriz[3] de inteiros;\n\
+fim-variáveis\n\
+início\n\
+  idade := 17;\n\
+  idade := leia();\n\
+  imprima(idade);\n\
+  enquanto idade > 0 faça\n\
+    idade := idade - 1;\n\
+  fim-enquanto\n\
+  se idade >= 18 então\n\
+    imprima(\"maior\");\n\
+  fim-se\n\
+fim\n\
+função soma(a: inteiro, b: real): real\n\
+início\n\
+  retorne a + b;\n\
+fim";
+
+        let variable = learning_hint(source, 3, Language::GPortugol);
+        assert_eq!(variable.topic, LearningTopic::Variable);
+        assert_eq!(variable.variables[0].name, "idade");
+        assert_eq!(variable.variables[0].type_name, "inteiro");
+
+        let vector = learning_hint(source, 4, Language::GPortugol);
+        assert_eq!(vector.variables[0].dimensions[0].lower_bound, Some(0));
+        assert_eq!(vector.variables[0].dimensions[0].upper_bound, Some(2));
+
+        assert_eq!(
+            learning_hint(source, 7, Language::GPortugol).topic,
+            LearningTopic::Assignment
+        );
+        assert_eq!(
+            learning_hint(source, 8, Language::GPortugol).topic,
+            LearningTopic::Input
+        );
+
+        let output = learning_hint(source, 9, Language::GPortugol);
+        assert_eq!(output.topic, LearningTopic::Output);
+        assert_eq!(
+            learning_hint(source, 10, Language::GPortugol).topic,
+            LearningTopic::Loop
+        );
+
+        let decision = learning_hint(source, 13, Language::GPortugol);
+        assert_eq!(decision.topic, LearningTopic::Decision);
+        assert_eq!(decision.expression.as_deref(), Some("idade >= 18"));
+        assert_eq!(
+            decision.experiment_expression.as_deref(),
+            Some("idade >= 16")
+        );
+
+        let function = learning_hint(source, 17, Language::GPortugol);
+        assert_eq!(function.topic, LearningTopic::Function);
+        assert_eq!(function.name.as_deref(), Some("soma"));
+        assert_eq!(function.return_type.as_deref(), Some("real"));
+        assert_eq!(function.parameters[0].name, "a");
+        assert_eq!(function.parameters[0].type_name, "inteiro");
+        assert_eq!(function.parameters[1].name, "b");
+        assert_eq!(function.parameters[1].type_name, "real");
+
+        let return_value = learning_hint(source, 19, Language::GPortugol);
+        assert_eq!(return_value.topic, LearningTopic::Return);
+        assert_eq!(return_value.return_type.as_deref(), Some("real"));
+    }
+
+    #[test]
+    fn gportugol_learning_hint_reports_syntax_errors_on_the_selected_line() {
+        let source =
+            "algoritmo aula;\ninício\n  se idade >= então\n    imprima(\"ok\");\n  fim-se\nfim";
+        let hint = learning_hint(source, 3, Language::GPortugol);
+
+        assert_eq!(hint.topic, LearningTopic::Decision);
+        assert!(hint.problems.iter().any(|problem| {
+            problem.kind == LearningProblemKind::Syntax && problem.line == 3 && problem.column > 0
+        }));
     }
 
     #[test]

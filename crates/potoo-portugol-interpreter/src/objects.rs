@@ -1,8 +1,10 @@
 use std::{
     cell::RefCell,
-    collections::{BTreeMap, HashMap},
-    rc::Rc,
+    collections::HashMap,
+    rc::{Rc, Weak},
 };
+
+use indexmap::IndexMap;
 
 #[derive(Clone, Debug)]
 pub(crate) enum PropertyValue {
@@ -11,15 +13,34 @@ pub(crate) enum PropertyValue {
     Logical(bool),
     Character(char),
     String(String),
-    Object(Rc<RefCell<BTreeMap<String, PropertyValue>>>),
+    Object(Rc<RefCell<IndexMap<String, PropertyValue>>>),
     Array(Vec<PropertyValue>),
     Null,
 }
 
 #[derive(Default)]
 pub(crate) struct ObjectStore {
-    objects: HashMap<i64, Rc<RefCell<BTreeMap<String, PropertyValue>>>>,
+    objects: HashMap<i64, Rc<RefCell<IndexMap<String, PropertyValue>>>>,
+    json_metadata: HashMap<usize, JsonObjectMetadata>,
     next_handle: i64,
+}
+
+struct JsonObjectMetadata {
+    object: Weak<RefCell<IndexMap<String, PropertyValue>>>,
+    properties: HashMap<String, JsonValueMetadata>,
+}
+
+#[derive(Clone)]
+enum JsonValueMetadata {
+    Plain,
+    LongInteger,
+    BigInteger(String),
+    Array(Vec<JsonValueMetadata>),
+}
+
+struct ParsedJsonValue {
+    value: PropertyValue,
+    metadata: JsonValueMetadata,
 }
 
 impl ObjectStore {
@@ -27,13 +48,17 @@ impl ObjectStore {
         let handle = self.next_handle;
         self.next_handle = self.next_handle.saturating_add(1);
         self.objects
-            .insert(handle, Rc::new(RefCell::new(BTreeMap::new())));
+            .insert(handle, Rc::new(RefCell::new(IndexMap::new())));
         handle
     }
 
     pub(crate) fn create_json(&mut self, json: &str, maximum_values: usize) -> i64 {
-        let object = parse_json_object(json, maximum_values).unwrap_or_default();
-        self.insert(object)
+        match parse_json_object(json, maximum_values) {
+            Ok((object, root_metadata, nested_metadata)) => {
+                self.insert_json(object, root_metadata, nested_metadata)
+            }
+            Err(()) => self.insert(IndexMap::new()),
+        }
     }
 
     pub(crate) fn create_xml(&mut self, xml: &str, maximum_values: usize) -> i64 {
@@ -41,10 +66,36 @@ impl ObjectStore {
         self.insert(object)
     }
 
-    fn insert(&mut self, object: BTreeMap<String, PropertyValue>) -> i64 {
+    fn insert(&mut self, object: IndexMap<String, PropertyValue>) -> i64 {
+        self.insert_shared(Rc::new(RefCell::new(object)))
+    }
+
+    fn insert_json(
+        &mut self,
+        object: IndexMap<String, PropertyValue>,
+        root_metadata: HashMap<String, JsonValueMetadata>,
+        mut nested_metadata: HashMap<usize, JsonObjectMetadata>,
+    ) -> i64 {
+        let object = Rc::new(RefCell::new(object));
+        if !root_metadata.is_empty() {
+            nested_metadata.insert(
+                object_key(&object),
+                JsonObjectMetadata {
+                    object: Rc::downgrade(&object),
+                    properties: root_metadata,
+                },
+            );
+        }
+        self.json_metadata.extend(nested_metadata);
+        let handle = self.insert_shared(object);
+        self.prune_json_metadata();
+        handle
+    }
+
+    fn insert_shared(&mut self, object: Rc<RefCell<IndexMap<String, PropertyValue>>>) -> i64 {
         let handle = self.next_handle;
         self.next_handle = self.next_handle.saturating_add(1);
-        self.objects.insert(handle, Rc::new(RefCell::new(object)));
+        self.objects.insert(handle, object);
         handle
     }
 
@@ -54,25 +105,36 @@ impl ObjectStore {
         name: &str,
         value: PropertyValue,
     ) -> Result<(), String> {
-        self.get_object(handle)?
-            .borrow_mut()
-            .insert(name.to_owned(), value);
+        let object = self.get_object(handle)?;
+        object.borrow_mut().insert(name.to_owned(), value);
+        let key = object_key(object);
+        let remove_metadata = if let Some(metadata) = self.json_metadata.get_mut(&key) {
+            metadata.properties.remove(name);
+            metadata.properties.is_empty()
+        } else {
+            false
+        };
+        if remove_metadata {
+            self.json_metadata.remove(&key);
+        }
+        self.prune_json_metadata();
         Ok(())
     }
 
     pub(crate) fn get(&self, handle: i64, name: &str) -> Result<PropertyValue, String> {
-        self.get_object(handle)?
-            .borrow()
-            .get(name)
-            .cloned()
-            .ok_or_else(|| {
-                missing_property(
-                    name,
-                    self.get_object(handle)
-                        .map(|object| object.borrow().keys().cloned().collect::<Vec<_>>())
-                        .unwrap_or_default(),
-                )
-            })
+        let object = self.get_object(handle)?;
+        let property = object.borrow().get(name).cloned().ok_or_else(|| {
+            missing_property(name, object.borrow().keys().cloned().collect::<Vec<_>>())
+        })?;
+        if matches!(property, PropertyValue::Character(_))
+            || matches!(
+                self.value_metadata(object, name),
+                Some(JsonValueMetadata::LongInteger | JsonValueMetadata::BigInteger(_))
+            )
+        {
+            return Err(format!("tipo da propriedade não corresponde a '{name}'"));
+        }
+        Ok(property)
     }
 
     pub(crate) fn get_from_array(
@@ -85,10 +147,20 @@ impl ObjectStore {
         let PropertyValue::Array(values) = property else {
             return Err(format!("a propriedade '{name}' não é um vetor"));
         };
-        values
-            .get(index)
-            .cloned()
-            .ok_or_else(|| format!("índice {index} inválido para o vetor da propriedade '{name}'"))
+        let value = values.get(index).cloned().ok_or_else(|| {
+            format!("índice {index} inválido para o vetor da propriedade '{name}'")
+        })?;
+        if matches!(value, PropertyValue::Character(_))
+            || matches!(
+                self.array_value_metadata(handle, name, index),
+                Some(JsonValueMetadata::LongInteger | JsonValueMetadata::BigInteger(_))
+            )
+        {
+            return Err(format!(
+                "tipo do elemento do vetor não corresponde à propriedade '{name}'"
+            ));
+        }
+        Ok(value)
     }
 
     pub(crate) fn array_len(&self, handle: i64, name: &str) -> Result<usize, String> {
@@ -113,11 +185,23 @@ impl ObjectStore {
     }
 
     pub(crate) fn type_code(&self, handle: i64, name: &str) -> Result<i64, String> {
-        Ok(match self.get(handle, name)? {
+        let object = self.get_object(handle)?;
+        let value = object.borrow().get(name).cloned().ok_or_else(|| {
+            missing_property(name, object.borrow().keys().cloned().collect::<Vec<_>>())
+        })?;
+        if matches!(value, PropertyValue::Character(_))
+            || matches!(
+                self.value_metadata(object, name),
+                Some(JsonValueMetadata::LongInteger | JsonValueMetadata::BigInteger(_))
+            )
+        {
+            return Ok(0);
+        }
+        Ok(match value {
             PropertyValue::Integer(_) => 1,
             PropertyValue::String(value) if value.encode_utf16().count() == 1 => 3,
             PropertyValue::String(_) => 2,
-            PropertyValue::Character(_) => 3,
+            PropertyValue::Character(_) => 0,
             PropertyValue::Real(_) => 4,
             PropertyValue::Logical(_) => 5,
             PropertyValue::Object(_) => 6,
@@ -129,7 +213,13 @@ impl ObjectStore {
     pub(crate) fn json(&self, handle: i64) -> Result<String, String> {
         let object = self.get_object(handle)?;
         let mut output = String::new();
-        write_json(&PropertyValue::Object(object.clone()), 0, &mut output);
+        write_json(
+            &PropertyValue::Object(object.clone()),
+            0,
+            &mut output,
+            &self.json_metadata,
+            None,
+        );
         Ok(output)
     }
 
@@ -137,21 +227,65 @@ impl ObjectStore {
         self.objects
             .remove(&handle)
             .map(|_| ())
-            .ok_or_else(|| "endereço de objeto inválido".to_owned())
+            .ok_or_else(|| "endereço de objeto inválido".to_owned())?;
+        let mut shifted = handle.saturating_add(1);
+        while shifted < self.next_handle {
+            if let Some(object) = self.objects.remove(&shifted) {
+                self.objects.insert(shifted - 1, object);
+            }
+            shifted += 1;
+        }
+        self.next_handle = self.next_handle.saturating_sub(1);
+        self.prune_json_metadata();
+        Ok(())
     }
 
     pub(crate) fn release_all(&mut self) {
         self.objects.clear();
+        self.json_metadata.clear();
+        self.next_handle = 0;
     }
 
     fn get_object(
         &self,
         handle: i64,
-    ) -> Result<&Rc<RefCell<BTreeMap<String, PropertyValue>>>, String> {
+    ) -> Result<&Rc<RefCell<IndexMap<String, PropertyValue>>>, String> {
         self.objects
             .get(&handle)
             .ok_or_else(|| "endereço de objeto inválido".to_owned())
     }
+
+    fn value_metadata(
+        &self,
+        object: &Rc<RefCell<IndexMap<String, PropertyValue>>>,
+        name: &str,
+    ) -> Option<&JsonValueMetadata> {
+        self.json_metadata
+            .get(&object_key(object))
+            .and_then(|metadata| metadata.properties.get(name))
+    }
+
+    fn array_value_metadata(
+        &self,
+        handle: i64,
+        name: &str,
+        index: usize,
+    ) -> Option<&JsonValueMetadata> {
+        let object = self.objects.get(&handle)?;
+        let Some(JsonValueMetadata::Array(values)) = self.value_metadata(object, name) else {
+            return None;
+        };
+        values.get(index)
+    }
+
+    fn prune_json_metadata(&mut self) {
+        self.json_metadata
+            .retain(|_, metadata| metadata.object.strong_count() > 0);
+    }
+}
+
+fn object_key(object: &Rc<RefCell<IndexMap<String, PropertyValue>>>) -> usize {
+    Rc::as_ptr(object) as usize
 }
 
 fn missing_property(name: &str, properties: Vec<String>) -> String {
@@ -168,20 +302,38 @@ fn missing_property(name: &str, properties: Vec<String>) -> String {
 fn parse_json_object(
     json: &str,
     maximum_values: usize,
-) -> Result<BTreeMap<String, PropertyValue>, ()> {
+) -> Result<
+    (
+        IndexMap<String, PropertyValue>,
+        HashMap<String, JsonValueMetadata>,
+        HashMap<usize, JsonObjectMetadata>,
+    ),
+    (),
+> {
     let mut parser = JsonParser {
         source: json,
         position: 0,
         values_seen: 0,
         maximum_values,
+        object_metadata: HashMap::new(),
     };
     let value = parser.parse_value(0)?;
-    parser.skip_whitespace();
-    if parser.position != json.len() {
-        return Err(());
-    }
     match value {
-        PropertyValue::Object(object) => Ok(object.borrow().clone()),
+        ParsedJsonValue {
+            value: PropertyValue::Object(object),
+            ..
+        } => {
+            let root_metadata = parser
+                .object_metadata
+                .remove(&object_key(&object))
+                .map(|metadata| metadata.properties)
+                .unwrap_or_default();
+            Ok((
+                object.borrow().clone(),
+                root_metadata,
+                parser.object_metadata,
+            ))
+        }
         _ => Err(()),
     }
 }
@@ -191,10 +343,11 @@ struct JsonParser<'a> {
     position: usize,
     values_seen: usize,
     maximum_values: usize,
+    object_metadata: HashMap<usize, JsonObjectMetadata>,
 }
 
 impl JsonParser<'_> {
-    fn parse_value(&mut self, depth: usize) -> Result<PropertyValue, ()> {
+    fn parse_value(&mut self, depth: usize) -> Result<ParsedJsonValue, ()> {
         self.skip_whitespace();
         if depth > 128 {
             return Err(());
@@ -204,62 +357,121 @@ impl JsonParser<'_> {
             return Err(());
         }
         match self.peek()? {
-            b'{' => self
-                .parse_object(depth + 1)
-                .map(|object| PropertyValue::Object(Rc::new(RefCell::new(object)))),
-            b'[' => self.parse_array(depth + 1).map(PropertyValue::Array),
-            b'"' => self.parse_string().map(PropertyValue::String),
+            b'{' => self.parse_object(depth + 1).map(|object| ParsedJsonValue {
+                value: PropertyValue::Object(object),
+                metadata: JsonValueMetadata::Plain,
+            }),
+            b'[' => self.parse_array(depth + 1),
+            b'"' => self.parse_string().map(|value| ParsedJsonValue {
+                value: PropertyValue::String(value),
+                metadata: JsonValueMetadata::Plain,
+            }),
             b't' => {
                 self.consume_literal(b"true")?;
-                Ok(PropertyValue::Logical(true))
+                Ok(ParsedJsonValue {
+                    value: PropertyValue::Logical(true),
+                    metadata: JsonValueMetadata::Plain,
+                })
             }
             b'f' => {
                 self.consume_literal(b"false")?;
-                Ok(PropertyValue::Logical(false))
+                Ok(ParsedJsonValue {
+                    value: PropertyValue::Logical(false),
+                    metadata: JsonValueMetadata::Plain,
+                })
             }
             b'n' => {
                 self.consume_literal(b"null")?;
-                Ok(PropertyValue::Null)
+                Ok(ParsedJsonValue {
+                    value: PropertyValue::Null,
+                    metadata: JsonValueMetadata::Plain,
+                })
             }
             b'-' | b'0'..=b'9' => self.parse_number(),
             _ => Err(()),
         }
     }
 
-    fn parse_object(&mut self, depth: usize) -> Result<BTreeMap<String, PropertyValue>, ()> {
+    fn parse_object(
+        &mut self,
+        depth: usize,
+    ) -> Result<Rc<RefCell<IndexMap<String, PropertyValue>>>, ()> {
         self.position += 1;
         self.skip_whitespace();
-        let mut object = BTreeMap::new();
+        let mut object = IndexMap::new();
+        let mut metadata = HashMap::new();
         if self.consume_if(b'}') {
-            return Ok(object);
+            return Ok(self.finish_object(object, metadata));
         }
         loop {
             self.skip_whitespace();
             let name = self.parse_string()?;
             self.skip_whitespace();
             self.consume(b':')?;
-            let value = self.parse_value(depth)?;
-            object.insert(name, value);
+            let parsed = self.parse_value(depth)?;
+            if matches!(parsed.metadata, JsonValueMetadata::Plain) {
+                metadata.remove(&name);
+            } else {
+                metadata.insert(name.clone(), parsed.metadata);
+            }
+            object.insert(name, parsed.value);
             self.skip_whitespace();
             if self.consume_if(b'}') {
-                return Ok(object);
+                return Ok(self.finish_object(object, metadata));
             }
             self.consume(b',')?;
         }
     }
 
-    fn parse_array(&mut self, depth: usize) -> Result<Vec<PropertyValue>, ()> {
+    fn finish_object(
+        &mut self,
+        properties: IndexMap<String, PropertyValue>,
+        metadata: HashMap<String, JsonValueMetadata>,
+    ) -> Rc<RefCell<IndexMap<String, PropertyValue>>> {
+        let object = Rc::new(RefCell::new(properties));
+        if !metadata.is_empty() {
+            self.object_metadata.insert(
+                object_key(&object),
+                JsonObjectMetadata {
+                    object: Rc::downgrade(&object),
+                    properties: metadata,
+                },
+            );
+        }
+        object
+    }
+
+    fn parse_array(&mut self, depth: usize) -> Result<ParsedJsonValue, ()> {
         self.position += 1;
         self.skip_whitespace();
-        let mut array = Vec::new();
+        let mut array: Vec<ParsedJsonValue> = Vec::new();
         if self.consume_if(b']') {
-            return Ok(array);
+            return Ok(ParsedJsonValue {
+                value: PropertyValue::Array(Vec::new()),
+                metadata: JsonValueMetadata::Plain,
+            });
         }
         loop {
-            array.push(self.parse_value(depth)?);
+            let parsed = self.parse_value(depth)?;
+            array.push(parsed);
             self.skip_whitespace();
             if self.consume_if(b']') {
-                return Ok(array);
+                let metadata = if array
+                    .iter()
+                    .any(|value| !matches!(&value.metadata, JsonValueMetadata::Plain))
+                {
+                    JsonValueMetadata::Array(
+                        array.iter().map(|value| value.metadata.clone()).collect(),
+                    )
+                } else {
+                    JsonValueMetadata::Plain
+                };
+                return Ok(ParsedJsonValue {
+                    value: PropertyValue::Array(
+                        array.into_iter().map(|value| value.value).collect(),
+                    ),
+                    metadata,
+                });
             }
             self.consume(b',')?;
         }
@@ -332,7 +544,7 @@ impl JsonParser<'_> {
         Ok(value)
     }
 
-    fn parse_number(&mut self) -> Result<PropertyValue, ()> {
+    fn parse_number(&mut self) -> Result<ParsedJsonValue, ()> {
         let start = self.position;
         self.consume_if(b'-');
         if self.consume_if(b'0') {
@@ -357,14 +569,29 @@ impl JsonParser<'_> {
         let text = self.source.get(start..self.position).ok_or(())?;
         if real {
             let value = text.parse::<f64>().map_err(|_| ())?;
-            value
+            let value = value
                 .is_finite()
                 .then_some(PropertyValue::Real(value))
-                .ok_or(())
+                .ok_or(())?;
+            Ok(ParsedJsonValue {
+                value,
+                metadata: JsonValueMetadata::Plain,
+            })
         } else {
-            text.parse::<i64>()
-                .map(PropertyValue::Integer)
-                .map_err(|_| ())
+            match text.parse::<i64>() {
+                Ok(value) if i32::try_from(value).is_ok() => Ok(ParsedJsonValue {
+                    value: PropertyValue::Integer(value),
+                    metadata: JsonValueMetadata::Plain,
+                }),
+                Ok(value) => Ok(ParsedJsonValue {
+                    value: PropertyValue::Integer(value),
+                    metadata: JsonValueMetadata::LongInteger,
+                }),
+                Err(_) => Ok(ParsedJsonValue {
+                    value: PropertyValue::Null,
+                    metadata: JsonValueMetadata::BigInteger(text.to_owned()),
+                }),
+            }
         }
     }
 
@@ -424,14 +651,36 @@ impl JsonParser<'_> {
     }
 }
 
-fn write_json(value: &PropertyValue, depth: usize, output: &mut String) {
+fn write_json(
+    value: &PropertyValue,
+    depth: usize,
+    output: &mut String,
+    json_metadata: &HashMap<usize, JsonObjectMetadata>,
+    value_metadata: Option<&JsonValueMetadata>,
+) {
+    if let Some(JsonValueMetadata::BigInteger(value)) = value_metadata {
+        output.push_str(value);
+        return;
+    }
     match value {
         PropertyValue::Integer(value) => output.push_str(&value.to_string()),
-        PropertyValue::Real(value) => output.push_str(&value.to_string()),
+        PropertyValue::Real(value) => {
+            let value = value.to_string();
+            output.push_str(&value);
+            if !value
+                .chars()
+                .any(|character| matches!(character, '.' | 'e' | 'E'))
+            {
+                output.push_str(".0");
+            }
+        }
         PropertyValue::Logical(value) => output.push_str(if *value { "true" } else { "false" }),
         PropertyValue::Character(value) => write_json_string(&value.to_string(), output),
         PropertyValue::String(value) => write_json_string(value, output),
         PropertyValue::Object(object) => {
+            let properties = json_metadata
+                .get(&object_key(object))
+                .map(|metadata| &metadata.properties);
             let object = object.borrow();
             if object.is_empty() {
                 output.push_str("{}");
@@ -441,8 +690,14 @@ fn write_json(value: &PropertyValue, depth: usize, output: &mut String) {
             for (index, (key, value)) in object.iter().enumerate() {
                 write_indent(depth + 1, output);
                 write_json_string(key, output);
-                output.push_str(": ");
-                write_json(value, depth + 1, output);
+                output.push_str(" : ");
+                write_json(
+                    value,
+                    depth + 1,
+                    output,
+                    json_metadata,
+                    properties.and_then(|properties| properties.get(key)),
+                );
                 if index + 1 < object.len() {
                     output.push(',');
                 }
@@ -456,10 +711,39 @@ fn write_json(value: &PropertyValue, depth: usize, output: &mut String) {
                 output.push_str("[]");
                 return;
             }
+            if values.iter().all(|value| {
+                matches!(
+                    value,
+                    PropertyValue::Integer(_)
+                        | PropertyValue::Real(_)
+                        | PropertyValue::Logical(_)
+                        | PropertyValue::Character(_)
+                        | PropertyValue::String(_)
+                        | PropertyValue::Null
+                )
+            }) {
+                output.push_str("[ ");
+                for (index, value) in values.iter().enumerate() {
+                    if index > 0 {
+                        output.push_str(", ");
+                    }
+                    let element_metadata = match value_metadata {
+                        Some(JsonValueMetadata::Array(values)) => values.get(index),
+                        _ => None,
+                    };
+                    write_json(value, depth + 1, output, json_metadata, element_metadata);
+                }
+                output.push_str(" ]");
+                return;
+            }
             output.push_str("[\n");
             for (index, value) in values.iter().enumerate() {
                 write_indent(depth + 1, output);
-                write_json(value, depth + 1, output);
+                let element_metadata = match value_metadata {
+                    Some(JsonValueMetadata::Array(values)) => values.get(index),
+                    _ => None,
+                };
+                write_json(value, depth + 1, output, json_metadata, element_metadata);
                 if index + 1 < values.len() {
                     output.push(',');
                 }
@@ -499,7 +783,7 @@ fn write_indent(depth: usize, output: &mut String) {
 fn parse_xml_object(
     xml: &str,
     maximum_values: usize,
-) -> Result<BTreeMap<String, PropertyValue>, ()> {
+) -> Result<IndexMap<String, PropertyValue>, ()> {
     let mut parser = XmlParser {
         source: xml,
         position: 0,
@@ -507,12 +791,16 @@ fn parse_xml_object(
         maximum_values,
     };
     parser.skip_misc()?;
-    let (name, value) = parser.parse_element(0)?;
+    let (_, value) = parser.parse_element(0)?;
     parser.skip_misc()?;
     if parser.position != xml.len() {
         return Err(());
     }
-    Ok(BTreeMap::from([(name, value)]))
+    match value {
+        PropertyValue::Object(object) => Ok(object.borrow().clone()),
+        // shortcut: scalar roots become empty maps; revisit if reference probes require their text.
+        _ => Ok(IndexMap::new()),
+    }
 }
 
 struct XmlParser<'a> {
@@ -532,7 +820,8 @@ impl XmlParser<'_> {
             return Err(());
         }
         self.consume_byte(b'<')?;
-        let name = self.read_name()?;
+        let qualified_name = self.read_name()?;
+        let name = local_xml_name(&qualified_name).to_owned();
         let (attributes, self_closing) = self.read_attributes()?;
         let mut children = attributes;
         if self_closing {
@@ -552,7 +841,7 @@ impl XmlParser<'_> {
             if self.remaining().starts_with("</") {
                 self.position += 2;
                 let closing_name = self.read_name()?;
-                if closing_name != name {
+                if closing_name != qualified_name {
                     return Err(());
                 }
                 self.skip_whitespace();
@@ -572,21 +861,7 @@ impl XmlParser<'_> {
             }
             if self.remaining().starts_with('<') {
                 let (child_name, child_value) = self.parse_element(depth + 1)?;
-                match children.remove(&child_name) {
-                    Some(PropertyValue::Array(mut values)) => {
-                        values.push(child_value);
-                        children.insert(child_name, PropertyValue::Array(values));
-                    }
-                    Some(previous) => {
-                        children.insert(
-                            child_name,
-                            PropertyValue::Array(vec![previous, child_value]),
-                        );
-                    }
-                    None => {
-                        children.insert(child_name, child_value);
-                    }
-                }
+                children.insert(child_name, child_value);
                 continue;
             }
             let end = self.remaining().find('<').ok_or(())?;
@@ -619,8 +894,8 @@ impl XmlParser<'_> {
         }
     }
 
-    fn read_attributes(&mut self) -> Result<(BTreeMap<String, PropertyValue>, bool), ()> {
-        let mut attributes = BTreeMap::new();
+    fn read_attributes(&mut self) -> Result<(IndexMap<String, PropertyValue>, bool), ()> {
+        let mut attributes = IndexMap::new();
         loop {
             self.skip_whitespace();
             match self.remaining().as_bytes().first().copied() {
@@ -653,7 +928,10 @@ impl XmlParser<'_> {
                         if self.values_seen > self.maximum_values {
                             return Err(());
                         }
-                        attributes.insert(name, PropertyValue::String(value));
+                        attributes.insert(
+                            local_xml_name(&name).to_owned(),
+                            PropertyValue::String(value),
+                        );
                     }
                 }
                 None => return Err(()),
@@ -712,6 +990,11 @@ impl XmlParser<'_> {
     fn remaining(&self) -> &str {
         &self.source[self.position..]
     }
+}
+
+fn local_xml_name(name: &str) -> &str {
+    name.rsplit_once(':')
+        .map_or(name, |(_, local_name)| local_name)
 }
 
 fn decode_xml_entities(text: &str) -> Result<String, ()> {

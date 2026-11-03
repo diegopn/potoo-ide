@@ -41,9 +41,11 @@ Call `parse` when a host needs to inspect the public syntax tree without executi
 - Functions, closures, recursion, lambdas, currying, and higher-order list operations
 - Pattern matching, constructor patterns, guards, conditionals, loops, and list comprehensions
 - Typed input, formatted and interpolated output, numeric and text operations, and built-in math functions
-- Abstract types, single inheritance, source-located diagnostics, cancellation, and debugger events for host applications
+- Abstract types, multiple inheritance, source-located diagnostics, cancellation, and debugger events for host applications
 
-The compatibility target is the documented Potigol 1.0.0-RC2 language core. External Scala/JVM libraries such as Jerimum are not included.
+The compatibility target is the documented Potigol 1.0.0-RC2 language core. With `use "jerimum"`, the crate also provides a native compatibility layer for `Jogo`, `Teclado`, `Mouse`, `Relógio`, `Arquivo`, `Cor`, `Imagem`, `Animacao`, `Fonte`, `Som`, `Musica`, `Tela`, and `Desenho`.
+
+Jerimum graphics, audio, input, window state, and file reads go through `RuntimeIo::jerimum_request`. The default implementation reports that the host does not support Jerimum; embedders must provide those services. Potoo's IDE maps the requests to its GTK graphics and audio hosts and confines file and media paths to the active project. Native facades support `Color` channel getters; `BufferedImage` dimensions, pixel reads, and subimages; `JFrame` title/dimensions; `Canvas` dimensions; and `Graphics2D` color, line, rectangle, oval, text, and image drawing. These are not JVM objects or general Swing/AWT interop; unsupported Java methods remain unavailable.
 
 ## Runtime limits
 

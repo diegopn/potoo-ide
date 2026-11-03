@@ -56,18 +56,7 @@ impl Environment {
             ));
         }
 
-        let slots = if variable.dimensions.is_empty() {
-            1
-        } else {
-            array_element_count(&variable.dimensions).ok_or_else(|| {
-                Diagnostic::new(
-                    DiagnosticKind::Runtime,
-                    "tamanho do vetor fora do limite",
-                    variable.line,
-                    variable.column,
-                )
-            })?
-        };
+        let slots = variable_slots(variable)?;
         let total_slots = self.allocated_slots.checked_add(slots).ok_or_else(|| {
             Diagnostic::new(
                 DiagnosticKind::Runtime,
@@ -125,6 +114,34 @@ impl Environment {
         }
     }
 
+    pub(crate) fn check_additional_slots(
+        &self,
+        slots: usize,
+        max_slots: usize,
+        line: usize,
+        column: usize,
+    ) -> Result<(), Diagnostic> {
+        let total_slots = self.allocated_slots.checked_add(slots).ok_or_else(|| {
+            Diagnostic::new(
+                DiagnosticKind::Runtime,
+                "limite de variáveis excedido",
+                line,
+                column,
+            )
+        })?;
+        if total_slots > max_slots {
+            return Err(Diagnostic::new(
+                DiagnosticKind::Runtime,
+                format!(
+                    "programa excede o limite de variáveis e posições de vetores ({max_slots})"
+                ),
+                line,
+                column,
+            ));
+        }
+        Ok(())
+    }
+
     pub(crate) fn insert_binding(
         &mut self,
         name: String,
@@ -176,9 +193,14 @@ impl Environment {
         expression: &Expression,
     ) -> Result<Binding, Diagnostic> {
         self.scopes
-            .iter()
-            .rev()
-            .find_map(|scope| scope.bindings.get(name).cloned())
+            .last()
+            .and_then(|scope| scope.bindings.get(name))
+            .or_else(|| {
+                self.scopes
+                    .first()
+                    .and_then(|scope| scope.bindings.get(name))
+            })
+            .cloned()
             .ok_or_else(|| {
                 Diagnostic::new(
                     DiagnosticKind::Runtime,
@@ -191,9 +213,16 @@ impl Environment {
 
     pub(crate) fn snapshot(&self) -> Vec<(String, String)> {
         let mut visible_bindings = BTreeMap::new();
-        for scope in &self.scopes {
+        if let Some(scope) = self.scopes.first() {
             for (name, binding) in &scope.bindings {
                 visible_bindings.insert(name.clone(), binding.clone());
+            }
+        }
+        if self.scopes.len() > 1 {
+            if let Some(scope) = self.scopes.last() {
+                for (name, binding) in &scope.bindings {
+                    visible_bindings.insert(name.clone(), binding.clone());
+                }
             }
         }
         let mut visible = BTreeMap::new();
@@ -331,6 +360,21 @@ fn array_element_count(dimensions: &[ArrayDimension]) -> Option<usize> {
     dimensions.iter().try_fold(1_usize, |count, dimension| {
         count.checked_mul(dimension_size(*dimension)?)
     })
+}
+
+pub(crate) fn variable_slots(variable: &Variable) -> Result<usize, Diagnostic> {
+    if variable.dimensions.is_empty() {
+        Ok(1)
+    } else {
+        array_element_count(&variable.dimensions).ok_or_else(|| {
+            Diagnostic::new(
+                DiagnosticKind::Runtime,
+                "tamanho do vetor fora do limite",
+                variable.line,
+                variable.column,
+            )
+        })
+    }
 }
 
 fn dimension_size(dimension: ArrayDimension) -> Option<usize> {

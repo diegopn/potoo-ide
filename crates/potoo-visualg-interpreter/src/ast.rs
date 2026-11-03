@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Type {
     Integer,
@@ -60,6 +62,48 @@ pub struct Parameter {
     pub data_type: Type,
     pub by_reference: bool,
     pub dimensions: usize,
+    pub bounds: Vec<ArrayDimension>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum NumericConstant {
+    Integer(i64),
+    Real(f64),
+}
+
+impl NumericConstant {
+    pub(crate) fn as_real(self) -> f64 {
+        match self {
+            Self::Integer(value) => value as f64,
+            Self::Real(value) => value,
+        }
+    }
+
+    pub(crate) fn compare(self, other: Self) -> Ordering {
+        match (self, other) {
+            (Self::Integer(left), Self::Integer(right)) => left.cmp(&right),
+            (Self::Integer(left), Self::Real(right)) => compare_integer_real(left, right),
+            (Self::Real(left), Self::Integer(right)) => compare_integer_real(right, left).reverse(),
+            (Self::Real(left), Self::Real(right)) => left
+                .partial_cmp(&right)
+                .expect("numeric constants are finite"),
+        }
+    }
+}
+
+fn compare_integer_real(integer: i64, real: f64) -> Ordering {
+    if real < i64::MIN as f64 {
+        return Ordering::Greater;
+    }
+    if real >= -(i64::MIN as f64) {
+        return Ordering::Less;
+    }
+    let truncated = real as i64;
+    match integer.cmp(&truncated) {
+        Ordering::Equal if real > truncated as f64 => Ordering::Less,
+        Ordering::Equal if real < truncated as f64 => Ordering::Greater,
+        ordering => ordering,
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -110,8 +154,8 @@ pub enum StatementKind {
     Break,
     Aleatorio {
         enabled: bool,
-        minimum: i64,
-        maximum: i64,
+        minimum: NumericConstant,
+        maximum: NumericConstant,
     },
     Timer(Option<u64>),
     Pause,

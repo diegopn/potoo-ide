@@ -104,6 +104,7 @@ pub(crate) fn multiply(left: &str, right: &str) -> String {
         .rev()
         .map(|digit| char::from(b'0' + *digit as u8))
         .collect::<String>();
+    let magnitude = normalize(&magnitude).expect("product is a decimal magnitude");
     with_sign(left_negative != right_negative, magnitude)
 }
 
@@ -207,9 +208,42 @@ fn subtract_magnitudes(left: &str, right: &str) -> String {
 }
 
 fn append_digit(value: String, digit: u8) -> String {
-    if value == "0" && digit == 0 {
-        value
+    if value == "0" {
+        if digit == 0 {
+            value
+        } else {
+            char::from(b'0' + digit).to_string()
+        }
     } else {
         format!("{value}{}", char::from(b'0' + digit))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{div_rem, multiply};
+
+    #[test]
+    fn multiplication_returns_canonical_decimal_values() {
+        assert_eq!(multiply("1", "1"), "1");
+        assert_eq!(multiply("2", "3"), "6");
+        assert_eq!(multiply("0", "-999"), "0");
+        assert_eq!(multiply("-12", "3"), "-36");
+        assert_eq!(multiply("123", "456"), "56088");
+    }
+
+    #[test]
+    fn division_and_remainder_match_signed_integer_arithmetic() {
+        for left in -15_i64..=15 {
+            for right in -15_i64..=15 {
+                let actual = div_rem(&left.to_string(), &right.to_string());
+                let expected = if right == 0 {
+                    None
+                } else {
+                    Some(((left / right).to_string(), (left % right).to_string()))
+                };
+                assert_eq!(actual, expected, "{left} div/mod {right}");
+            }
+        }
     }
 }

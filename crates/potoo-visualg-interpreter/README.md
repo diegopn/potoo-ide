@@ -2,7 +2,7 @@
 
 A reusable Rust interpreter for the classic VisuAlg 3.0.5.2 pseudolanguage. The library has no third-party dependencies and can be embedded in Potoo IDE or another Rust application.
 
-The crate targets the language and commands documented by the [VisuAlg 3.0.5.2 manual](https://documentation.help/VISUALG-Versao/linguagem5.htm) and its [built-in functions reference](https://documentation.help/VISUALG-Versao/funcoes.htm). Compatibility testing is ongoing; the crate does not invoke or bundle the original VisuAlg application.
+The compatibility target is classic VisuAlg 3.0.5.2. The linked online archive labels the manual pages 3.0.5.2, while the built-in functions page identifies its catalog as VisuAlg 2.0, so the source version is not fully consistent. Compatibility testing is ongoing; the crate does not invoke or bundle the original VisuAlg application.
 
 ## Use
 
@@ -10,7 +10,7 @@ Add the crate as a dependency:
 
 ~~~toml
 [dependencies]
-potoo-visualg-interpreter = { git = "https://github.com/diegopn/potoo-visualg-interpreter" }
+potoo-visualg-interpreter = { git = "https://github.com/diegopn/potoo-ide", branch = "develop" }
 ~~~
 
 Implement RuntimeIo to provide input and output, then call execute:

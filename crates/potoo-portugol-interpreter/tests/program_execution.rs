@@ -90,7 +90,7 @@ fn executes_void_functions_and_aliased_libraries() {
 
     execute(source, &mut io).expect("aliased library and explicit void return should execute");
 
-    assert_eq!(io.output, "8");
+    assert_eq!(io.output, "8.0");
 }
 
 #[test]

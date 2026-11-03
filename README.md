@@ -4,22 +4,20 @@
 
 # Potoo IDE
 
-A desktop IDE for students and teachers to practice programming logic with Portugol, VisuAlg, and Potigol.
+A desktop IDE for students and teachers to practice programming logic with Portugol, VisuAlg, Potigol, and G-Portugol.
 
 The project aims to provide a simple, intuitive space for students to practice and for teachers to support the concepts taught through code. The interface is built with Rust, GTK 4, and Relm4, with Potoo-owned components and inspiration from GNOME Builder. Teachers choose which tools fit their classes; the IDE does not impose one learning path.
 
 ## Languages
 
-**In development**
+**Runnable in the IDE; compatibility work is ongoing**
 
-- Portugol
-- VisuAlg
+- **Portugol 2.0** (`.por`)
+- **VisuAlg** (`.alg`; targets classic 3.0.5.2)
+- **Potigol** (`.poti`; independent Rust implementation targeting the documented 1.0.0-RC2 language)
+- **G-Portugol** (`.gpt`; independent Rust implementation targeting the documented 1.4.0 language)
 
-**Implemented**
-
-- Potigol (official 1.0.0-RC2 language core)
-
-External JVM libraries such as Jerimum are not included.
+The IDE includes a native compatibility layer for a supported subset of the Jerimum API through its GTK graphics and audio hosts. It provides native facades for selected `Color`, `BufferedImage`, `JFrame`, `Canvas`, and `Graphics2D` members without bundling the JVM or providing general Swing/AWT interop.
 
 **Future**
 
@@ -28,11 +26,15 @@ External JVM libraries such as Jerimum are not included.
 - C0 (Simplified C)
 - Karel
 
-The native app can run Potigol programs with the official 1.0.0-RC2 language core through the independent Rust library [crates/potoo-potigol-interpreter](crates/potoo-potigol-interpreter/README.md). The app also runs Portugol programs with variables, functions, constants, conditionals, loops, vectors and matrices, interactive input, and the Matematica, Texto, Tipos, Util, Calendario, Arquivos, and Objetos libraries. Its interpreter is a reusable Rust library in [crates/potoo-portugol-interpreter](crates/potoo-portugol-interpreter/README.md), where the remaining compatibility gaps are listed.
+The app runs Potigol through an independent Rust interpreter targeting the documented 1.0.0-RC2 language; it does not run or bundle the official Scala/JVM interpreter. See [crates/potoo-potigol-interpreter](crates/potoo-potigol-interpreter/README.md) for coverage and limits.
+
+The app also runs Portugol programs with variables, functions, constants, conditionals, loops, vectors and matrices, interactive input, and the Matematica, Texto, Tipos, Util, Calendario, Arquivos, and Objetos libraries. Its reusable interpreter is in [crates/potoo-portugol-interpreter](crates/potoo-portugol-interpreter/README.md), which lists compatibility gaps.
 
 The app can also run classic VisuAlg .alg programs through the reusable [potoo-visualg-interpreter](crates/potoo-visualg-interpreter/README.md) Rust library, which targets VisuAlg 3.0.5.2 and has no third-party dependencies. The interpreters provide interactive input, source-located diagnostics, resource limits, and debugger control. Compatibility details and current limits are documented in each crate README.
 
-Project documentation is maintained in English. Both the app and project website are planned to support English (default), Brazilian Portuguese, and Spanish; app localization has not been implemented yet.
+G-Portugol is a separate `.gpt` dialect, implemented in Rust by [potoo-gportugol-interpreter](crates/potoo-gportugol-interpreter/README.md). It has no third-party runtime dependencies and does not bundle or invoke the upstream `gpt` executable. The implementation targets the documented G-Portugol 1.4.0 syntax and behavior; native Windows and macOS builds have not yet been validated.
+
+Project documentation is maintained in English. The app offers Portuguese, English, and Spanish UI languages. The project website is available in Brazilian Portuguese (default), English, and Spanish.
 
 ## Platforms
 

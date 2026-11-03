@@ -352,7 +352,7 @@ fn bounded_text(
     }
 }
 
-pub(crate) fn random_unit() -> f64 {
+pub(crate) fn random_u64() -> u64 {
     static STATE: AtomicU64 = AtomicU64::new(0);
     loop {
         let mut current = STATE.load(Ordering::Relaxed);
@@ -377,7 +377,11 @@ pub(crate) fn random_unit() -> f64 {
             .compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed)
             .is_ok()
         {
-            return (next >> 11) as f64 / ((1_u64 << 53) as f64);
+            return next;
         }
     }
+}
+
+pub(crate) fn random_unit() -> f64 {
+    (random_u64() >> 11) as f64 / ((1_u64 << 53) as f64)
 }

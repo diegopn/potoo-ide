@@ -286,6 +286,7 @@ fn type_name(data_type: Type) -> &'static str {
         Type::Logical => "logico",
         Type::Character => "caracter",
         Type::String => "cadeia",
+        Type::Void => "vazio",
     }
 }
 

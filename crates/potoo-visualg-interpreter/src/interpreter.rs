@@ -4,10 +4,10 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use crate::ast::{
-    Expression, ExpressionKind, FormattedExpression, Program, RoutineKind, Statement,
-    StatementKind, Type,
+    Expression, ExpressionKind, FormattedExpression, NumericConstant, Program, RoutineKind,
+    Statement, StatementKind, Type,
 };
-use crate::environment::{Binding, Environment};
+use crate::environment::{Binding, Environment, variable_slots};
 use crate::value::{ArrayValue, Value};
 use crate::{
     ControlAction, DataType, Diagnostic, DiagnosticKind, ExecutionEvent, ExecutionOptions,
@@ -30,7 +30,7 @@ pub(crate) struct Interpreter<'a> {
     output_bytes: usize,
     call_depth: usize,
     loop_depth: usize,
-    random_range: Option<(i64, i64)>,
+    random_range: Option<(NumericConstant, NumericConstant)>,
     data_path: Option<String>,
     data_lines: Vec<String>,
     data_index: usize,
@@ -75,8 +75,9 @@ impl<'a> Interpreter<'a> {
     }
 
     pub(crate) fn execute(mut self) -> Result<(), Vec<Diagnostic>> {
-        if let Some(declaration) = self.program.arquivo.clone() {
-            let path = declaration.path;
+        let file_declaration = self.program.arquivo.clone();
+        if let Some(declaration) = &file_declaration {
+            let path = declaration.path.clone();
             self.data_path = Some(path.clone());
             let lines = self.io.read_data_file(&path).map_err(|message| {
                 vec![Diagnostic::new(
@@ -103,14 +104,6 @@ impl<'a> Interpreter<'a> {
                 }
                 self.data_lines = lines;
             } else {
-                self.io.create_data_file(&path).map_err(|message| {
-                    vec![Diagnostic::new(
-                        DiagnosticKind::Runtime,
-                        format!("não foi possível criar o arquivo de dados: {message}"),
-                        declaration.line,
-                        declaration.column,
-                    )]
-                })?;
                 self.record_data = true;
             }
         }
@@ -119,6 +112,21 @@ impl<'a> Interpreter<'a> {
             self.environment
                 .declare(variable, self.options.max_variable_slots)
                 .map_err(|diagnostic| vec![diagnostic])?;
+        }
+        if self.record_data {
+            let declaration = file_declaration
+                .as_ref()
+                .expect("recording requires an arquivo declaration");
+            self.io
+                .create_data_file(&declaration.path)
+                .map_err(|message| {
+                    vec![Diagnostic::new(
+                        DiagnosticKind::Runtime,
+                        format!("não foi possível criar o arquivo de dados: {message}"),
+                        declaration.line,
+                        declaration.column,
+                    )]
+                })?;
         }
         match self.execute_statements(&self.program.statements.clone()) {
             Ok(Flow::Normal) => Ok(()),
@@ -238,7 +246,11 @@ impl<'a> Interpreter<'a> {
                         }
                     }
                     first_iteration = false;
-                    match self.evaluate(condition)? {
+                    let condition_value = self.evaluate(condition)?;
+                    if self.stopped {
+                        return Ok(Flow::Stop);
+                    }
+                    match condition_value {
                         Value::Logical(true) => {}
                         Value::Logical(false) => break,
                         _ => {
@@ -280,7 +292,11 @@ impl<'a> Interpreter<'a> {
                         flow @ Flow::Return(_, _, _) => return Ok(flow),
                     }
                     if let Some(condition) = condition {
-                        match self.evaluate(condition)? {
+                        let condition_value = self.evaluate(condition)?;
+                        if self.stopped {
+                            return Ok(Flow::Stop);
+                        }
+                        match condition_value {
                             Value::Logical(true) => break,
                             Value::Logical(false) => {}
                             _ => {
@@ -302,11 +318,20 @@ impl<'a> Interpreter<'a> {
                 body,
             } => {
                 let start = self.evaluate_integer(start)?;
+                if self.stopped {
+                    return Ok(Flow::Stop);
+                }
                 let end = self.evaluate_integer(end)?;
+                if self.stopped {
+                    return Ok(Flow::Stop);
+                }
                 let step = match step {
                     Some(step) => self.evaluate_integer(step)?,
                     None => 1,
                 };
+                if self.stopped {
+                    return Ok(Flow::Stop);
+                }
                 if step == 0 {
                     return Err(runtime_error(
                         statement,
@@ -325,7 +350,7 @@ impl<'a> Interpreter<'a> {
                         "a variável de 'para' precisa ser inteira",
                     ));
                 }
-                let mut value = start;
+                *cell.borrow_mut() = Value::Integer(start);
                 let mut first_iteration = true;
                 loop {
                     if !first_iteration {
@@ -335,10 +360,13 @@ impl<'a> Interpreter<'a> {
                         }
                     }
                     first_iteration = false;
+                    let Value::Integer(value) = &*cell.borrow() else {
+                        unreachable!("a para counter is checked to be inteiro before the loop")
+                    };
+                    let value = *value;
                     if !(if step > 0 { value <= end } else { value >= end }) {
                         break;
                     }
-                    *cell.borrow_mut() = Value::Integer(value);
                     self.loop_depth += 1;
                     let result = self.execute_statements(body);
                     self.loop_depth -= 1;
@@ -348,10 +376,13 @@ impl<'a> Interpreter<'a> {
                         Flow::Stop => return Ok(Flow::Stop),
                         flow @ Flow::Return(_, _, _) => return Ok(flow),
                     }
-                    let Some(next_value) = value.checked_add(step) else {
+                    let Value::Integer(current_value) = &*cell.borrow() else {
+                        unreachable!("the para counter keeps its declared integer type")
+                    };
+                    let Some(next_value) = current_value.checked_add(step) else {
                         break;
                     };
-                    value = next_value;
+                    *cell.borrow_mut() = Value::Integer(next_value);
                 }
                 Ok(Flow::Normal)
             }
@@ -412,7 +443,7 @@ impl<'a> Interpreter<'a> {
                 Ok(Flow::Normal)
             }
             StatementKind::ClearScreen => {
-                self.io.clear_output();
+                self.io.clear_screen();
                 Ok(Flow::Normal)
             }
         }
@@ -420,6 +451,7 @@ impl<'a> Interpreter<'a> {
 
     fn before_statement(&mut self, statement: &Statement) -> Result<bool, Diagnostic> {
         if let Some(millis) = self.timer_millis {
+            self.io.on_line_changed(statement.line);
             let total = self.total_wait_millis.saturating_add(millis);
             if total > self.options.max_wait_millis {
                 return Err(runtime_error(
@@ -439,16 +471,22 @@ impl<'a> Interpreter<'a> {
         }
         let pause_reason = match &statement.kind {
             StatementKind::Pause => Some(PauseReason::Pause),
-            StatementKind::Debug(condition) => match self.evaluate(condition)? {
-                Value::Logical(true) => Some(PauseReason::Debug),
-                Value::Logical(false) => None,
-                _ => {
-                    return Err(runtime_error(
-                        condition,
-                        "a condição de 'debug' precisa ser lógica",
-                    ));
+            StatementKind::Debug(condition) => {
+                let value = self.evaluate(condition)?;
+                if self.stopped {
+                    return Ok(true);
                 }
-            },
+                match value {
+                    Value::Logical(true) => Some(PauseReason::Debug),
+                    Value::Logical(false) => None,
+                    _ => {
+                        return Err(runtime_error(
+                            condition,
+                            "a condição de 'debug' precisa ser lógica",
+                        ));
+                    }
+                }
+            }
             _ => None,
         };
         if self.stopped {
@@ -569,22 +607,11 @@ impl<'a> Interpreter<'a> {
             variable_name: variable_name.clone(),
             data_type: public_data_type(data_type),
         };
-        let (value, echo) = if let Some((minimum, maximum)) = self.random_range {
-            if data_type == Type::Logical {
-                let input = self.io.read_line(&prompt).map_err(|message| {
-                    runtime_error(
-                        target,
-                        &format!("não foi possível ler a entrada: {message}"),
-                    )
-                })?;
-                (
-                    parse_input(&input, data_type)
-                        .map_err(|message| runtime_error(target, &message))?,
-                    Some(input),
-                )
-            } else {
-                (random_input(data_type, minimum, maximum), None)
-            }
+        let mut record_input = None;
+        let (value, echo) = if let Some((minimum, maximum)) =
+            self.random_range.filter(|_| data_type != Type::Logical)
+        {
+            (random_input(data_type, minimum, maximum, target)?, None)
         } else if self.data_index < self.data_lines.len() {
             let input = self.data_lines[self.data_index].clone();
             self.data_index += 1;
@@ -603,33 +630,36 @@ impl<'a> Interpreter<'a> {
             let value = parse_input(&input, data_type)
                 .map_err(|message| runtime_error(target, &message))?;
             if self.record_data {
-                let next_bytes = self
-                    .file_bytes
-                    .saturating_add(input.len())
-                    .saturating_add(1);
-                if next_bytes > self.options.max_file_bytes {
-                    return Err(runtime_error(
-                        target,
-                        &format!(
-                            "arquivo de dados excede o limite de {} bytes",
-                            self.options.max_file_bytes
-                        ),
-                    ));
-                }
-                let path = self.data_path.as_deref().unwrap_or_default();
-                self.io
-                    .append_data_file_line(path, &input)
-                    .map_err(|message| {
-                        runtime_error(
-                            target,
-                            &format!("não foi possível gravar o arquivo de dados: {message}"),
-                        )
-                    })?;
-                self.file_bytes = next_bytes;
+                record_input = Some(input.clone());
             }
             (value, Some(input))
         };
         self.ensure_value_size(&value, target)?;
+        if let Some(input) = record_input {
+            let next_bytes = self
+                .file_bytes
+                .saturating_add(input.len())
+                .saturating_add(1);
+            if next_bytes > self.options.max_file_bytes {
+                return Err(runtime_error(
+                    target,
+                    &format!(
+                        "arquivo de dados excede o limite de {} bytes",
+                        self.options.max_file_bytes
+                    ),
+                ));
+            }
+            let path = self.data_path.as_deref().unwrap_or_default();
+            self.io
+                .append_data_file_line(path, &input)
+                .map_err(|message| {
+                    runtime_error(
+                        target,
+                        &format!("não foi possível gravar o arquivo de dados: {message}"),
+                    )
+                })?;
+            self.file_bytes = next_bytes;
+        }
         *cell.borrow_mut() = value;
         if self.echo_input {
             if echo.is_some() || self.random_range.is_some() {
@@ -671,6 +701,14 @@ impl<'a> Interpreter<'a> {
                         );
                     }
                 }
+                if self
+                    .program
+                    .routines
+                    .iter()
+                    .any(|routine| routine.name == *name && routine.parameters.is_empty())
+                {
+                    return self.call_routine(name, &[], expression);
+                }
                 let binding = self.environment.lookup(name, expression)?;
                 let value = binding.value.borrow().clone();
                 Ok(value)
@@ -682,48 +720,7 @@ impl<'a> Interpreter<'a> {
                 }
                 apply_unary(operator, value, expression)
             }
-            ExpressionKind::Binary {
-                left,
-                operator,
-                right,
-            } => {
-                let left_value = self.evaluate(left)?;
-                if self.stopped {
-                    return Ok(Value::Void);
-                }
-                if operator == "e" {
-                    let Value::Logical(left_value) = left_value else {
-                        return Err(runtime_error(
-                            left.as_ref(),
-                            "o operador 'e' exige valores lógicos",
-                        ));
-                    };
-                    if !left_value {
-                        return Ok(Value::Logical(false));
-                    }
-                } else if operator == "ou" {
-                    let Value::Logical(left_value) = left_value else {
-                        return Err(runtime_error(
-                            left.as_ref(),
-                            "o operador 'ou' exige valores lógicos",
-                        ));
-                    };
-                    if left_value {
-                        return Ok(Value::Logical(true));
-                    }
-                }
-                let right_value = self.evaluate(right)?;
-                if self.stopped {
-                    return Ok(Value::Void);
-                }
-                apply_binary(
-                    left_value,
-                    operator,
-                    right_value,
-                    expression,
-                    self.options.max_string_bytes,
-                )
-            }
+            ExpressionKind::Binary { .. } => self.evaluate_binary_chain(expression),
             ExpressionKind::Assign { target, value } => {
                 let value = self.evaluate(value)?;
                 if self.stopped {
@@ -768,6 +765,59 @@ impl<'a> Interpreter<'a> {
         }
     }
 
+    fn evaluate_binary_chain(&mut self, expression: &Expression) -> Result<Value, Diagnostic> {
+        let mut nodes = Vec::new();
+        let mut current = expression;
+        while let ExpressionKind::Binary {
+            left,
+            operator,
+            right,
+        } = &current.kind
+        {
+            nodes.push((current, left.as_ref(), operator.as_str(), right.as_ref()));
+            current = left;
+        }
+
+        let mut value = self.evaluate(current)?;
+        if self.stopped {
+            return Ok(Value::Void);
+        }
+        for (node, left, operator, right) in nodes.into_iter().rev() {
+            if self.stopped {
+                return Ok(Value::Void);
+            }
+            if operator == "e" {
+                let Value::Logical(left_value) = value else {
+                    return Err(runtime_error(left, "o operador 'e' exige valores lógicos"));
+                };
+                if !left_value {
+                    value = Value::Logical(false);
+                    continue;
+                }
+            } else if operator == "ou" {
+                let Value::Logical(left_value) = value else {
+                    return Err(runtime_error(left, "o operador 'ou' exige valores lógicos"));
+                };
+                if left_value {
+                    value = Value::Logical(true);
+                    continue;
+                }
+            }
+            let right_value = self.evaluate(right)?;
+            if self.stopped {
+                return Ok(Value::Void);
+            }
+            value = apply_binary(
+                value,
+                operator,
+                right_value,
+                node,
+                self.options.max_string_bytes,
+            )?;
+        }
+        Ok(value)
+    }
+
     fn locate_cell(
         &mut self,
         expression: &Expression,
@@ -789,6 +839,9 @@ impl<'a> Interpreter<'a> {
                     .iter()
                     .map(|index| self.evaluate_integer(index))
                     .collect::<Result<Vec<_>, _>>()?;
+                if self.stopped {
+                    return Ok((binding.value, binding.data_type));
+                }
                 if indexes.is_empty() {
                     return Err(runtime_error(expression, "esperado índice do vetor"));
                 }
@@ -808,7 +861,11 @@ impl<'a> Interpreter<'a> {
         if self.stopped {
             return Ok(0);
         }
-        match self.evaluate(expression)? {
+        let value = self.evaluate(expression)?;
+        if self.stopped {
+            return Ok(0);
+        }
+        match value {
             Value::Integer(value) => Ok(value),
             value => Err(runtime_error(
                 expression,
@@ -877,15 +934,20 @@ impl<'a> Interpreter<'a> {
         }
 
         let mut prepared_parameters = Vec::with_capacity(arguments.len());
+        let mut copied_arrays = Vec::new();
+        let mut required_slots = 0_usize;
         for (parameter, argument) in routine.parameters.iter().zip(arguments) {
             let binding = if parameter.by_reference {
                 let (binding, slots) = self.reference_argument(argument)?;
+                if self.stopped {
+                    return Ok(Value::Void);
+                }
                 if binding.data_type != parameter.data_type
-                    || binding.dimensions.len() != parameter.dimensions
+                    || binding.dimensions != parameter.bounds
                 {
                     return Err(runtime_error(
                         argument,
-                        "o argumento de 'var' precisa ter o mesmo tipo e dimensões do parâmetro",
+                        "o argumento de 'var' precisa ter o mesmo tipo e limites do parâmetro",
                     ));
                 }
                 (binding, slots)
@@ -897,12 +959,11 @@ impl<'a> Interpreter<'a> {
                     ));
                 };
                 let source = self.environment.lookup(name, argument)?;
-                if source.data_type != parameter.data_type
-                    || source.dimensions.len() != parameter.dimensions
+                if source.data_type != parameter.data_type || source.dimensions != parameter.bounds
                 {
                     return Err(runtime_error(
                         argument,
-                        "o argumento de vetor precisa ter o mesmo tipo e dimensões do parâmetro",
+                        "o argumento de vetor precisa ter o mesmo tipo e limites do parâmetro",
                     ));
                 }
                 let slots = match &*source.value.borrow() {
@@ -914,21 +975,32 @@ impl<'a> Interpreter<'a> {
                         ));
                     }
                 };
-                (
-                    Binding {
-                        data_type: source.data_type,
-                        dimensions: source.dimensions,
-                        value: Rc::new(RefCell::new(deep_copy_value(
-                            source.value.borrow().clone(),
-                        ))),
-                    },
-                    slots,
-                )
+                required_slots = required_slots
+                    .checked_add(slots)
+                    .ok_or_else(|| runtime_error(call, "limite de variáveis excedido"))?;
+                copied_arrays.push(prepared_parameters.len());
+                (source, slots)
             } else {
+                if let ExpressionKind::Identifier(name) = &argument.kind {
+                    if let Ok(source) = self.environment.lookup(name, argument) {
+                        if matches!(&*source.value.borrow(), Value::Array(_)) {
+                            return Err(runtime_error(
+                                argument,
+                                "o vetor precisa ser passado a um parâmetro vetorial ou indexado",
+                            ));
+                        }
+                    }
+                }
                 let value = self.evaluate(argument)?;
+                if self.stopped {
+                    return Ok(Value::Void);
+                }
                 let value = value
                     .coerce_to(parameter.data_type)
                     .map_err(|message| runtime_error(argument, &message))?;
+                required_slots = required_slots
+                    .checked_add(1)
+                    .ok_or_else(|| runtime_error(call, "limite de variáveis excedido"))?;
                 (
                     Binding {
                         data_type: parameter.data_type,
@@ -939,6 +1011,21 @@ impl<'a> Interpreter<'a> {
                 )
             };
             prepared_parameters.push((parameter.name.clone(), binding));
+        }
+        for local in &routine.locals {
+            required_slots = required_slots
+                .checked_add(variable_slots(local)?)
+                .ok_or_else(|| runtime_error(call, "limite de variáveis excedido"))?;
+        }
+        self.environment.check_additional_slots(
+            required_slots,
+            self.options.max_variable_slots,
+            call.line,
+            call.column,
+        )?;
+        for index in copied_arrays {
+            let value = prepared_parameters[index].1.0.value.borrow().clone();
+            prepared_parameters[index].1.0.value = Rc::new(RefCell::new(deep_copy_value(value)));
         }
 
         self.environment.push_scope();
@@ -1028,6 +1115,9 @@ impl<'a> Interpreter<'a> {
                     .iter()
                     .map(|index| self.evaluate_integer(index))
                     .collect::<Result<Vec<_>, _>>()?;
+                if self.stopped {
+                    return Ok((original, 0));
+                }
                 let cell = self
                     .environment
                     .index_cell(name, &values, expression, indexes)?;
@@ -1062,25 +1152,78 @@ fn deep_copy_value(value: Value) -> Value {
     }
 }
 
-fn random_input(data_type: Type, minimum: i64, maximum: i64) -> Value {
+fn random_input(
+    data_type: Type,
+    minimum: NumericConstant,
+    maximum: NumericConstant,
+    expression: &Expression,
+) -> Result<Value, Diagnostic> {
     match data_type {
         Type::Integer => {
-            let width = maximum.saturating_sub(minimum).saturating_add(1).max(1) as f64;
-            let offset = (crate::builtins::random_unit() * width) as i64;
-            Value::Integer(minimum.saturating_add(offset).min(maximum))
+            let lower = integer_bound(minimum, true).ok_or_else(|| {
+                runtime_error(expression, "limite de aleatorio fora do intervalo inteiro")
+            })?;
+            let upper = integer_bound(maximum, false).ok_or_else(|| {
+                runtime_error(expression, "limite de aleatorio fora do intervalo inteiro")
+            })?;
+            if lower > upper {
+                return Err(runtime_error(
+                    expression,
+                    "a faixa de aleatorio não contém um valor inteiro",
+                ));
+            }
+            Ok(Value::Integer(random_integer(lower, upper)))
         }
         Type::Real => {
+            let minimum = minimum.as_real();
+            let maximum = maximum.as_real();
             let unit = crate::builtins::random_unit();
-            Value::Real(minimum as f64 + (maximum as f64 - minimum as f64) * unit)
+            let value = if minimum < 0.0 && maximum > 0.0 {
+                minimum * (1.0 - unit) + maximum * unit
+            } else {
+                minimum + (maximum - minimum) * unit
+            };
+            checked_real(value, expression)
         }
         Type::Character => {
             let text = (0..5)
                 .map(|_| (b'A' + (crate::builtins::random_unit() * 26.0) as u8) as char)
                 .collect();
-            Value::Text(text)
+            Ok(Value::Text(text))
         }
-        Type::Logical => Value::Logical(false),
+        Type::Logical => Ok(Value::Logical(false)),
     }
+}
+
+fn integer_bound(value: NumericConstant, lower: bool) -> Option<i64> {
+    match value {
+        NumericConstant::Integer(value) => Some(value),
+        NumericConstant::Real(value) => {
+            let value = if lower { value.ceil() } else { value.floor() };
+            if value < i64::MIN as f64 || value >= -(i64::MIN as f64) {
+                None
+            } else {
+                Some(value as i64)
+            }
+        }
+    }
+}
+
+fn random_integer(minimum: i64, maximum: i64) -> i64 {
+    let width = (i128::from(maximum) - i128::from(minimum) + 1) as u128;
+    let offset = if width == (1_u128 << 64) {
+        u128::from(crate::builtins::random_u64())
+    } else {
+        let bound = width as u64;
+        let threshold = bound.wrapping_neg() % bound;
+        loop {
+            let sample = crate::builtins::random_u64();
+            if sample >= threshold {
+                break u128::from(sample % bound);
+            }
+        }
+    };
+    (i128::from(minimum) + offset as i128) as i64
 }
 
 fn apply_unary(operator: &str, value: Value, expression: &Expression) -> Result<Value, Diagnostic> {
@@ -1226,9 +1369,7 @@ fn compare_values(
 ) -> Result<Value, Diagnostic> {
     let ordering = match (&left, &right) {
         (Value::Integer(left), Value::Integer(right)) => Some(left.cmp(right)),
-        (left, right) if is_numeric(left) && is_numeric(right) => {
-            as_real(left).partial_cmp(&as_real(right))
-        }
+        (Value::Real(left), Value::Real(right)) => left.partial_cmp(right),
         (Value::Text(left), Value::Text(right)) => {
             Some(left.to_lowercase().cmp(&right.to_lowercase()))
         }

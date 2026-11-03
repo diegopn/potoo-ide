@@ -11,7 +11,6 @@ pub(crate) struct StartPageUi {
     pub(crate) recent_section: gtk::Box,
     pub(crate) recent_list: gtk::Box,
     pub(crate) portugol_button: gtk::Button,
-    pub(crate) visualg_button: gtk::Button,
     pub(crate) potigol_button: gtk::Button,
     pub(crate) open_folder_button: gtk::Button,
     pub(crate) open_file_button: gtk::Button,
@@ -75,17 +74,27 @@ pub(crate) fn build_start_page(language: UiLanguage) -> StartPageUi {
 
     let create_options = gtk::Box::new(gtk::Orientation::Vertical, 8);
     create_options.add_css_class("potoo-start-create-options");
-    let portugol_button =
-        language_option("Portugol", tr(language, "Criar programa inicial (.por)"));
-    let visualg_button = language_option("VisuAlg", tr(language, "Criar programa inicial (.alg)"));
+    let portugol_button = language_option(
+        "Portugol",
+        tr(
+            language,
+            "Dialetos do Portugol: G-Portugol, Portugol 2.0 e VisuAlg",
+        ),
+    );
     let potigol_button = language_option("Potigol", tr(language, "Criar programa inicial (.poti)"));
     create_options.append(&portugol_button);
-    create_options.append(&visualg_button);
     create_options.append(&potigol_button);
     content.append(&create_options);
 
-    let open_actions = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    open_actions.set_margin_top(12);
+    let open_heading = gtk::Label::new(Some(tr(language, "Retome um trabalho existente")));
+    open_heading.set_xalign(0.0);
+    open_heading.add_css_class("potoo-start-section-title");
+    open_heading.set_margin_top(30);
+    open_heading.set_margin_bottom(8);
+    content.append(&open_heading);
+
+    let open_actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    open_actions.set_homogeneous(true);
     let open_folder_button = open_option(
         language,
         "folder-open",
@@ -97,7 +106,7 @@ pub(crate) fn build_start_page(language: UiLanguage) -> StartPageUi {
         language,
         "open-document",
         "Abrir arquivo",
-        "Abra um arquivo .por, .alg ou .poti diretamente no editor.",
+        "Abra um arquivo .por, .alg, .poti ou .gpt diretamente no editor.",
         "potoo-start-open-file",
     );
     open_actions.append(&open_folder_button);
@@ -112,7 +121,6 @@ pub(crate) fn build_start_page(language: UiLanguage) -> StartPageUi {
         recent_section,
         recent_list,
         portugol_button,
-        visualg_button,
         potigol_button,
         open_folder_button,
         open_file_button,
@@ -140,6 +148,7 @@ fn open_option(
     title_label.add_css_class("potoo-start-action-title");
     let description_label = gtk::Label::new(Some(tr(language, description)));
     description_label.set_xalign(0.0);
+    description_label.set_wrap(true);
     description_label.add_css_class("potoo-start-action-description");
     text.append(&title_label);
     text.append(&description_label);

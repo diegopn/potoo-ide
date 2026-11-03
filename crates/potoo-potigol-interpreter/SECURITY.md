@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Until a stable release is available, security reports for the latest published version and the current `develop` branch are in scope. Older `0.x` versions are reviewed case by case.
+This crate is part of the Potoo IDE workspace. The root [Security Policy](../../SECURITY.md) defines which branches and releases are in scope.
 
 ## Report a vulnerability
 

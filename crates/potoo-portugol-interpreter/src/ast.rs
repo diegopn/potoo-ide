@@ -5,6 +5,7 @@ pub enum Type {
     Logical,
     Character,
     String,
+    Void,
 }
 
 #[derive(Clone, Debug)]
@@ -73,6 +74,7 @@ pub enum StatementKind {
         expression: Expression,
         cases: Vec<SwitchCase>,
         default: Vec<Statement>,
+        default_position: Option<usize>,
     },
     Return(Option<Expression>),
     Break,
@@ -159,7 +161,6 @@ pub enum BinaryOperator {
     Subtract,
     Multiply,
     Divide,
-    IntegerDivide,
     Remainder,
     Equal,
     NotEqual,

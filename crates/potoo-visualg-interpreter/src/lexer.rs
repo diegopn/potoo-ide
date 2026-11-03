@@ -61,6 +61,11 @@ impl Scanner {
                 '"' => self.scan_string(line, column)?,
                 character if is_identifier_start(character) => {
                     self.scan_identifier(line, column);
+                    if self.tokens.last().is_some_and(|token| {
+                        matches!(&token.kind, TokenKind::Identifier(name) if name == "fimalgoritmo")
+                    }) {
+                        break;
+                    }
                 }
                 character if character.is_ascii_digit() => {
                     self.scan_number(line, column)?;
@@ -213,16 +218,6 @@ impl Scanner {
                     break;
                 }
                 '\n' | '\r' => break,
-                '\\' if self.peek(1).is_some() => {
-                    self.advance();
-                    let escaped = self.advance().expect("the next character was checked");
-                    value.push(match escaped {
-                        'n' => '\n',
-                        'r' => '\r',
-                        't' => '\t',
-                        other => other,
-                    });
-                }
                 _ => {
                     self.advance();
                     value.push(character);

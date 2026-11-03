@@ -47,15 +47,21 @@ impl Scanner {
         while let Some(character) = self.current() {
             let start = self.location();
             match character {
-                '\n' | '\r' => {
+                '\n' => {
                     self.advance();
                     self.push(TokenKind::Newline, start);
+                }
+                '\r' if self.peek(1) == Some('\n') => {
+                    self.advance();
+                    self.push(TokenKind::Newline, start);
+                }
+                '\r' => {
+                    self.advance();
                 }
                 ' ' | '\t' | '\u{000c}' => {
                     self.advance();
                 }
-                '#' => self.skip_comment(),
-                '/' if self.peek(1) == Some('/') => self.skip_comment(),
+                '#' => self.skip_comment(start)?,
                 '"' => self.scan_string(start)?,
                 '\'' => self.scan_character(start)?,
                 character if is_identifier_start(character) => self.scan_identifier(start),
@@ -63,7 +69,7 @@ impl Scanner {
                 '.' if self.peek(1).is_some_and(|next| next.is_ascii_digit()) => {
                     self.scan_number(start)?;
                 }
-                '(' | ')' | '[' | ']' | '{' | '}' | ',' | ':' | ';' | '.' => {
+                '(' | ')' | '[' | ']' | '{' | '}' | ',' | ':' | '.' => {
                     if let Some(operator) = self.scan_compound_operator() {
                         self.push(TokenKind::Operator(operator), start);
                     } else {
@@ -138,34 +144,6 @@ impl Scanner {
             }
         }
 
-        if self
-            .current()
-            .is_some_and(|character| matches!(character, 'e' | 'E'))
-        {
-            is_real = true;
-            raw.push(self.advance().unwrap_or_default());
-            if self
-                .current()
-                .is_some_and(|character| matches!(character, '+' | '-'))
-            {
-                raw.push(self.advance().unwrap_or_default());
-            }
-            let exponent_start = raw.len();
-            while self
-                .current()
-                .is_some_and(|character| character.is_ascii_digit())
-            {
-                raw.push(self.advance().unwrap_or_default());
-            }
-            if raw.len() == exponent_start {
-                return Err(vec![self.error(
-                    DiagnosticKind::Lexical,
-                    "expoente de número real incompleto",
-                    start,
-                )]);
-            }
-        }
-
         if is_real {
             match raw.parse::<f64>() {
                 Ok(value) if value.is_finite() => self.push(TokenKind::Real(value), start),
@@ -195,10 +173,6 @@ impl Scanner {
     fn scan_character(&mut self, start: SourceLocation) -> Result<(), Vec<Diagnostic>> {
         self.advance();
         let value = match self.current() {
-            Some('\\') => {
-                self.advance();
-                self.scan_escape(start)?
-            }
             Some('\n' | '\r') | None => {
                 return Err(vec![self.error(
                     DiagnosticKind::Lexical,
@@ -211,6 +185,13 @@ impl Scanner {
                 character
             }
         };
+        if u32::from(value) > u32::from(u16::MAX) {
+            return Err(vec![self.error(
+                DiagnosticKind::Lexical,
+                "caractere fora do limite UTF-16",
+                start,
+            )]);
+        }
         if self.current() != Some('\'') {
             return Err(vec![self.error(
                 DiagnosticKind::Lexical,
@@ -224,12 +205,14 @@ impl Scanner {
     }
 
     fn scan_string(&mut self, start: SourceLocation) -> Result<(), Vec<Diagnostic>> {
-        let multiline = self.peek(1) == Some('"') && self.peek(2) == Some('"');
-        self.advance();
-        if multiline {
-            self.advance();
-            self.advance();
+        if self.is_triple_quote() {
+            return Err(vec![self.error(
+                DiagnosticKind::Lexical,
+                "aspas triplas não fazem parte da gramática Potigol",
+                start,
+            )]);
         }
+        self.advance();
 
         let mut value = String::new();
         loop {
@@ -240,55 +223,25 @@ impl Scanner {
                     start,
                 )]);
             };
-            if multiline && self.is_triple_quote() {
-                self.advance();
-                self.advance();
+            if character == '"' {
                 self.advance();
                 break;
-            }
-            if !multiline && character == '"' {
-                self.advance();
-                break;
-            }
-            if !multiline && matches!(character, '\n' | '\r') {
-                return Err(vec![self.error(
-                    DiagnosticKind::Lexical,
-                    "texto de linha única não pode conter uma quebra de linha",
-                    start,
-                )]);
-            }
-            if character == '\\' {
-                value.push(self.advance().unwrap_or('\\'));
-                if let Some(escaped) = self.current() {
-                    value.push(self.advance().unwrap_or(escaped));
-                } else {
-                    return Err(vec![self.error(
-                        DiagnosticKind::Lexical,
-                        "sequência de escape incompleta",
-                        start,
-                    )]);
-                }
-                continue;
             }
             if character == '{' {
-                self.scan_interpolation(multiline, &mut value)?;
+                self.scan_interpolation(&mut value)?;
                 continue;
             }
-            value.push(self.advance().unwrap_or(character));
+            value.push(self.advance_raw().unwrap_or(character));
         }
 
         self.push(TokenKind::String(value), start);
         Ok(())
     }
 
-    fn scan_interpolation(
-        &mut self,
-        multiline: bool,
-        value: &mut String,
-    ) -> Result<(), Vec<Diagnostic>> {
+    fn scan_interpolation(&mut self, value: &mut String) -> Result<(), Vec<Diagnostic>> {
         let interpolation_start = self.location();
         let mut depth = 0usize;
-        value.push(self.advance().unwrap_or('{'));
+        value.push(self.advance_raw().unwrap_or('{'));
         loop {
             let Some(character) = self.current() else {
                 return Err(vec![self.error(
@@ -297,13 +250,6 @@ impl Scanner {
                     interpolation_start,
                 )]);
             };
-            if !multiline && matches!(character, '\n' | '\r') {
-                return Err(vec![self.error(
-                    DiagnosticKind::Lexical,
-                    "interpolação não terminada antes da quebra de linha",
-                    interpolation_start,
-                )]);
-            }
             if character == '"' {
                 self.copy_nested_string(value)?;
                 continue;
@@ -317,36 +263,38 @@ impl Scanner {
                     .current()
                     .is_some_and(|next| !matches!(next, '\n' | '\r'))
                 {
-                    value.push(self.advance().unwrap_or_default());
+                    value.push(self.advance_raw().unwrap_or_default());
                 }
                 continue;
             }
             match character {
                 '{' => {
                     depth = depth.saturating_add(1);
-                    value.push(self.advance().unwrap_or('{'));
+                    value.push(self.advance_raw().unwrap_or('{'));
                 }
                 '}' if depth == 0 => {
-                    value.push(self.advance().unwrap_or('}'));
+                    value.push(self.advance_raw().unwrap_or('}'));
                     return Ok(());
                 }
                 '}' => {
                     depth -= 1;
-                    value.push(self.advance().unwrap_or('}'));
+                    value.push(self.advance_raw().unwrap_or('}'));
                 }
-                _ => value.push(self.advance().unwrap_or(character)),
+                _ => value.push(self.advance_raw().unwrap_or(character)),
             }
         }
     }
 
     fn copy_nested_string(&mut self, value: &mut String) -> Result<(), Vec<Diagnostic>> {
         let start = self.location();
-        let multiline = self.peek(1) == Some('"') && self.peek(2) == Some('"');
-        value.push(self.advance().unwrap_or('"'));
-        if multiline {
-            value.push(self.advance().unwrap_or('"'));
-            value.push(self.advance().unwrap_or('"'));
+        if self.is_triple_quote() {
+            return Err(vec![self.error(
+                DiagnosticKind::Lexical,
+                "aspas triplas não fazem parte da gramática Potigol",
+                start,
+            )]);
         }
+        value.push(self.advance_raw().unwrap_or('"'));
         loop {
             let Some(character) = self.current() else {
                 return Err(vec![self.error(
@@ -355,52 +303,32 @@ impl Scanner {
                     start,
                 )]);
             };
-            if character == '\\' {
-                value.push(self.advance().unwrap_or('\\'));
-                if let Some(escaped) = self.current() {
-                    value.push(self.advance().unwrap_or(escaped));
-                }
-                continue;
-            }
-            if multiline && self.is_triple_quote() {
-                value.push(self.advance().unwrap_or('"'));
-                value.push(self.advance().unwrap_or('"'));
-                value.push(self.advance().unwrap_or('"'));
+            if character == '"' {
+                value.push(self.advance_raw().unwrap_or('"'));
                 return Ok(());
             }
-            if !multiline && character == '"' {
-                value.push(self.advance().unwrap_or('"'));
-                return Ok(());
-            }
-            if !multiline && matches!(character, '\n' | '\r') {
-                return Err(vec![self.error(
-                    DiagnosticKind::Lexical,
-                    "texto de linha única não terminado dentro da interpolação",
-                    start,
-                )]);
-            }
-            value.push(self.advance().unwrap_or(character));
+            value.push(self.advance_raw().unwrap_or(character));
         }
     }
 
     fn copy_nested_character(&mut self, value: &mut String) -> Result<(), Vec<Diagnostic>> {
         let start = self.location();
-        value.push(self.advance().unwrap_or('\''));
-        if self.current() == Some('\\') {
-            value.push(self.advance().unwrap_or('\\'));
-            if let Some(escaped) = self.current() {
-                value.push(self.advance().unwrap_or(escaped));
-            }
-        } else if let Some(character) = self.current() {
-            if matches!(character, '\n' | '\r') {
-                return Err(vec![self.error(
-                    DiagnosticKind::Lexical,
-                    "literal de caractere não terminado dentro da interpolação",
-                    start,
-                )]);
-            }
-            value.push(self.advance().unwrap_or(character));
+        value.push(self.advance_raw().unwrap_or('\''));
+        let Some(character) = self.current() else {
+            return Err(vec![self.error(
+                DiagnosticKind::Lexical,
+                "literal de caractere não terminado dentro da interpolação",
+                start,
+            )]);
+        };
+        if matches!(character, '\n' | '\r' | '\'') || u32::from(character) > u32::from(u16::MAX) {
+            return Err(vec![self.error(
+                DiagnosticKind::Lexical,
+                "literal de caractere inválido dentro da interpolação",
+                start,
+            )]);
         }
+        value.push(self.advance_raw().unwrap_or(character));
         if self.current() != Some('\'') {
             return Err(vec![self.error(
                 DiagnosticKind::Lexical,
@@ -408,38 +336,12 @@ impl Scanner {
                 start,
             )]);
         }
-        value.push(self.advance().unwrap_or('\''));
+        value.push(self.advance_raw().unwrap_or('\''));
         Ok(())
     }
 
-    fn scan_escape(&mut self, start: SourceLocation) -> Result<char, Vec<Diagnostic>> {
-        let Some(character) = self.advance() else {
-            return Err(vec![self.error(
-                DiagnosticKind::Lexical,
-                "sequência de escape incompleta",
-                start,
-            )]);
-        };
-        match character {
-            'n' => Ok('\n'),
-            'r' => Ok('\r'),
-            't' => Ok('\t'),
-            '0' => Ok('\0'),
-            '\\' => Ok('\\'),
-            '\'' => Ok('\''),
-            '"' => Ok('"'),
-            other => Err(vec![self.error(
-                DiagnosticKind::Lexical,
-                format!("sequência de escape desconhecida: \\{other}"),
-                start,
-            )]),
-        }
-    }
-
     fn scan_compound_operator(&mut self) -> Option<String> {
-        const OPERATORS: [&str; 12] = [
-            "::", ":=", "=>", "<=", ">=", "<>", "==", "!=", "&&", "||", "->", "..",
-        ];
+        const OPERATORS: [&str; 7] = ["::", ":=", "=>", "<=", ">=", "<>", "=="];
         for operator in OPERATORS {
             if self.matches(operator) {
                 for _ in operator.chars() {
@@ -451,19 +353,23 @@ impl Scanner {
         None
     }
 
-    fn skip_comment(&mut self) {
-        if self.current() == Some('/') {
-            self.advance();
-            self.advance();
-        } else {
-            self.advance();
-        }
+    fn skip_comment(&mut self, start: SourceLocation) -> Result<(), Vec<Diagnostic>> {
+        self.advance();
         while self
             .current()
             .is_some_and(|character| !matches!(character, '\n' | '\r'))
         {
             self.advance();
         }
+        if self.current().is_none() || (self.current() == Some('\r') && self.peek(1) != Some('\n'))
+        {
+            return Err(vec![self.error(
+                DiagnosticKind::Lexical,
+                "comentário precisa terminar com uma quebra de linha",
+                start,
+            )]);
+        }
+        Ok(())
     }
 
     fn push(&mut self, kind: TokenKind, start: SourceLocation) {
@@ -545,6 +451,21 @@ impl Scanner {
             }
         }
     }
+
+    fn advance_raw(&mut self) -> Option<char> {
+        let character = self.current()?;
+        self.index += 1;
+        self.byte_offset += character.len_utf8();
+        match character {
+            '\r' if self.current() == Some('\n') => self.column += 1,
+            '\r' | '\n' => {
+                self.line += 1;
+                self.column = 1;
+            }
+            _ => self.column += 1,
+        }
+        Some(character)
+    }
 }
 
 /// Converts Potigol source into tokens with one-based source locations.
@@ -553,9 +474,13 @@ pub fn lex(source: &str) -> Result<Vec<Token>, Vec<Diagnostic>> {
 }
 
 fn is_identifier_start(character: char) -> bool {
-    character == '_' || character.is_alphabetic()
+    character == '_' || character.is_ascii_alphabetic() || is_accent(character)
 }
 
 fn is_identifier_continue(character: char) -> bool {
-    is_identifier_start(character) || character.is_ascii_digit()
+    character == '_' || character.is_ascii_alphanumeric() || is_accent(character)
+}
+
+fn is_accent(character: char) -> bool {
+    ('\u{00a1}'..='\u{fffc}').contains(&character)
 }

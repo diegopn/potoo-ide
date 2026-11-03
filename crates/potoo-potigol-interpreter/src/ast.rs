@@ -34,6 +34,12 @@ pub enum StmtKind {
     },
     Function(FunctionDecl),
     Type(TypeDecl),
+    TypeAlias {
+        name: String,
+        target: TypeExpr,
+    },
+    Import(String),
+    Block(Block),
     Output {
         newline: bool,
         value: Expr,
@@ -70,8 +76,9 @@ pub struct FunctionDecl {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum FunctionBody {
-    Expression(Expr),
+    Expression(Box<Expr>),
     Block(Block),
+    Abstract,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -87,7 +94,7 @@ pub struct Parameter {
 pub struct TypeDecl {
     pub id: NodeId,
     pub name: String,
-    pub parent: Option<String>,
+    pub parents: Vec<String>,
     pub abstract_type: bool,
     pub fields: Vec<TypeField>,
     pub methods: Vec<FunctionDecl>,
@@ -128,6 +135,7 @@ pub enum ForSource {
 pub struct Pattern {
     pub id: NodeId,
     pub span: SourceSpan,
+    pub annotation: Option<TypeExpr>,
     pub kind: PatternKind,
 }
 
@@ -135,7 +143,7 @@ pub struct Pattern {
 pub enum PatternKind {
     Wildcard,
     Binding(String),
-    Integer(i64),
+    Integer(i32),
     Real(f64),
     Character(char),
     Text(String),
@@ -155,7 +163,7 @@ pub struct Expr {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExprKind {
-    Integer(i64),
+    Integer(i32),
     Real(f64),
     Character(char),
     Text(Vec<StringPart>),
@@ -187,7 +195,7 @@ pub enum ExprKind {
     },
     Lambda {
         parameters: Vec<Parameter>,
-        body: Box<Expr>,
+        body: FunctionBody,
     },
     Conditional {
         condition: Box<Expr>,
@@ -200,7 +208,16 @@ pub enum ExprKind {
     },
     Comprehension {
         generators: Vec<ForGenerator>,
-        value: Box<Expr>,
+        body: Block,
+    },
+    Block(Block),
+    While {
+        condition: Box<Expr>,
+        body: Block,
+    },
+    For {
+        generators: Vec<ForGenerator>,
+        body: Block,
     },
 }
 

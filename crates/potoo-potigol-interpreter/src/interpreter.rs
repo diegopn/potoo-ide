@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::rc::Rc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -8,12 +8,13 @@ use crate::ast::{
     Parameter, Pattern, PatternKind, Program, Stmt, StmtKind, StringPart, TypeDecl,
 };
 use crate::bigint;
-use crate::environment::{Environment, EnvironmentRef};
-use crate::value::{Callable, ObjectValue, Value};
+use crate::environment::{Binding, Environment, EnvironmentRef};
+use crate::jerimum;
+use crate::value::{Callable, JerimumObject, ObjectValue, Value};
 use crate::{
     ControlAction, DataType, Diagnostic, DiagnosticKind, ExecutionEvent, ExecutionOptions,
-    InputPrompt, PauseReason, RuntimeIo, SourceSpan, TypeInfo, ValueType, VariableSnapshot, check,
-    parse_with_options,
+    InputPrompt, JerimumRequest, JerimumValue, PauseReason, RuntimeIo, SourceSpan, TypeInfo,
+    ValueType, VariableSnapshot, check, parse_with_options,
 };
 
 type RuntimeResult<T> = Result<T, Vec<Diagnostic>>;
@@ -28,6 +29,19 @@ enum TailOutcome {
     Call(Vec<Value>, SourceSpan),
 }
 
+#[derive(Clone)]
+struct JerimumDrawCommand {
+    color: Option<Value>,
+    function: String,
+    arguments: Vec<JerimumValue>,
+}
+
+#[derive(Clone)]
+enum JerimumDrawItem {
+    Command(JerimumDrawCommand),
+    Callback(Value),
+}
+
 struct Interpreter<'a> {
     io: &'a mut dyn RuntimeIo,
     options: ExecutionOptions,
@@ -37,6 +51,7 @@ struct Interpreter<'a> {
     steps: u64,
     allocated_elements: usize,
     allocated_collection_bytes: usize,
+    pending_input_tokens: VecDeque<String>,
     output_bytes: usize,
     waited: Duration,
     call_depth: usize,
@@ -49,6 +64,15 @@ struct Interpreter<'a> {
     placeholder_indexes: Vec<usize>,
     random_state: u64,
     type_info: TypeInfo,
+    jerimum_enabled: bool,
+    jerimum_started: std::time::Instant,
+    jerimum_game_title: String,
+    jerimum_game_width: i32,
+    jerimum_game_height: i32,
+    jerimum_game_fps: i32,
+    jerimum_next_screen_id: u64,
+    jerimum_drawings: BTreeMap<i32, Vec<JerimumDrawItem>>,
+    jerimum_image_cache: HashMap<String, Value>,
 }
 
 pub fn execute(source: &str, io: &mut dyn RuntimeIo) -> RuntimeResult<()> {
@@ -101,6 +125,7 @@ impl<'a> Interpreter<'a> {
             steps: 0,
             allocated_elements: 0,
             allocated_collection_bytes: 0,
+            pending_input_tokens: VecDeque::new(),
             output_bytes: 0,
             waited: Duration::ZERO,
             call_depth: 0,
@@ -113,6 +138,17 @@ impl<'a> Interpreter<'a> {
             placeholder_indexes: Vec::new(),
             random_state: random_state.max(1),
             type_info,
+            jerimum_enabled: program.statements.iter().any(
+                |statement| matches!(&statement.kind, StmtKind::Import(path) if path == "jerimum"),
+            ),
+            jerimum_started: std::time::Instant::now(),
+            jerimum_game_title: "Sem Nome".to_owned(),
+            jerimum_game_width: 640,
+            jerimum_game_height: 480,
+            jerimum_game_fps: 60,
+            jerimum_next_screen_id: 1,
+            jerimum_drawings: BTreeMap::new(),
+            jerimum_image_cache: HashMap::new(),
         }
     }
 
@@ -222,7 +258,14 @@ impl<'a> Interpreter<'a> {
                 self.assign_target(target, value)?;
                 Flow::Next(Value::Nothing)
             }
-            StmtKind::Function(_) | StmtKind::Type(_) => Flow::Next(Value::Nothing),
+            StmtKind::Function(_)
+            | StmtKind::Type(_)
+            | StmtKind::TypeAlias { .. }
+            | StmtKind::Import(_) => Flow::Next(Value::Nothing),
+            StmtKind::Block(block) => match self.execute_block(block)? {
+                Flow::Next(value) => Flow::Next(value),
+                returned @ Flow::Return(_) => return Ok(returned),
+            },
             StmtKind::Output { newline, value } => {
                 let value = self.evaluate_expression(value)?;
                 if let Some(value) = self.pending_return.take() {
@@ -325,14 +368,13 @@ impl<'a> Interpreter<'a> {
                     Value::List(values) => Ok(values),
                     Value::MutableList(values) => {
                         let values = values.borrow();
-                        self.reserve_value_vec_copy(&values, expression.span)?;
-                        let values = values.clone();
-                        Ok(values)
+                        self.copy_value_vec(&values, expression.span)
                     }
                     Value::Tuple(values) => Ok(values),
                     Value::Text(value) => {
-                        self.reserve_elements(value.chars().count(), expression.span)?;
-                        Ok(value.chars().map(Value::Character).collect())
+                        let units = utf16_units(&value);
+                        self.reserve_elements(units.len(), expression.span)?;
+                        Ok(units.into_iter().map(Value::Character).collect())
                     }
                     other => Err(vec![self.error(
                         format!("{} não pode ser percorrido", other.display()),
@@ -345,18 +387,18 @@ impl<'a> Interpreter<'a> {
                 if self.pending_return.is_some() {
                     return Ok(Vec::new());
                 }
-                let start_value = self.expect_integer(start_expression, start.span)?;
+                let start_value = self.expect_integer(&start_expression, start.span)?;
                 let end_expression = self.evaluate_expression(end)?;
                 if self.pending_return.is_some() {
                     return Ok(Vec::new());
                 }
-                let end_value = self.expect_integer(end_expression, end.span)?;
+                let end_value = self.expect_integer(&end_expression, end.span)?;
                 let step_value = if let Some(step) = step {
                     let step_expression = self.evaluate_expression(step)?;
                     if self.pending_return.is_some() {
                         return Ok(Vec::new());
                     }
-                    self.expect_integer(step_expression, step.span)?
+                    self.expect_integer(&step_expression, step.span)?
                 } else {
                     1
                 };
@@ -434,7 +476,7 @@ impl<'a> Interpreter<'a> {
         value: Value,
         mutable: bool,
     ) -> RuntimeResult<()> {
-        let value = broadcast_pattern_value(pattern, value);
+        let value = self.broadcast_pattern_value(pattern, value)?;
         let mut bindings = Vec::new();
         if !self.collect_pattern_bindings(pattern, &value, &mut bindings)? {
             return Err(vec![
@@ -453,6 +495,24 @@ impl<'a> Interpreter<'a> {
                 .map_err(|message| vec![self.error(message, pattern.span)])?;
         }
         Ok(())
+    }
+
+    fn broadcast_pattern_value(&mut self, pattern: &Pattern, value: Value) -> RuntimeResult<Value> {
+        if let PatternKind::Tuple(patterns) = &pattern.kind
+            && !matches!(&value, Value::Tuple(_))
+        {
+            self.reserve_elements(patterns.len(), pattern.span)?;
+            let values = patterns
+                .iter()
+                .map(|pattern| {
+                    let copy = self.copy_value(&value, pattern.span)?;
+                    self.broadcast_pattern_value(pattern, copy)
+                })
+                .collect::<RuntimeResult<Vec<_>>>()?;
+            Ok(Value::Tuple(values))
+        } else {
+            Ok(value)
+        }
     }
 
     fn collect_pattern_types(&self, pattern: &Pattern, types: &mut HashMap<String, ValueType>) {
@@ -490,11 +550,9 @@ impl<'a> Interpreter<'a> {
         }
         match (value, expected) {
             (Value::Character(character), ValueType::Integer) => {
-                Ok(Value::Integer(i64::from(u32::from(character))))
+                Ok(Value::Integer(i32::from(character)))
             }
-            (Value::Character(character), ValueType::Real) => {
-                Ok(Value::Real(u32::from(character) as f64))
-            }
+            (Value::Character(character), ValueType::Real) => Ok(Value::Real(f64::from(character))),
             (Value::Integer(number), ValueType::Real) => Ok(Value::Real(number as f64)),
             (
                 value @ (Value::Character(_)
@@ -523,8 +581,8 @@ impl<'a> Interpreter<'a> {
                 Ok(Value::List(values))
             }
             (Value::MutableList(values), ValueType::MutableList(expected)) => {
-                let values = values.borrow().clone();
-                self.reserve_elements(values.len(), span)?;
+                let values = values.borrow();
+                let values = self.copy_value_vec(&values, span)?;
                 let values = values
                     .into_iter()
                     .map(|value| self.coerce_value(value, expected, span))
@@ -556,12 +614,14 @@ impl<'a> Interpreter<'a> {
         let matches = match (&pattern.kind, value) {
             (PatternKind::Wildcard, _) => true,
             (PatternKind::Binding(name), _) => {
-                bindings.push((name.clone(), value.clone()));
+                bindings.push((name.clone(), self.copy_value(value, pattern.span)?));
                 true
             }
             (PatternKind::Integer(expected), Value::Integer(actual)) => expected == actual,
             (PatternKind::Real(expected), Value::Real(actual)) => expected == actual,
-            (PatternKind::Character(expected), Value::Character(actual)) => expected == actual,
+            (PatternKind::Character(expected), Value::Character(actual)) => {
+                u16::try_from(u32::from(*expected)).ok() == Some(*actual)
+            }
             (PatternKind::Text(expected), Value::Text(actual)) => expected == actual,
             (PatternKind::Logical(expected), Value::Logical(actual)) => expected == actual,
             (PatternKind::Tuple(patterns), Value::Tuple(values))
@@ -660,7 +720,7 @@ impl<'a> Interpreter<'a> {
         let value = self.coerce_to_node(value, target.id, target.span)?;
         match &target.kind {
             ExprKind::Identifier(name) => {
-                let Some(binding) = Environment::lookup(&self.environment, name) else {
+                let Some(binding) = self.lookup_assignment_target(name, target.span)? else {
                     return Err(vec![self.error(
                         format!("identificador '{name}' não foi declarado"),
                         target.span,
@@ -695,7 +755,25 @@ impl<'a> Interpreter<'a> {
                 Ok(())
             }
             ExprKind::Member { receiver, name } => {
-                let Value::Object(object) = self.evaluate_expression(receiver)? else {
+                let receiver_value = self.evaluate_expression(receiver)?;
+                if let Value::TypeName(owner) = &receiver_value
+                    && owner == "JerimumModule:Jogo"
+                {
+                    match (name.as_str(), value) {
+                        ("titulo", Value::Text(title)) => self.jerimum_game_title = title,
+                        ("largura", Value::Integer(width)) => self.jerimum_game_width = width,
+                        ("altura", Value::Integer(height)) => self.jerimum_game_height = height,
+                        ("fps", Value::Integer(fps)) => self.jerimum_game_fps = fps,
+                        _ => {
+                            return Err(vec![self.error(
+                                format!("atributo '{name}' não pode receber esse valor"),
+                                target.span,
+                            )]);
+                        }
+                    }
+                    return Ok(());
+                }
+                let Value::Object(object) = receiver_value else {
                     return Err(vec![self.error(
                         "somente atributos de objetos podem receber atribuição",
                         target.span,
@@ -725,7 +803,7 @@ impl<'a> Interpreter<'a> {
                 }
                 let current = self.evaluate_expression(receiver)?;
                 let index_value = self.evaluate_expression(&indices[0])?;
-                let index = self.expect_integer(index_value, indices[0].span)?;
+                let index = self.expect_integer(&index_value, indices[0].span)?;
                 if index <= 0 {
                     return Err(vec![self.error("os índices começam em 1", indices[0].span)]);
                 }
@@ -760,13 +838,18 @@ impl<'a> Interpreter<'a> {
         if !self.debugging && !self.stepping {
             return Ok(());
         }
-        let variables = Environment::visible_values(&self.environment)
+        let environment = self.environment.clone();
+        let values =
+            Environment::visible_values_with(&environment, |value| self.copy_value(value, span))?;
+        let variables = values
             .into_iter()
-            .map(|(name, value)| VariableSnapshot {
-                name,
-                value: self.resolve_field_reference(value).display(),
+            .map(|(name, value)| {
+                Ok(VariableSnapshot {
+                    name,
+                    value: self.resolve_field_reference(value, span)?.display(),
+                })
             })
-            .collect();
+            .collect::<RuntimeResult<Vec<_>>>()?;
         let event = ExecutionEvent {
             location: span.start,
             variables,
@@ -863,6 +946,10 @@ impl<'a> Interpreter<'a> {
         let bytes = value_clone_bytes(value)
             .and_then(|bytes| bytes.checked_mul(copies))
             .ok_or_else(|| vec![self.error("limite de memória de coleções excedido", span)])?;
+        let elements = value_clone_elements(value)
+            .and_then(|elements| elements.checked_mul(copies))
+            .ok_or_else(|| vec![self.error("limite de elementos excedido", span)])?;
+        self.reserve_elements(elements, span)?;
         self.reserve_collection_bytes(bytes, span)
     }
 
@@ -876,6 +963,12 @@ impl<'a> Interpreter<'a> {
         });
         let bytes = bytes
             .ok_or_else(|| vec![self.error("limite de memória de coleções excedido", span)])?;
+        let elements = values.iter().try_fold(0usize, |total, value| {
+            total.checked_add(value_clone_elements(value)?)
+        });
+        let elements =
+            elements.ok_or_else(|| vec![self.error("limite de elementos excedido", span)])?;
+        self.reserve_elements(elements, span)?;
         self.reserve_collection_bytes(bytes, span)
     }
 
@@ -884,16 +977,50 @@ impl<'a> Interpreter<'a> {
         self.reserve_cloned_values_payload(values, span)
     }
 
+    fn copy_value(&mut self, value: &Value, span: SourceSpan) -> RuntimeResult<Value> {
+        self.reserve_cloned_value_payload(value, 1, span)?;
+        Ok(value.clone())
+    }
+
+    fn copy_value_vec(&mut self, values: &[Value], span: SourceSpan) -> RuntimeResult<Vec<Value>> {
+        self.reserve_value_vec_copy(values, span)?;
+        Ok(values.to_vec())
+    }
+
+    fn lookup_binding(&mut self, name: &str, span: SourceSpan) -> RuntimeResult<Option<Binding>> {
+        let environment = self.environment.clone();
+        Environment::lookup_with(&environment, name, |binding| {
+            self.reserve_cloned_value_payload(&binding.value, 1, span)?;
+            Ok(binding.clone())
+        })
+    }
+
+    fn lookup_assignment_target(
+        &mut self,
+        name: &str,
+        span: SourceSpan,
+    ) -> RuntimeResult<Option<Binding>> {
+        let environment = self.environment.clone();
+        Environment::lookup_with(&environment, name, |binding| {
+            let value = if matches!(binding.value, Value::FieldReference(_, _)) {
+                self.reserve_cloned_value_payload(&binding.value, 1, span)?;
+                binding.value.clone()
+            } else {
+                Value::Nothing
+            };
+            Ok(Binding {
+                value,
+                mutable: binding.mutable,
+            })
+        })
+    }
+
     fn copy_list_values(&mut self, value: &Value, span: SourceSpan) -> RuntimeResult<Vec<Value>> {
         match value {
-            Value::List(values) => {
-                self.reserve_value_vec_copy(values, span)?;
-                Ok(values.clone())
-            }
+            Value::List(values) => self.copy_value_vec(values, span),
             Value::MutableList(values) => {
                 let values = values.borrow();
-                self.reserve_value_vec_copy(&values, span)?;
-                Ok(values.clone())
+                self.copy_value_vec(&values, span)
             }
             _ => Ok(Vec::new()),
         }
@@ -909,6 +1036,24 @@ impl<'a> Interpreter<'a> {
     }
 
     fn read_scalar(&mut self, data_type: DataType, span: SourceSpan) -> RuntimeResult<Value> {
+        if matches!(data_type, DataType::Integer | DataType::Real) {
+            let token = self.read_input_token(data_type, span)?;
+            return self.parse_input_value(data_type, &token, span);
+        }
+        let line = self.read_line(data_type, span)?;
+        self.parse_input_value(data_type, &line, span)
+    }
+
+    fn read_input_token(&mut self, data_type: DataType, span: SourceSpan) -> RuntimeResult<String> {
+        while self.pending_input_tokens.is_empty() {
+            let line = self.read_line(data_type, span)?;
+            self.pending_input_tokens
+                .extend(line.split_whitespace().map(str::to_owned));
+        }
+        Ok(self.pending_input_tokens.pop_front().unwrap())
+    }
+
+    fn read_line(&mut self, data_type: DataType, span: SourceSpan) -> RuntimeResult<String> {
         if self.io.should_stop() {
             return Err(vec![self.error("execução interrompida", span)]);
         }
@@ -923,39 +1068,14 @@ impl<'a> Interpreter<'a> {
                 return Err(vec![self.error(message, span)]);
             }
         };
-        let line = line.trim_end_matches(['\r', '\n']);
+        let line = line.trim_end_matches(['\r', '\n']).to_owned();
         self.check_string_size(line.len(), span)?;
-        let parsed = match data_type {
-            DataType::Integer => line
-                .trim()
-                .parse::<i64>()
-                .map(Value::Integer)
-                .map_err(|_| "entrada não é um Inteiro".to_owned()),
-            DataType::Real => line
-                .trim()
-                .parse::<f64>()
-                .map(Value::Real)
-                .map_err(|_| "entrada não é um Real".to_owned()),
-            DataType::Text => Ok(Value::Text(line.to_owned())),
-            DataType::Character => {
-                let mut characters = line.chars();
-                match (characters.next(), characters.next()) {
-                    (Some(character), None) => Ok(Value::Character(character)),
-                    _ => Err("entrada deve conter exatamente um Caractere".to_owned()),
-                }
-            }
-            DataType::Logical => match line.trim().to_lowercase().as_str() {
-                "verdadeiro" | "true" => Ok(Value::Logical(true)),
-                "falso" | "false" => Ok(Value::Logical(false)),
-                _ => Err("entrada não é Lógico".to_owned()),
-            },
-        };
-        parsed.map_err(|message| vec![self.error(message, span)])
+        Ok(line)
     }
 
-    fn expect_integer(&self, value: Value, span: SourceSpan) -> RuntimeResult<i64> {
+    fn expect_integer(&self, value: &Value, span: SourceSpan) -> RuntimeResult<i32> {
         if let Value::Integer(value) = value {
-            Ok(value)
+            Ok(*value)
         } else {
             Err(vec![self.error("esperava um Inteiro", span)])
         }
@@ -969,16 +1089,16 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    fn resolve_field_reference(&self, value: Value) -> Value {
+    fn resolve_field_reference(&mut self, value: Value, span: SourceSpan) -> RuntimeResult<Value> {
         if let Value::FieldReference(object, field) = value {
-            object
-                .borrow()
-                .fields
-                .get(&field)
-                .cloned()
-                .unwrap_or(Value::Nothing)
+            let object = object.borrow();
+            if let Some(value) = object.fields.get(&field) {
+                self.copy_value(value, span)
+            } else {
+                Ok(Value::Nothing)
+            }
         } else {
-            value
+            Ok(value)
         }
     }
 
@@ -1005,7 +1125,11 @@ impl<'a> Interpreter<'a> {
         match &expression.kind {
             ExprKind::Integer(value) => Ok(Value::Integer(*value)),
             ExprKind::Real(value) => Ok(Value::Real(*value)),
-            ExprKind::Character(value) => Ok(Value::Character(*value)),
+            ExprKind::Character(value) => u16::try_from(u32::from(*value))
+                .map(Value::Character)
+                .map_err(|_| {
+                    vec![self.error("Caractere fora do intervalo UTF-16", expression.span)]
+                }),
             ExprKind::Logical(value) => Ok(Value::Logical(*value)),
             ExprKind::Text(parts) => {
                 let mut text = String::new();
@@ -1028,13 +1152,17 @@ impl<'a> Interpreter<'a> {
                         expression.span,
                     )]);
                 };
-                let index = self.placeholder_indexes.last_mut().unwrap();
-                let Some(value) = values.get(*index).cloned() else {
+                let index = *self.placeholder_indexes.last().unwrap();
+                if values.get(index).is_none() {
                     return Err(vec![
                         self.error("faltou um argumento para '_'", expression.span),
                     ]);
-                };
-                *index += 1;
+                }
+                let value = std::mem::replace(
+                    &mut self.placeholder_values.last_mut().unwrap()[index],
+                    Value::Nothing,
+                );
+                *self.placeholder_indexes.last_mut().unwrap() += 1;
                 Ok(value)
             }
             ExprKind::Tuple(elements) => {
@@ -1096,14 +1224,14 @@ impl<'a> Interpreter<'a> {
                     ]);
                 }
                 let index_value = self.evaluate_expression(&indices[0])?;
-                let index = self.expect_integer(index_value, indices[0].span)?;
+                let index = self.expect_integer(&index_value, indices[0].span)?;
                 self.index_value(receiver, index, expression.span)
             }
             ExprKind::Lambda { parameters, body } => {
                 Ok(Value::Function(Rc::new(Callable::Lambda {
                     id: expression.id,
                     parameters: parameters.clone(),
-                    body: body.as_ref().clone(),
+                    body: body.clone(),
                     environment: self.environment.clone(),
                 })))
             }
@@ -1134,33 +1262,74 @@ impl<'a> Interpreter<'a> {
                 }
             }
             ExprKind::Match { value, cases } => self.evaluate_match(value, cases, expression.span),
-            ExprKind::Comprehension { generators, value } => {
+            ExprKind::Comprehension { generators, body } => {
                 let mut values = Vec::new();
-                self.evaluate_comprehension(generators, 0, value, &mut values)?;
+                self.evaluate_comprehension(generators, 0, body, &mut values)?;
                 Ok(Value::List(values))
+            }
+            ExprKind::Block(block) => match self.execute_block(block)? {
+                Flow::Next(value) => Ok(value),
+                Flow::Return(value) => {
+                    self.pending_return = Some(value);
+                    Ok(Value::Nothing)
+                }
+            },
+            ExprKind::While { condition, body } => {
+                loop {
+                    self.consume_step(expression.span)?;
+                    let condition = self.evaluate_expression(condition)?;
+                    if self.pending_return.is_some() {
+                        return Ok(Value::Nothing);
+                    }
+                    if !self.expect_logical(condition, expression.span)? {
+                        break;
+                    }
+                    if let Flow::Return(value) = self.execute_block(body)? {
+                        self.pending_return = Some(value);
+                        return Ok(Value::Nothing);
+                    }
+                }
+                Ok(Value::Nothing)
+            }
+            ExprKind::For { generators, body } => {
+                if let Flow::Return(value) = self.execute_generators(generators, 0, body)? {
+                    self.pending_return = Some(value);
+                }
+                Ok(Value::Nothing)
             }
         }
     }
 
     fn identifier_value(&mut self, name: &str, span: SourceSpan) -> RuntimeResult<Value> {
+        if let Some(binding) = self.lookup_binding(name, span)? {
+            return self.resolve_field_reference(binding.value, span);
+        }
+        if self.jerimum_enabled
+            && let Some(imported) = jerimum::imported_name(name)
+        {
+            return Ok(Value::TypeName(imported));
+        }
         if let Some(data_type) = input_data_type(name) {
             return self.read_scalar(data_type, span);
         }
-        match name.to_lowercase().as_str() {
+        let lower = name.to_lowercase();
+        match lower.as_str() {
             "eof" => return Ok(Value::Logical(self.eof || self.io.is_eof())),
             "pi" => return Ok(Value::Real(std::f64::consts::PI)),
+            "abs" | "sqrt" | "sen" | "cos" | "tan" | "tg" | "arcsen" | "arccos" | "arctg"
+            | "log" | "log10" => {
+                return Ok(Value::Function(Rc::new(Callable::Builtin(lower))));
+            }
             _ => {}
         }
         match name {
             "Lista" | "Matriz" | "Cubo" => return Ok(Value::TypeName(name.to_owned())),
             _ => {}
         }
-        let Some(binding) = Environment::lookup(&self.environment, name) else {
-            return Err(vec![
-                self.error(format!("identificador '{name}' não foi declarado"), span),
-            ]);
-        };
-        Ok(self.resolve_field_reference(binding.value))
+        Err(vec![self.error(
+            format!("identificador '{name}' não foi declarado"),
+            span,
+        )])
     }
 
     fn evaluate_call(
@@ -1169,15 +1338,30 @@ impl<'a> Interpreter<'a> {
         arguments: &[Expr],
         span: SourceSpan,
     ) -> RuntimeResult<Value> {
-        if let ExprKind::Identifier(name) = &callee.kind
-            && let Some(value) = self.call_builtin(name, arguments, span)?
-        {
-            return Ok(value);
+        if let ExprKind::Identifier(name) = &callee.kind {
+            if self.lookup_binding(name, span)?.is_none()
+                && let Some(value) = self.call_builtin(name, arguments, span)?
+            {
+                return Ok(value);
+            }
         }
         if let ExprKind::Member { receiver, name } = &callee.kind {
             let receiver = self.evaluate_expression(receiver)?;
             if self.pending_return.is_some() {
                 return Ok(Value::Nothing);
+            }
+            if let Value::TypeName(type_name) = &receiver {
+                if type_name.starts_with("Jerimum") {
+                    let values = arguments
+                        .iter()
+                        .map(|argument| self.evaluate_argument(argument))
+                        .collect::<RuntimeResult<Vec<_>>>()?;
+                    if self.pending_return.is_some() {
+                        return Ok(Value::Nothing);
+                    }
+                    return self.call_member(receiver, name, values, span);
+                }
+                return self.call_type_factory_expressions(type_name, name, arguments, span);
             }
             let values = arguments
                 .iter()
@@ -1221,26 +1405,29 @@ impl<'a> Interpreter<'a> {
         arguments: &[Expr],
         span: SourceSpan,
     ) -> RuntimeResult<Option<Value>> {
+        if self.jerimum_enabled
+            && let Some(value) = self.call_jerimum_constructor(name, arguments, span)?
+        {
+            return Ok(Some(value));
+        }
         let value = match name {
             "Lista" | "lista" => {
-                if arguments.len() != 2 {
+                let dimensions = arguments.len().saturating_sub(1);
+                if dimensions == 0 {
                     return Err(vec![
-                        self.error("Lista recebe tamanho e valor inicial", span),
+                        self.error("Lista recebe dimensões e valor inicial", span),
                     ]);
                 }
-                let length_value = self.evaluate_expression(&arguments[0])?;
-                let length = self.expect_integer(length_value, arguments[0].span)?;
-                if length < 0 {
-                    return Err(vec![
-                        self.error("o tamanho da lista não pode ser negativo", span),
-                    ]);
+                let mut sizes = Vec::with_capacity(dimensions);
+                for argument in arguments.iter().take(dimensions) {
+                    let value = self.evaluate_expression(argument)?;
+                    let size = self.expect_integer(&value, argument.span)?.max(0) as usize;
+                    sizes.push(size);
                 }
-                let length = usize::try_from(length)
-                    .map_err(|_| vec![self.error("tamanho de lista inválido", span)])?;
-                self.reserve_elements(length, span)?;
-                let initial = self.evaluate_expression(&arguments[1])?;
-                self.reserve_cloned_value_payload(&initial, length, span)?;
-                Value::List(vec![initial; length])
+                let (_, storage_elements) = nested_list_counts(&sizes)
+                    .ok_or_else(|| vec![self.error("dimensões excedem o limite", span)])?;
+                self.reserve_elements(storage_elements, span)?;
+                Value::List(self.evaluate_nested_list(&sizes, arguments.last().unwrap(), span)?)
             }
             "BigInt" | "bigint" => {
                 if arguments.len() != 1 {
@@ -1349,14 +1536,14 @@ impl<'a> Interpreter<'a> {
                         let Some(index) = self.random_index(values.len()) else {
                             return Err(vec![self.error("aleatório não aceita lista vazia", span)]);
                         };
-                        values[index].clone()
+                        self.copy_value(&values[index], span)?
                     }
                     [Value::MutableList(values)] => {
                         let values = values.borrow();
                         let Some(index) = self.random_index(values.len()) else {
                             return Err(vec![self.error("aleatório não aceita lista vazia", span)]);
                         };
-                        values[index].clone()
+                        self.copy_value(&values[index], span)?
                     }
                     [other] => {
                         return Err(vec![
@@ -1373,44 +1560,73 @@ impl<'a> Interpreter<'a> {
                     }
                 }
             }
-            "abs" | "raiz" | "sqrt" | "sen" | "cos" | "tan" | "tg" | "arcsen" | "arccos"
-            | "arctg" | "log" | "log10" => {
+            "abs" | "sqrt" | "sen" | "cos" | "tan" | "tg" | "arcsen" | "arccos" | "arctg"
+            | "log" | "log10" => {
                 if arguments.len() != 1 {
                     return Err(vec![
                         self.error(format!("{name} recebe um argumento"), span),
                     ]);
                 }
                 let value = self.evaluate_expression(&arguments[0])?;
+                self.evaluate_math_builtin(name, value, arguments[0].span)?
+            }
+            "raiz" => {
+                if !matches!(arguments.len(), 1 | 2) {
+                    return Err(vec![self.error("raiz recebe um ou dois argumentos", span)]);
+                }
+                let value = self.evaluate_expression(&arguments[0])?;
                 let number = numeric_f64(&value)
                     .ok_or_else(|| vec![self.error("esperava um número", arguments[0].span)])?;
-                match name {
-                    "abs" => match value {
-                        Value::Integer(number) => Value::Integer(
-                            number
-                                .checked_abs()
-                                .ok_or_else(|| vec![self.error("estouro aritmético", span)])?,
-                        ),
-                        Value::Real(number) => Value::Real(number.abs()),
-                        Value::BigInteger(number) => Value::BigInteger(
-                            number.strip_prefix('-').unwrap_or(&number).to_owned(),
-                        ),
-                        _ => Value::Real(number.abs()),
-                    },
-                    "raiz" | "sqrt" => Value::Real(number.sqrt()),
-                    "sen" => Value::Real(number.sin()),
-                    "cos" => Value::Real(number.cos()),
-                    "tan" | "tg" => Value::Real(number.tan()),
-                    "arcsen" => Value::Real(number.asin()),
-                    "arccos" => Value::Real(number.acos()),
-                    "arctg" => Value::Real(number.atan()),
-                    "log" => Value::Real(number.ln()),
-                    "log10" => Value::Real(number.log10()),
-                    _ => unreachable!(),
-                }
+                let degree = if let Some(argument) = arguments.get(1) {
+                    let degree = self.evaluate_expression(argument)?;
+                    numeric_f64(&degree)
+                        .ok_or_else(|| vec![self.error("esperava um número", argument.span)])?
+                } else {
+                    2.0
+                };
+                Value::Real(number.powf(1.0 / degree))
             }
             _ => return Ok(None),
         };
         Ok(Some(value))
+    }
+
+    fn evaluate_math_builtin(
+        &self,
+        name: &str,
+        value: Value,
+        span: SourceSpan,
+    ) -> RuntimeResult<Value> {
+        if name == "abs" {
+            return match value {
+                Value::Integer(value) => value
+                    .checked_abs()
+                    .map(Value::Integer)
+                    .ok_or_else(|| vec![self.error("estouro aritmético", span)]),
+                Value::Real(value) => Ok(Value::Real(value.abs())),
+                Value::BigInteger(value) => Ok(Value::BigInteger(
+                    value.strip_prefix('-').unwrap_or(&value).to_owned(),
+                )),
+                value => numeric_f64(&value)
+                    .map(|value| Value::Real(value.abs()))
+                    .ok_or_else(|| vec![self.error("esperava um número", span)]),
+            };
+        }
+        let number =
+            numeric_f64(&value).ok_or_else(|| vec![self.error("esperava um número", span)])?;
+        let result = match name {
+            "sqrt" => number.sqrt(),
+            "sen" => number.sin(),
+            "cos" => number.cos(),
+            "tan" | "tg" => number.tan(),
+            "arcsen" => number.asin(),
+            "arccos" => number.acos(),
+            "arctg" => number.atan(),
+            "log" => number.ln(),
+            "log10" => number.log10(),
+            _ => return Err(vec![self.error("função matemática desconhecida", span)]),
+        };
+        Ok(Value::Real(result))
     }
 
     fn read_input_list(
@@ -1447,19 +1663,18 @@ impl<'a> Interpreter<'a> {
             }
             Some(Value::Text(separator)) => {
                 let line = self.read_line(DataType::Text, span)?;
-                let count = if separator.is_empty() {
-                    line.chars().count()
+                let fields = if separator.is_empty() {
+                    utf16_units(&line)
+                        .into_iter()
+                        .map(|unit| text_from_utf16(&[unit]))
+                        .collect::<Vec<_>>()
                 } else {
-                    line.split(&separator).count()
+                    line.split(|character| separator.contains(character))
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>()
                 };
+                let count = fields.len();
                 self.reserve_elements(count, span)?;
-                let fields: Vec<String> = if separator.is_empty() {
-                    line.chars()
-                        .map(|character| character.to_string())
-                        .collect()
-                } else {
-                    line.split(&separator).map(str::to_owned).collect()
-                };
                 let values = fields
                     .into_iter()
                     .map(|field| self.parse_input_value(data_type, &field, span))
@@ -1491,26 +1706,6 @@ impl<'a> Interpreter<'a> {
         Ok(Value::List(values))
     }
 
-    fn read_line(&mut self, data_type: DataType, span: SourceSpan) -> RuntimeResult<String> {
-        if self.io.should_stop() {
-            return Err(vec![self.error("execução interrompida", span)]);
-        }
-        let prompt = InputPrompt {
-            data_type,
-            source: span.start,
-        };
-        let line = self
-            .io
-            .read_line(&prompt)
-            .map(|line| line.trim_end_matches(['\r', '\n']).to_owned())
-            .map_err(|message| {
-                self.eof = true;
-                vec![self.error(message, span)]
-            })?;
-        self.check_string_size(line.len(), span)?;
-        Ok(line)
-    }
-
     fn parse_input_value(
         &self,
         data_type: DataType,
@@ -1518,19 +1713,15 @@ impl<'a> Interpreter<'a> {
         span: SourceSpan,
     ) -> RuntimeResult<Value> {
         let parsed = match data_type {
-            DataType::Integer => value
-                .trim()
-                .parse::<i64>()
+            DataType::Integer => parse_integer_input(value.trim())
                 .map(Value::Integer)
                 .map_err(|_| "entrada contém um valor que não é Inteiro".to_owned()),
-            DataType::Real => value
-                .trim()
-                .parse::<f64>()
+            DataType::Real => parse_real_input(value.trim())
                 .map(Value::Real)
                 .map_err(|_| "entrada contém um valor que não é Real".to_owned()),
             DataType::Text => Ok(Value::Text(value.to_owned())),
             DataType::Character => {
-                let mut characters = value.chars();
+                let mut characters = value.encode_utf16();
                 match (characters.next(), characters.next()) {
                     (Some(character), None) => Ok(Value::Character(character)),
                     _ => Err("entrada contém texto onde se esperava Caractere".to_owned()),
@@ -1578,16 +1769,16 @@ impl<'a> Interpreter<'a> {
 
     fn random_integer(
         &mut self,
-        minimum: i64,
-        maximum: i64,
+        minimum: i32,
+        maximum: i32,
         span: SourceSpan,
-    ) -> RuntimeResult<i64> {
+    ) -> RuntimeResult<i32> {
         if minimum > maximum {
             return Err(vec![self.error("limite inferior excede a superior", span)]);
         }
-        let width = (i128::from(maximum) - i128::from(minimum) + 1) as u128;
+        let width = (i64::from(maximum) - i64::from(minimum) + 1) as u128;
         let offset = (self.random_next() as u128 % width) as i128;
-        Ok((i128::from(minimum) + offset) as i64)
+        Ok((i128::from(minimum) + offset) as i32)
     }
 
     fn bigint_operation(
@@ -1660,13 +1851,10 @@ impl<'a> Interpreter<'a> {
         span: SourceSpan,
     ) -> RuntimeResult<Value> {
         match (operator, value) {
-            ("+", Value::Character(value)) => Ok(Value::Integer(i64::from(u32::from(value)))),
+            ("+", Value::Character(value)) => Ok(Value::Integer(i32::from(value))),
             ("+", value @ (Value::Integer(_) | Value::Real(_) | Value::BigInteger(_))) => Ok(value),
-            ("-", Value::Character(value)) => Ok(Value::Integer(-i64::from(u32::from(value)))),
-            ("-", Value::Integer(value)) => value
-                .checked_neg()
-                .map(Value::Integer)
-                .ok_or_else(|| vec![self.error("estouro aritmético", span)]),
+            ("-", Value::Character(value)) => Ok(Value::Integer(-i32::from(value))),
+            ("-", Value::Integer(value)) => Ok(Value::Integer(value.wrapping_neg())),
             ("-", Value::Real(value)) => Ok(Value::Real(-value)),
             ("-", Value::BigInteger(value)) => Ok(Value::BigInteger(bigint::negate(&value))),
             ("não" | "nao", Value::Logical(value)) => Ok(Value::Logical(!value)),
@@ -1788,17 +1976,16 @@ impl<'a> Interpreter<'a> {
                     }
                     Ok(Value::Real(left % right))
                 } else {
-                    let left = self.expect_integer(left, span)?;
-                    let right = self.expect_integer(right, span)?;
+                    let left = self.expect_integer(&left, span)?;
+                    let right = self.expect_integer(&right, span)?;
                     if right == 0 {
                         return Err(vec![self.error("divisão por zero", span)]);
                     }
                     let value = if operator == "div" {
-                        left.checked_div(right)
+                        left.wrapping_div(right)
                     } else {
-                        left.checked_rem(right)
-                    }
-                    .ok_or_else(|| vec![self.error("estouro aritmético", span)])?;
+                        left.wrapping_rem(right)
+                    };
                     Ok(Value::Integer(value))
                 }
             }
@@ -1815,13 +2002,24 @@ impl<'a> Interpreter<'a> {
             self.check_string_size(text.len(), span)?;
             return Ok(Value::Text(text));
         }
+        if matches!(&left, Value::Character(_)) && matches!(&right, Value::Text(_)) {
+            let Value::Character(character) = left else {
+                unreachable!()
+            };
+            let Value::Text(text) = right else {
+                unreachable!()
+            };
+            let mut result = String::from_utf16_lossy(&[character]);
+            result.push_str(&text);
+            self.check_string_size(result.len(), span)?;
+            return Ok(Value::Text(result));
+        }
         let left = numericize_character(left);
         let right = numericize_character(right);
         match (left, right) {
-            (Value::Integer(left), Value::Integer(right)) => left
-                .checked_add(right)
-                .map(Value::Integer)
-                .ok_or_else(|| vec![self.error("estouro aritmético", span)]),
+            (Value::Integer(left), Value::Integer(right)) => {
+                Ok(Value::Integer(left.wrapping_add(right)))
+            }
             (Value::Real(left), Value::Real(right)) => Ok(Value::Real(left + right)),
             (Value::Integer(left), Value::Real(right)) => Ok(Value::Real(left as f64 + right)),
             (Value::Real(left), Value::Integer(right)) => Ok(Value::Real(left + right as f64)),
@@ -1880,23 +2078,34 @@ impl<'a> Interpreter<'a> {
         right: Value,
         span: SourceSpan,
     ) -> RuntimeResult<Value> {
-        if let (Value::Text(left_text), Value::Text(remove)) = (&left, &right) {
-            let mut text = left_text.clone();
-            for character in remove.chars() {
-                if let Some(index) = text.find(character) {
-                    text.remove(index);
+        if matches!(&left, Value::List(_) | Value::MutableList(_))
+            && matches!(&right, Value::List(_) | Value::MutableList(_))
+        {
+            let mut values = self.copy_list_values(&left, span)?;
+            for removed in self.copy_list_values(&right, span)? {
+                if let Some(index) = values.iter().position(|value| value == &removed) {
+                    values.remove(index);
                 }
             }
+            return Ok(Value::List(values));
+        }
+        if let (Value::Text(left_text), Value::Text(remove)) = (&left, &right) {
+            let mut units = utf16_units(left_text);
+            for unit in utf16_units(remove) {
+                if let Some(index) = units.iter().position(|candidate| *candidate == unit) {
+                    units.remove(index);
+                }
+            }
+            let text = text_from_utf16(&units);
             self.check_string_size(text.len(), span)?;
             return Ok(Value::Text(text));
         }
         let left = numericize_character(left);
         let right = numericize_character(right);
         match (left, right) {
-            (Value::Integer(left), Value::Integer(right)) => left
-                .checked_sub(right)
-                .map(Value::Integer)
-                .ok_or_else(|| vec![self.error("estouro aritmético", span)]),
+            (Value::Integer(left), Value::Integer(right)) => {
+                Ok(Value::Integer(left.wrapping_sub(right)))
+            }
             (Value::Real(left), Value::Real(right)) => Ok(Value::Real(left - right)),
             (Value::Integer(left), Value::Real(right)) => Ok(Value::Real(left as f64 - right)),
             (Value::Real(left), Value::Integer(right)) => Ok(Value::Real(left - right as f64)),
@@ -1928,10 +2137,9 @@ impl<'a> Interpreter<'a> {
         let left = numericize_character(left);
         let right = numericize_character(right);
         match (left, right) {
-            (Value::Integer(left), Value::Integer(right)) => left
-                .checked_mul(right)
-                .map(Value::Integer)
-                .ok_or_else(|| vec![self.error("estouro aritmético", span)]),
+            (Value::Integer(left), Value::Integer(right)) => {
+                Ok(Value::Integer(left.wrapping_mul(right)))
+            }
             (Value::Real(left), Value::Real(right)) => Ok(Value::Real(left * right)),
             (Value::Integer(left), Value::Real(right)) => Ok(Value::Real(left as f64 * right)),
             (Value::Real(left), Value::Integer(right)) => Ok(Value::Real(left * right as f64)),
@@ -2014,28 +2222,39 @@ impl<'a> Interpreter<'a> {
         if name == "qual_tipo" {
             return Ok(Value::Text(runtime_type_name(&receiver)));
         }
-        match receiver.clone() {
-            Value::TypeName(_) => Ok(Value::Function(Rc::new(Callable::Member {
-                receiver,
+        match receiver {
+            Value::TypeName(type_name) if type_name.starts_with("Jerimum") => {
+                self.jerimum_member_value(&type_name, name, span)
+            }
+            value @ Value::TypeName(_) => Ok(Value::Function(Rc::new(Callable::Member {
+                receiver: value,
                 name: name.to_owned(),
             }))),
-            Value::List(_) | Value::MutableList(_) => self.list_member_value(receiver, name, span),
-            Value::Text(text) => self.text_member_value(&text, name, span),
-            Value::Integer(_) | Value::Real(_) | Value::BigInteger(_) | Value::Character(_) => {
-                self.numeric_member_value(receiver, name, span)
+            Value::JerimumObject(object) => self.jerimum_object_member_value(object, name, span),
+            Value::List(values) => self.list_member_value(Value::List(values), name, span),
+            Value::MutableList(values) => {
+                self.list_member_value(Value::MutableList(values), name, span)
             }
+            Value::Text(text) => self.text_member_value(&text, name, span),
+            value @ (Value::Integer(_)
+            | Value::Real(_)
+            | Value::BigInteger(_)
+            | Value::Character(_)) => self.numeric_member_value(value, name, span),
             Value::Tuple(values) => {
                 let index = tuple_member_index(name).ok_or_else(|| {
                     vec![self.error(format!("tupla não possui membro '{name}'"), span)]
                 })?;
-                values.get(index).cloned().ok_or_else(|| {
+                let value = values.get(index).ok_or_else(|| {
                     vec![self.error(format!("tupla não possui membro '{name}'"), span)]
-                })
+                })?;
+                self.copy_value(value, span)
             }
             Value::Object(object) => {
-                if let Some(value) = object.borrow().fields.get(name).cloned() {
-                    return Ok(value);
+                let object_fields = object.borrow();
+                if let Some(value) = object_fields.fields.get(name) {
+                    return self.copy_value(value, span);
                 }
+                drop(object_fields);
                 let class_name = object.borrow().class_name.clone();
                 let Some((declaration, method)) = self.method_declaration(&class_name, name) else {
                     return Err(vec![self.error(
@@ -2059,8 +2278,8 @@ impl<'a> Interpreter<'a> {
                     Ok(callable)
                 }
             }
-            _ => Err(vec![self.error(
-                format!("tipo {} não possui membro '{name}'", receiver.display()),
+            other => Err(vec![self.error(
+                format!("tipo {} não possui membro '{name}'", other.display()),
                 span,
             )]),
         }
@@ -2074,18 +2293,20 @@ impl<'a> Interpreter<'a> {
     ) -> RuntimeResult<Value> {
         let values = self.copy_list_values(&receiver, span)?;
         match name {
-            "tamanho" | "size" => Ok(Value::Integer(values.len() as i64)),
-            "cabeça" | "cabeca" | "primeiro" => values
-                .first()
-                .cloned()
-                .ok_or_else(|| vec![self.error("lista vazia não possui cabeça", span)]),
-            "último" | "ultimo" => values
-                .last()
-                .cloned()
-                .ok_or_else(|| vec![self.error("lista vazia não possui último elemento", span)]),
+            "tamanho" | "size" => Ok(Value::Integer(values.len() as i32)),
+            "cabeça" | "cabeca" | "primeiro" => match values.first() {
+                Some(value) => self.copy_value(value, span),
+                None => Err(vec![self.error("lista vazia não possui cabeça", span)]),
+            },
+            "último" | "ultimo" => match values.last() {
+                Some(value) => self.copy_value(value, span),
+                None => Err(vec![
+                    self.error("lista vazia não possui último elemento", span),
+                ]),
+            },
             "cauda" => {
                 self.reserve_elements(values.len().saturating_sub(1), span)?;
-                Ok(Value::List(values.into_iter().skip(1).collect()))
+                self.collection_value_like(&receiver, values.into_iter().skip(1).collect())
             }
             "vazia" => Ok(Value::Logical(values.is_empty())),
             "inverta" => {
@@ -2104,6 +2325,7 @@ impl<'a> Interpreter<'a> {
             }
             "mutável" | "mutavel" => Ok(Value::MutableList(Rc::new(RefCell::new(values)))),
             "imutável" | "imutavel" => Ok(Value::List(values)),
+            "lista" | "para_lista" => self.collection_value_like(&receiver, values),
             _ => Ok(Value::Function(Rc::new(Callable::Member {
                 receiver,
                 name: name.to_owned(),
@@ -2125,7 +2347,7 @@ impl<'a> Interpreter<'a> {
         span: SourceSpan,
     ) -> RuntimeResult<Value> {
         match name {
-            "tamanho" => Ok(Value::Integer(text.chars().count() as i64)),
+            "tamanho" => Ok(Value::Integer(text.encode_utf16().count() as i32)),
             "maiúsculo" | "maiusculo" => {
                 let result = text.to_uppercase();
                 self.check_string_size(result.len(), span)?;
@@ -2140,29 +2362,35 @@ impl<'a> Interpreter<'a> {
             "inteiro" => Ok(Value::Integer(parse_integer_prefix(text))),
             "real" => Ok(Value::Real(parse_real_prefix(text))),
             "lista" => {
-                let length = text.chars().count();
-                self.reserve_elements(length, span)?;
-                let characters = text.chars().map(Value::Character).collect::<Vec<_>>();
+                let units = utf16_units(text);
+                self.reserve_elements(units.len(), span)?;
+                let characters = units.into_iter().map(Value::Character).collect::<Vec<_>>();
                 Ok(Value::List(characters))
             }
             "cabeça" | "cabeca" => text
-                .chars()
+                .encode_utf16()
                 .next()
                 .map(Value::Character)
                 .ok_or_else(|| vec![self.error("Texto vazio não possui cabeça", span)]),
-            "último" | "ultimo" => text
-                .chars()
-                .next_back()
+            "primeiro" => text
+                .encode_utf16()
+                .next()
+                .map(Value::Character)
+                .ok_or_else(|| vec![self.error("Texto vazio não possui primeiro caractere", span)]),
+            "último" | "ultimo" => utf16_units(text)
+                .last()
+                .copied()
                 .map(Value::Character)
                 .ok_or_else(|| vec![self.error("Texto vazio não possui último caractere", span)]),
             "cauda" => {
-                let result = text.chars().skip(1).collect::<String>();
+                let units = utf16_units(text);
+                let result = text_from_utf16(&units[usize::from(!units.is_empty())..]);
                 self.check_string_size(result.len(), span)?;
                 Ok(Value::Text(result))
             }
             "ordene" => {
-                self.reserve_elements(text.chars().count(), span)?;
-                let mut characters = text.chars().collect::<Vec<_>>();
+                let mut characters = utf16_units(text);
+                self.reserve_elements(characters.len(), span)?;
                 let mut failure = None;
                 characters.sort_unstable_by(|left, right| {
                     if failure.is_some() {
@@ -2177,15 +2405,19 @@ impl<'a> Interpreter<'a> {
                 if let Some(error) = failure {
                     return Err(error);
                 }
-                Ok(Value::Text(characters.into_iter().collect()))
+                let result = text_from_utf16(&characters);
+                self.check_string_size(result.len(), span)?;
+                Ok(Value::Text(result))
             }
             "divida" => self.call_text_member(text, name, Vec::new(), span),
             "pegue" | "descarte" | "junte" | "posição" | "posicao" | "contém" | "contem"
-            | "selecione" | "injete" | "pegue_enquanto" | "descarte_enquanto" | "remova"
-            | "insira" => Ok(Value::Function(Rc::new(Callable::Member {
-                receiver: Value::Text(text.to_owned()),
-                name: name.to_owned(),
-            }))),
+            | "selecione" | "ache" | "find" | "injete" | "pegue_enquanto" | "descarte_enquanto"
+            | "remova" | "insira" | "mapeie" | "map" | "divida_quando" => {
+                Ok(Value::Function(Rc::new(Callable::Member {
+                    receiver: Value::Text(text.to_owned()),
+                    name: name.to_owned(),
+                })))
+            }
             _ => Err(vec![
                 self.error(format!("Texto não possui membro '{name}'"), span),
             ]),
@@ -2201,11 +2433,11 @@ impl<'a> Interpreter<'a> {
         match name {
             "inteiro" => match &value {
                 Value::BigInteger(value) => value
-                    .parse::<i64>()
+                    .parse::<i32>()
                     .map(Value::Integer)
                     .map_err(|_| vec![self.error("BigInt não cabe em Inteiro", span)]),
                 _ => numeric_f64(&value)
-                    .map(|number| Value::Integer(number as i64))
+                    .map(|number| Value::Integer(number as i32))
                     .ok_or_else(|| vec![self.error("conversão para Inteiro inválida", span)]),
             },
             "real" => numeric_f64(&value)
@@ -2218,7 +2450,7 @@ impl<'a> Interpreter<'a> {
                 .map(|number| Value::Real(number.ceil()))
                 .ok_or_else(|| vec![self.error("conversão para Real inválida", span)]),
             "arredonde" => numeric_f64(&value)
-                .map(|number| Value::Integer(number.round() as i64))
+                .map(|number| Value::Integer(jvm_math_round(number) as i32))
                 .ok_or_else(|| vec![self.error("conversão para Inteiro inválida", span)]),
             "pow" if matches!(&value, Value::BigInteger(_)) => {
                 Ok(Value::Function(Rc::new(Callable::Member {
@@ -2230,9 +2462,7 @@ impl<'a> Interpreter<'a> {
                 let Some(number) = numeric_f64(&value) else {
                     return Err(vec![self.error("conversão para Caractere inválida", span)]);
                 };
-                char::from_u32(number as u32)
-                    .map(Value::Character)
-                    .ok_or_else(|| vec![self.error("código de Caractere inválido", span)])
+                Ok(Value::Character(number as i32 as u16))
             }
             _ => Err(vec![self.error(
                 format!("tipo {} não possui membro '{name}'", value.display()),
@@ -2255,13 +2485,15 @@ impl<'a> Interpreter<'a> {
             (Value::Real(value), "arredonde", [Value::Integer(digits)]) => {
                 let factor = 10_f64.powi((*digits).clamp(-308, 308) as i32);
                 let rounded = if factor.is_finite() && (value * factor).is_finite() {
-                    (value * factor).round() / factor
+                    (jvm_math_round(value * factor) as f64) / factor
                 } else {
                     value
                 };
                 Ok(Value::Real(rounded))
             }
-            (Value::Real(value), "arredonde", []) => Ok(Value::Integer(value.round() as i64)),
+            (Value::Real(value), "arredonde", []) => {
+                Ok(Value::Integer(jvm_math_round(value) as i32))
+            }
             (receiver, _, _) => Err(vec![self.error(
                 format!("{} não possui método '{name}'", receiver.display()),
                 span,
@@ -2269,33 +2501,35 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    fn index_value(&self, receiver: Value, index: i64, span: SourceSpan) -> RuntimeResult<Value> {
+    fn index_value(
+        &mut self,
+        receiver: Value,
+        index: i32,
+        span: SourceSpan,
+    ) -> RuntimeResult<Value> {
         match receiver {
             Value::List(values) | Value::Tuple(values) => {
                 let index = normalize_index(index, values.len())
                     .ok_or_else(|| vec![self.error("índice fora dos limites", span)])?;
-                values
+                let value = values
                     .get(index)
-                    .cloned()
-                    .ok_or_else(|| vec![self.error("índice fora dos limites", span)])
+                    .ok_or_else(|| vec![self.error("índice fora dos limites", span)])?;
+                self.copy_value(value, span)
             }
             Value::MutableList(values) => {
                 let values = values.borrow();
                 let index = normalize_index(index, values.len())
                     .ok_or_else(|| vec![self.error("índice fora dos limites", span)])?;
-                values
+                let value = values
                     .get(index)
-                    .cloned()
-                    .ok_or_else(|| vec![self.error("índice fora dos limites", span)])
+                    .ok_or_else(|| vec![self.error("índice fora dos limites", span)])?;
+                self.copy_value(value, span)
             }
             Value::Text(text) => {
-                let length = text.chars().count();
-                let index = normalize_index(index, length)
+                let units = utf16_units(&text);
+                let index = normalize_index(index, units.len())
                     .ok_or_else(|| vec![self.error("índice fora dos limites", span)])?;
-                text.chars()
-                    .nth(index)
-                    .map(Value::Character)
-                    .ok_or_else(|| vec![self.error("índice fora dos limites", span)])
+                Ok(Value::Character(units[index]))
             }
             other => {
                 return Err(vec![
@@ -2355,16 +2589,22 @@ impl<'a> Interpreter<'a> {
         &mut self,
         generators: &[ForGenerator],
         index: usize,
-        value: &Expr,
+        body: &Block,
         results: &mut Vec<Value>,
     ) -> RuntimeResult<()> {
         if self.pending_return.is_some() {
             return Ok(());
         }
         let Some(generator) = generators.get(index) else {
-            let result = self.evaluate_expression(value)?;
-            self.reserve_elements(1, value.span)?;
-            self.reserve_value_payload(&result, value.span)?;
+            let result = match self.execute_block(body)? {
+                Flow::Next(value) => value,
+                Flow::Return(value) => {
+                    self.pending_return = Some(value);
+                    return Ok(());
+                }
+            };
+            self.reserve_elements(1, body.span)?;
+            self.reserve_value_payload(&result, body.span)?;
             results.push(result);
             return Ok(());
         };
@@ -2381,7 +2621,7 @@ impl<'a> Interpreter<'a> {
                         return Ok(());
                     }
                 }
-                interpreter.evaluate_comprehension(generators, index + 1, value, results)
+                interpreter.evaluate_comprehension(generators, index + 1, body, results)
             })?;
             if self.pending_return.is_some() {
                 return Ok(());
@@ -2397,15 +2637,23 @@ impl<'a> Interpreter<'a> {
         arguments: Vec<Value>,
         span: SourceSpan,
     ) -> RuntimeResult<Value> {
-        match receiver.clone() {
-            Value::List(_) | Value::MutableList(_) => {
-                self.call_list_member(receiver, name, arguments, span)
+        match receiver {
+            Value::List(values) => {
+                self.call_list_member(Value::List(values), name, arguments, span)
+            }
+            Value::MutableList(values) => {
+                self.call_list_member(Value::MutableList(values), name, arguments, span)
             }
             Value::Text(text) => self.call_text_member(&text, name, arguments, span),
-            Value::Integer(_) | Value::Real(_) | Value::BigInteger(_) | Value::Character(_) => {
-                self.call_numeric_member(receiver, name, arguments, span)
+            value @ (Value::Integer(_)
+            | Value::Real(_)
+            | Value::BigInteger(_)
+            | Value::Character(_)) => self.call_numeric_member(value, name, arguments, span),
+            Value::TypeName(type_name) if type_name.starts_with("Jerimum") => {
+                self.call_jerimum_member(&type_name, name, arguments, span)
             }
             Value::TypeName(type_name) => self.call_type_factory(&type_name, name, arguments, span),
+            Value::JerimumObject(object) => self.call_jerimum_object(object, name, arguments, span),
             Value::Object(object) => {
                 let class_name = object.borrow().class_name.clone();
                 let Some((declaration, method)) = self.method_declaration(&class_name, name) else {
@@ -2426,8 +2674,8 @@ impl<'a> Interpreter<'a> {
                 }));
                 self.apply(callable, arguments, span)
             }
-            _ => Err(vec![self.error(
-                format!("tipo {} não possui método '{name}'", receiver.display()),
+            other => Err(vec![self.error(
+                format!("tipo {} não possui método '{name}'", other.display()),
                 span,
             )]),
         }
@@ -2441,10 +2689,12 @@ impl<'a> Interpreter<'a> {
         span: SourceSpan,
     ) -> RuntimeResult<Value> {
         let (dimensions, mutable) = match (type_name, name) {
-            ("Lista", "imutável" | "imutavel") => (1, false),
-            ("Lista", "mutável" | "mutavel") => (1, true),
+            ("Lista", "imutável" | "imutavel") => (arguments.len().saturating_sub(1), false),
+            ("Lista", "mutável" | "mutavel") => (arguments.len().saturating_sub(1), true),
             ("Matriz", "imutável" | "imutavel") => (2, false),
+            ("Matriz", "mutável" | "mutavel") => (2, true),
             ("Cubo", "imutável" | "imutavel") => (3, false),
+            ("Cubo", "mutável" | "mutavel") => (3, true),
             _ => {
                 return Err(vec![self.error(
                     format!("{type_name} não possui construtor '{name}'"),
@@ -2452,7 +2702,7 @@ impl<'a> Interpreter<'a> {
                 )]);
             }
         };
-        if arguments.len() != dimensions + 1 {
+        if dimensions == 0 || arguments.len() != dimensions + 1 {
             return Err(vec![self.error(
                 format!("{type_name}.{name} recebeu quantidade incorreta de argumentos"),
                 span,
@@ -2460,31 +2710,100 @@ impl<'a> Interpreter<'a> {
         }
         let mut sizes = Vec::with_capacity(dimensions);
         for argument in arguments.iter().take(dimensions) {
-            let size = self.expect_integer(argument.clone(), span)?;
-            if size < 0 {
-                return Err(vec![self.error("dimensão não pode ser negativa", span)]);
-            }
-            sizes.push(
-                usize::try_from(size).map_err(|_| vec![self.error("dimensão inválida", span)])?,
-            );
+            let size = self.expect_integer(argument, span)?;
+            sizes.push(size.max(0) as usize);
         }
-        let total = sizes
-            .iter()
-            .try_fold((1usize, 0usize), |(product, total), size| {
-                let product = product.checked_mul(*size)?;
-                Some((product, total.checked_add(product)?))
-            })
+        let (_, storage_elements) = nested_list_counts(&sizes)
             .ok_or_else(|| vec![self.error("dimensões excedem o limite", span)])?;
-        let (leaf_count, storage_elements) = total;
         self.reserve_elements(storage_elements, span)?;
-        let initial = arguments.last().cloned().unwrap_or(Value::Nothing);
+        let initial = match arguments.last() {
+            Some(value) => self.copy_value(value, span)?,
+            None => Value::Nothing,
+        };
+        let leaf_count = sizes.iter().product();
         self.reserve_cloned_value_payload(&initial, leaf_count, span)?;
-        let values = make_nested_list(&sizes, initial);
+        let values = make_nested_list(&sizes, &initial);
         if mutable {
             Ok(Value::MutableList(Rc::new(RefCell::new(values))))
         } else {
             Ok(Value::List(values))
         }
+    }
+
+    fn call_type_factory_expressions(
+        &mut self,
+        type_name: &str,
+        name: &str,
+        arguments: &[Expr],
+        span: SourceSpan,
+    ) -> RuntimeResult<Value> {
+        let mutable = match (type_name, name) {
+            ("Lista" | "Matriz", "imutável" | "imutavel") => false,
+            ("Lista" | "Matriz", "mutável" | "mutavel") => true,
+            ("Cubo", "imutável" | "imutavel") => false,
+            ("Cubo", "mutável" | "mutavel") => true,
+            _ => {
+                return Err(vec![self.error(
+                    format!("{type_name} não possui construtor '{name}'"),
+                    span,
+                )]);
+            }
+        };
+        let dimensions = match type_name {
+            "Lista" => arguments.len().saturating_sub(1),
+            "Matriz" => 2,
+            "Cubo" => 3,
+            _ => 0,
+        };
+        if dimensions == 0 || arguments.len() != dimensions + 1 {
+            return Err(vec![self.error(
+                format!("{type_name}.{name} recebeu quantidade incorreta de argumentos"),
+                span,
+            )]);
+        }
+        let mut sizes = Vec::with_capacity(dimensions);
+        for argument in arguments.iter().take(dimensions) {
+            let value = self.evaluate_expression(argument)?;
+            let size = self.expect_integer(&value, argument.span)?.max(0) as usize;
+            sizes.push(size);
+        }
+        let (_, storage_elements) = nested_list_counts(&sizes)
+            .ok_or_else(|| vec![self.error("dimensões excedem o limite", span)])?;
+        self.reserve_elements(storage_elements, span)?;
+        let values = self.evaluate_nested_list(&sizes, arguments.last().unwrap(), span)?;
+        if mutable {
+            Ok(Value::MutableList(Rc::new(RefCell::new(values))))
+        } else {
+            Ok(Value::List(values))
+        }
+    }
+
+    fn evaluate_nested_list(
+        &mut self,
+        sizes: &[usize],
+        initializer: &Expr,
+        span: SourceSpan,
+    ) -> RuntimeResult<Vec<Value>> {
+        let Some((&size, remainder)) = sizes.split_first() else {
+            return Ok(Vec::new());
+        };
+        let mut values = Vec::with_capacity(size);
+        if remainder.is_empty() {
+            for _ in 0..size {
+                let value = self.evaluate_expression(initializer)?;
+                self.reserve_value_payload(&value, span)?;
+                values.push(value);
+            }
+        } else {
+            for _ in 0..size {
+                values.push(Value::List(self.evaluate_nested_list(
+                    remainder,
+                    initializer,
+                    span,
+                )?));
+            }
+        }
+        Ok(values)
     }
 
     fn call_text_member(
@@ -2506,37 +2825,29 @@ impl<'a> Interpreter<'a> {
                         ]);
                     }
                 };
-                let count = match separator {
-                    Some("") => text.chars().count(),
-                    Some(separator) => text.split(separator).count(),
-                    None => text.split_whitespace().count(),
-                };
+                let pattern = separator.unwrap_or("\\s+");
+                let pieces = split_text_regex(text, pattern)
+                    .ok_or_else(|| vec![self.error("expressão regular inválida", span)])?;
+                let count = pieces.len();
                 self.reserve_elements(count, span)?;
                 self.reserve_collection_bytes(text.len(), span)?;
-                let pieces: Vec<String> = match separator {
-                    Some("") => text
-                        .chars()
-                        .map(|character| character.to_string())
-                        .collect(),
-                    Some(separator) => text.split(separator).map(str::to_owned).collect(),
-                    None => text.split_whitespace().map(str::to_owned).collect(),
-                };
                 Ok(Value::List(pieces.into_iter().map(Value::Text).collect()))
             }
             "pegue" | "descarte" => {
                 if arguments.len() != 1 {
                     return Err(vec![self.error(format!("{name} recebe um número"), span)]);
                 }
-                let count = self.expect_integer(arguments[0].clone(), span)?.max(0);
-                let chars = text.chars().collect::<Vec<_>>();
+                let count = self.expect_integer(&arguments[0], span)?.max(0);
+                let chars = utf16_units(text);
                 let count = usize::try_from(count)
                     .unwrap_or(usize::MAX)
                     .min(chars.len());
-                let result: String = if name == "pegue" {
+                let result: Vec<u16> = if name == "pegue" {
                     chars.into_iter().take(count).collect()
                 } else {
                     chars.into_iter().skip(count).collect()
                 };
+                let result = text_from_utf16(&result);
                 self.check_string_size(result.len(), span)?;
                 Ok(Value::Text(result))
             }
@@ -2555,12 +2866,9 @@ impl<'a> Interpreter<'a> {
                         )]);
                     }
                 };
-                self.reserve_elements(text.chars().count(), span)?;
-                let joined = text
-                    .chars()
-                    .map(|character| character.to_string())
-                    .collect::<Vec<_>>()
-                    .join(separator);
+                let units = utf16_units(text);
+                self.reserve_elements(units.len(), span)?;
+                let joined = join_utf16_units(&units, separator);
                 let mut result = String::from(prefix);
                 result.push_str(&joined);
                 result.push_str(suffix);
@@ -2574,62 +2882,127 @@ impl<'a> Interpreter<'a> {
                     ]);
                 }
                 let needle = match &arguments[0] {
-                    Value::Character(character) => character.to_string(),
-                    Value::Text(text) => text.clone(),
+                    Value::Character(character) => vec![*character],
+                    Value::Text(text) => utf16_units(text),
                     other => {
                         return Err(vec![
                             self.error(format!("{name} não aceita {}", other.display()), span),
                         ]);
                     }
                 };
+                let units = utf16_units(text);
                 if matches!(name, "posição" | "posicao") {
-                    let position = text.find(&needle).map_or(0, |byte_index| {
-                        text[..byte_index].chars().count() as i64 + 1
-                    });
+                    let position =
+                        unit_subslice_position(&units, &needle).map_or(0, |index| index as i32 + 1);
                     Ok(Value::Integer(position))
                 } else {
-                    Ok(Value::Logical(text.contains(&needle)))
+                    Ok(Value::Logical(
+                        unit_subslice_position(&units, &needle).is_some(),
+                    ))
                 }
+            }
+            "ache" | "find" => {
+                if arguments.len() != 1 {
+                    return Err(vec![self.error("ache recebe uma função", span)]);
+                }
+                for character in utf16_units(text) {
+                    let function = self.copy_value(&arguments[0], span)?;
+                    let selected = self.apply(function, vec![Value::Character(character)], span)?;
+                    if self.expect_logical(selected, span)? {
+                        self.reserve_collection_bytes(std::mem::size_of::<Value>(), span)?;
+                        return Ok(Value::Option(Some(Box::new(Value::Character(character)))));
+                    }
+                }
+                Ok(Value::Option(None))
+            }
+            "mapeie" | "map" => {
+                if arguments.len() != 1 {
+                    return Err(vec![self.error("mapeie recebe uma função", span)]);
+                }
+                let mut mapped = Vec::new();
+                for character in utf16_units(text) {
+                    self.consume_step(span)?;
+                    let function = self.copy_value(&arguments[0], span)?;
+                    let value = self.apply(function, vec![Value::Character(character)], span)?;
+                    let Value::Character(character) = value else {
+                        return Err(vec![self.error("mapeie deve retornar Caractere", span)]);
+                    };
+                    mapped.push(character);
+                }
+                let result = text_from_utf16(&mapped);
+                self.check_string_size(result.len(), span)?;
+                Ok(Value::Text(result))
+            }
+            "divida_quando" => {
+                if arguments.len() != 1 {
+                    return Err(vec![self.error("divida_quando recebe uma função", span)]);
+                }
+                let mut groups = Vec::<Vec<u16>>::new();
+                for character in utf16_units(text) {
+                    self.consume_step(span)?;
+                    let split = if let Some(previous) = groups.last().and_then(|group| group.last())
+                    {
+                        let function = self.copy_value(&arguments[0], span)?;
+                        let result = self.apply(
+                            function,
+                            vec![Value::Character(*previous), Value::Character(character)],
+                            span,
+                        )?;
+                        self.expect_logical(result, span)?
+                    } else {
+                        false
+                    };
+                    if split || groups.is_empty() {
+                        groups.push(Vec::new());
+                    }
+                    groups.last_mut().unwrap().push(character);
+                }
+                self.reserve_elements(groups.len(), span)?;
+                self.reserve_collection_bytes(text.len(), span)?;
+                Ok(Value::List(
+                    groups
+                        .into_iter()
+                        .map(|group| Value::Text(text_from_utf16(&group)))
+                        .collect(),
+                ))
             }
             "selecione" | "pegue_enquanto" | "descarte_enquanto" => {
                 if arguments.len() != 1 {
                     return Err(vec![self.error(format!("{name} recebe uma função"), span)]);
                 }
-                let characters = text.chars().collect::<Vec<_>>();
+                let characters = utf16_units(text);
                 if name == "selecione" {
-                    let mut result = String::new();
+                    let mut result = Vec::new();
                     for character in characters {
                         self.consume_step(span)?;
-                        let selected = self.apply(
-                            arguments[0].clone(),
-                            vec![Value::Character(character)],
-                            span,
-                        )?;
+                        let function = self.copy_value(&arguments[0], span)?;
+                        let selected =
+                            self.apply(function, vec![Value::Character(character)], span)?;
                         if self.expect_logical(selected, span)? {
                             result.push(character);
                         }
                     }
+                    let result = text_from_utf16(&result);
                     self.check_string_size(result.len(), span)?;
                     Ok(Value::Text(result))
                 } else {
                     let mut count = 0;
                     for character in &characters {
                         self.consume_step(span)?;
-                        let selected = self.apply(
-                            arguments[0].clone(),
-                            vec![Value::Character(*character)],
-                            span,
-                        )?;
+                        let function = self.copy_value(&arguments[0], span)?;
+                        let selected =
+                            self.apply(function, vec![Value::Character(*character)], span)?;
                         if !self.expect_logical(selected, span)? {
                             break;
                         }
                         count += 1;
                     }
-                    let result: String = if name == "pegue_enquanto" {
+                    let result: Vec<u16> = if name == "pegue_enquanto" {
                         characters.into_iter().take(count).collect()
                     } else {
                         characters.into_iter().skip(count).collect()
                     };
+                    let result = text_from_utf16(&result);
                     self.check_string_size(result.len(), span)?;
                     Ok(Value::Text(result))
                 }
@@ -2647,8 +3020,8 @@ impl<'a> Interpreter<'a> {
                 let [initial, reducer] = arguments.as_slice() else {
                     return Err(vec![self.error("injete recebe acumulador e função", span)]);
                 };
-                let mut accumulator = initial.clone();
-                for character in text.chars() {
+                let mut accumulator = self.copy_value(initial, span)?;
+                for character in utf16_units(text) {
                     self.consume_step(span)?;
                     accumulator = self.apply(
                         reducer.clone(),
@@ -2662,34 +3035,36 @@ impl<'a> Interpreter<'a> {
                 if arguments.len() != 1 {
                     return Err(vec![self.error("remova recebe uma posição", span)]);
                 }
-                let mut characters = text.chars().collect::<Vec<_>>();
-                let index = self.expect_integer(arguments[0].clone(), span)?;
+                let mut characters = utf16_units(text);
+                let index = self.expect_integer(&arguments[0], span)?;
                 let index = normalize_index(index, characters.len())
                     .ok_or_else(|| vec![self.error("posição fora dos limites", span)])?;
                 characters.remove(index);
-                Ok(Value::Text(characters.into_iter().collect()))
+                let result = text_from_utf16(&characters);
+                self.check_string_size(result.len(), span)?;
+                Ok(Value::Text(result))
             }
             "insira" => {
                 if arguments.len() != 2 {
                     return Err(vec![self.error("insira recebe posição e valor", span)]);
                 }
-                let position = self.expect_integer(arguments[0].clone(), span)?;
-                let mut characters = text.chars().collect::<Vec<_>>();
+                let position = self.expect_integer(&arguments[0], span)?;
+                let mut characters = utf16_units(text);
                 if position <= 0 || position as usize > characters.len() + 1 {
                     return Err(vec![self.error("posição de inserção inválida", span)]);
                 }
                 let insert_at = position as usize - 1;
                 let insertion = match &arguments[1] {
-                    Value::Character(character) => character.to_string(),
-                    Value::Text(text) => text.clone(),
+                    Value::Character(character) => vec![*character],
+                    Value::Text(text) => utf16_units(text),
                     other => {
                         return Err(vec![
                             self.error(format!("insira não aceita {}", other.display()), span),
                         ]);
                     }
                 };
-                characters.splice(insert_at..insert_at, insertion.chars());
-                let result = characters.into_iter().collect::<String>();
+                characters.splice(insert_at..insert_at, insertion);
+                let result = text_from_utf16(&characters);
                 self.check_string_size(result.len(), span)?;
                 Ok(Value::Text(result))
             }
@@ -2708,54 +3083,130 @@ impl<'a> Interpreter<'a> {
     ) -> RuntimeResult<Value> {
         let values = self.copy_list_values(&receiver, span)?;
         match name {
-            "mapeie" => {
+            "mapeie" | "map" => {
                 if arguments.len() != 1 {
                     return Err(vec![self.error("mapeie recebe uma função", span)]);
                 }
                 self.reserve_elements(values.len(), span)?;
                 let mut result = Vec::with_capacity(values.len());
                 for value in values {
-                    let mapped = self.apply(arguments[0].clone(), vec![value], span)?;
+                    let function = self.copy_value(&arguments[0], span)?;
+                    let mapped = self.apply(function, vec![value], span)?;
                     self.reserve_value_payload(&mapped, span)?;
                     result.push(mapped);
                 }
-                Ok(Value::List(result))
+                self.collection_value_like(&receiver, result)
             }
-            "selecione" => {
+            "selecione" | "filtre" | "filter" => {
                 if arguments.len() != 1 {
                     return Err(vec![self.error("selecione recebe uma função", span)]);
                 }
                 let mut result = Vec::new();
                 for value in values {
-                    let selected = self.apply(arguments[0].clone(), vec![value.clone()], span)?;
+                    let value_copy = self.copy_value(&value, span)?;
+                    let function = self.copy_value(&arguments[0], span)?;
+                    let selected = self.apply(function, vec![value_copy], span)?;
                     if self.expect_logical(selected, span)? {
                         self.reserve_elements(1, span)?;
                         result.push(value);
                     }
                 }
-                Ok(Value::List(result))
+                self.collection_value_like(&receiver, result)
             }
-            "pegue_enquanto" | "descarte_enquanto" => {
+            "pegue_enquanto" | "descarte_enquanto" | "takeWhile" | "dropWhile" => {
                 if arguments.len() != 1 {
                     return Err(vec![self.error(format!("{name} recebe uma função"), span)]);
                 }
                 let mut count = 0;
                 for value in &values {
-                    let predicate = self.apply(arguments[0].clone(), vec![value.clone()], span)?;
+                    let value_copy = self.copy_value(value, span)?;
+                    let function = self.copy_value(&arguments[0], span)?;
+                    let predicate = self.apply(function, vec![value_copy], span)?;
                     let matches = self.expect_logical(predicate, span)?;
                     if !matches {
                         break;
                     }
                     count += 1;
                 }
-                let result = if name == "pegue_enquanto" {
+                let result = if matches!(name, "pegue_enquanto" | "takeWhile") {
                     self.reserve_elements(count, span)?;
                     values.into_iter().take(count).collect()
                 } else {
                     self.reserve_elements(values.len().saturating_sub(count), span)?;
                     values.into_iter().skip(count).collect()
                 };
-                Ok(Value::List(result))
+                self.collection_value_like(&receiver, result)
+            }
+            "ache" | "find" => {
+                if arguments.len() != 1 {
+                    return Err(vec![self.error("ache recebe uma função", span)]);
+                }
+                for value in values {
+                    let predicate = self.copy_value(&arguments[0], span)?;
+                    let candidate = self.copy_value(&value, span)?;
+                    let selected = self.apply(predicate, vec![candidate], span)?;
+                    if self.expect_logical(selected, span)? {
+                        return Ok(Value::Option(Some(Box::new(value))));
+                    }
+                }
+                Ok(Value::Option(None))
+            }
+            "get" => {
+                if arguments.len() != 1 {
+                    return Err(vec![self.error("get recebe um índice", span)]);
+                }
+                let index = self.expect_integer(&arguments[0], span)?;
+                let selected = usize::try_from(index)
+                    .ok()
+                    .and_then(|index| values.into_iter().nth(index));
+                if selected.is_some() {
+                    self.reserve_collection_bytes(std::mem::size_of::<Value>(), span)?;
+                }
+                Ok(Value::Option(selected.map(Box::new)))
+            }
+            "zip" => {
+                if arguments.len() != 1 {
+                    return Err(vec![self.error("zip recebe uma coleção", span)]);
+                }
+                let right = match &arguments[0] {
+                    Value::List(_) | Value::MutableList(_) => {
+                        self.copy_list_values(&arguments[0], span)?
+                    }
+                    Value::Text(text) => {
+                        let characters = utf16_units(text);
+                        self.reserve_elements(characters.len(), span)?;
+                        characters.into_iter().map(Value::Character).collect()
+                    }
+                    Value::Tuple(values) => self.copy_value_vec(values, span)?,
+                    other => {
+                        return Err(vec![
+                            self.error(format!("zip não aceita {}", other.display()), span),
+                        ]);
+                    }
+                };
+                let count = values.len().min(right.len());
+                self.reserve_elements(count.saturating_mul(3), span)?;
+                let zipped = values
+                    .into_iter()
+                    .zip(right)
+                    .take(count)
+                    .map(|(left, right)| Value::Tuple(vec![left, right]))
+                    .collect();
+                self.collection_value_like(&receiver, zipped)
+            }
+            "reduza" | "reduce" => {
+                if arguments.len() != 1 || !matches!(arguments[0], Value::Function(_)) {
+                    return Err(vec![self.error("reduza recebe uma função", span)]);
+                }
+                let Some(first) = values.first() else {
+                    return Err(vec![self.error("reduza não aceita lista vazia", span)]);
+                };
+                let mut accumulator = self.copy_value(first, span)?;
+                for value in values.into_iter().skip(1) {
+                    accumulator =
+                        self.apply(arguments[0].clone(), vec![accumulator, value], span)?;
+                }
+                Ok(accumulator)
             }
             "injete" => {
                 if arguments.len() == 1 && !matches!(arguments[0], Value::Function(_)) {
@@ -2769,21 +3220,25 @@ impl<'a> Interpreter<'a> {
                 }
                 let (mut accumulator, reducer, remaining) = match arguments.as_slice() {
                     [Value::Function(_)] => {
-                        let Some(first) = values.first().cloned() else {
+                        let Some(first) = values.first() else {
                             return Err(vec![
                                 self.error("injete sem acumulador exige lista não vazia", span),
                             ]);
                         };
+                        let first = self.copy_value(first, span)?;
                         self.reserve_elements(values.len().saturating_sub(1), span)?;
+                        let reducer = self.copy_value(&arguments[0], span)?;
                         (
                             first,
-                            arguments[0].clone(),
+                            reducer,
                             values.into_iter().skip(1).collect::<Vec<_>>(),
                         )
                     }
-                    [initial, Value::Function(reducer)] => {
-                        (initial.clone(), Value::Function(reducer.clone()), values)
-                    }
+                    [initial, Value::Function(reducer)] => (
+                        self.copy_value(initial, span)?,
+                        Value::Function(reducer.clone()),
+                        values,
+                    ),
                     _ => return Err(vec![self.error("injete recebe acumulador e função", span)]),
                 };
                 for value in remaining {
@@ -2805,7 +3260,7 @@ impl<'a> Interpreter<'a> {
                 let position = values
                     .iter()
                     .position(|value| value == &arguments[0])
-                    .map_or(0, |index| index as i64 + 1);
+                    .map_or(0, |index| index as i32 + 1);
                 Ok(Value::Integer(position))
             }
             "contém" | "contem" => {
@@ -2818,12 +3273,12 @@ impl<'a> Interpreter<'a> {
                 if arguments.len() != 1 {
                     return Err(vec![self.error("remova recebe uma posição", span)]);
                 }
-                let index = self.expect_integer(arguments[0].clone(), span)?;
+                let index = self.expect_integer(&arguments[0], span)?;
                 let index = normalize_index(index, values.len())
                     .ok_or_else(|| vec![self.error("índice fora dos limites", span)])?;
                 let mut result = values;
                 result.remove(index);
-                self.return_collection_mutation(receiver, result, span)
+                self.collection_value_like(&receiver, result)
             }
             "insira" | "atualize" => {
                 if arguments.len() != 2 {
@@ -2831,22 +3286,35 @@ impl<'a> Interpreter<'a> {
                         self.error(format!("{name} recebe posição e valor"), span),
                     ]);
                 }
-                let index = self.expect_integer(arguments[0].clone(), span)?;
-                let mut result = values;
+                let index = self.expect_integer(&arguments[0], span)?;
                 if name == "insira" {
-                    if index <= 0 || index as usize > result.len() + 1 {
+                    if index <= 0 || index as usize > values.len() + 1 {
                         return Err(vec![self.error("posição de inserção inválida", span)]);
                     }
                     self.reserve_elements(1, span)?;
                     self.reserve_cloned_value_payload(&arguments[1], 1, span)?;
+                    let mut result = values;
                     result.insert(index as usize - 1, arguments[1].clone());
-                } else {
-                    let index = normalize_index(index, result.len())
-                        .ok_or_else(|| vec![self.error("índice fora dos limites", span)])?;
-                    self.reserve_cloned_value_payload(&arguments[1], 1, span)?;
-                    result[index] = arguments[1].clone();
+                    return self.collection_value_like(&receiver, result);
                 }
-                self.return_collection_mutation(receiver, result, span)
+                let index = usize::try_from(index)
+                    .ok()
+                    .filter(|index| *index < values.len())
+                    .ok_or_else(|| vec![self.error("índice fora dos limites", span)])?;
+                let replacement = if matches!(arguments[1], Value::Function(_)) {
+                    let current = self.copy_value(&values[index], span)?;
+                    self.apply(arguments[1].clone(), vec![current], span)?
+                } else {
+                    self.copy_value(&arguments[1], span)?
+                };
+                let mut result = values;
+                result[index] = replacement;
+                if let Value::MutableList(target) = receiver {
+                    *target.borrow_mut() = result;
+                    Ok(Value::MutableList(target))
+                } else {
+                    Ok(Value::List(result))
+                }
             }
             "junte" => {
                 if arguments.len() > 3 || arguments.len() == 2 {
@@ -2888,11 +3356,11 @@ impl<'a> Interpreter<'a> {
                 for value in values {
                     let split = if let Some(previous) = groups.last().and_then(|group| group.last())
                     {
-                        let split_result = self.apply(
-                            arguments[0].clone(),
-                            vec![previous.clone(), value.clone()],
-                            span,
-                        )?;
+                        let previous = self.copy_value(previous, span)?;
+                        let value_copy = self.copy_value(&value, span)?;
+                        let function = self.copy_value(&arguments[0], span)?;
+                        let split_result =
+                            self.apply(function, vec![previous, value_copy], span)?;
                         self.expect_logical(split_result, span)?
                     } else {
                         false
@@ -2911,7 +3379,7 @@ impl<'a> Interpreter<'a> {
                 if arguments.len() != 1 {
                     return Err(vec![self.error(format!("{name} recebe um número"), span)]);
                 }
-                let count = self.expect_integer(arguments[0].clone(), span)?.max(0) as usize;
+                let count = self.expect_integer(&arguments[0], span)?.max(0) as usize;
                 let result = if name == "pegue" {
                     values.into_iter().take(count).collect()
                 } else {
@@ -2922,22 +3390,6 @@ impl<'a> Interpreter<'a> {
             _ => Err(vec![
                 self.error(format!("lista não possui método '{name}'"), span),
             ]),
-        }
-    }
-
-    fn return_collection_mutation(
-        &self,
-        receiver: Value,
-        values: Vec<Value>,
-        span: SourceSpan,
-    ) -> RuntimeResult<Value> {
-        match receiver {
-            Value::MutableList(target) => {
-                *target.borrow_mut() = values;
-                Ok(Value::MutableList(target))
-            }
-            Value::List(_) => Ok(Value::List(values)),
-            _ => Err(vec![self.error("esperava uma lista", span)]),
         }
     }
 
@@ -2988,30 +3440,60 @@ impl<'a> Interpreter<'a> {
                     failure = Some(error);
                     return std::cmp::Ordering::Equal;
                 }
+                let left_copy = match self.copy_value(left, span) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        failure = Some(error);
+                        return std::cmp::Ordering::Equal;
+                    }
+                };
+                let right_copy = match self.copy_value(right, span) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        failure = Some(error);
+                        return std::cmp::Ordering::Equal;
+                    }
+                };
                 match self
                     .apply(
                         Value::Function(callable.clone()),
-                        vec![left.clone(), right.clone()],
+                        vec![left_copy, right_copy],
                         span,
                     )
                     .and_then(|result| self.expect_logical(result, span))
                 {
                     Ok(true) => std::cmp::Ordering::Less,
-                    Ok(false) => match self
-                        .apply(
-                            Value::Function(callable.clone()),
-                            vec![right.clone(), left.clone()],
-                            span,
-                        )
-                        .and_then(|result| self.expect_logical(result, span))
-                    {
-                        Ok(true) => std::cmp::Ordering::Greater,
-                        Ok(false) => std::cmp::Ordering::Equal,
-                        Err(error) => {
-                            failure = Some(error);
-                            std::cmp::Ordering::Equal
+                    Ok(false) => {
+                        let right_copy = match self.copy_value(right, span) {
+                            Ok(value) => value,
+                            Err(error) => {
+                                failure = Some(error);
+                                return std::cmp::Ordering::Equal;
+                            }
+                        };
+                        let left_copy = match self.copy_value(left, span) {
+                            Ok(value) => value,
+                            Err(error) => {
+                                failure = Some(error);
+                                return std::cmp::Ordering::Equal;
+                            }
+                        };
+                        match self
+                            .apply(
+                                Value::Function(callable.clone()),
+                                vec![right_copy, left_copy],
+                                span,
+                            )
+                            .and_then(|result| self.expect_logical(result, span))
+                        {
+                            Ok(true) => std::cmp::Ordering::Greater,
+                            Ok(false) => std::cmp::Ordering::Equal,
+                            Err(error) => {
+                                failure = Some(error);
+                                std::cmp::Ordering::Equal
+                            }
                         }
-                    },
+                    }
                     Err(error) => {
                         failure = Some(error);
                         std::cmp::Ordering::Equal
@@ -3030,7 +3512,8 @@ impl<'a> Interpreter<'a> {
         self.reserve_collection_bytes(keyed_bytes, span)?;
         let mut keyed = Vec::with_capacity(values.len());
         for value in values {
-            let key = self.apply(Value::Function(callable.clone()), vec![value.clone()], span)?;
+            let value_copy = self.copy_value(&value, span)?;
+            let key = self.apply(Value::Function(callable.clone()), vec![value_copy], span)?;
             self.reserve_value_payload(&key, span)?;
             keyed.push((key, value));
         }
@@ -3078,7 +3561,7 @@ impl<'a> Interpreter<'a> {
                 callable,
                 arguments: previous,
             } => {
-                let mut combined = previous.clone();
+                let mut combined = self.copy_value_vec(previous, span)?;
                 combined.extend(arguments);
                 (callable.clone(), combined)
             }
@@ -3108,6 +3591,7 @@ impl<'a> Interpreter<'a> {
             Callable::Function { declaration, .. } => Some(declaration.parameters.len()),
             Callable::Lambda { parameters, .. } => Some(parameters.len()),
             Callable::Placeholder { arity, .. } => Some(*arity),
+            Callable::Builtin(_) => Some(1),
             Callable::Constructor { declaration, .. } => Some(
                 self.effective_type_fields(&declaration.name)
                     .ok()?
@@ -3137,18 +3621,28 @@ impl<'a> Interpreter<'a> {
                     "divida" => Some(arguments.len().min(1)),
                     "pegue" | "descarte" | "posição" | "posicao" | "contém" | "contem"
                     | "selecione" | "pegue_enquanto" | "descarte_enquanto" | "remova" => Some(1),
+                    "mapeie" | "map" | "divida_quando" => Some(1),
                     "injete" => Some(2),
                     "insira" => Some(2),
                     "junte" => Some(arguments.len()),
                     _ => None,
                 },
                 Value::BigInteger(_) if name == "pow" => Some(1),
-                Value::TypeName(type_name) => match (type_name.as_str(), name.as_str()) {
-                    ("Lista", "imutável" | "imutavel" | "mutável" | "mutavel") => Some(2),
-                    ("Matriz", "imutável" | "imutavel") => Some(3),
-                    ("Cubo", "imutável" | "imutavel") => Some(4),
-                    _ => None,
-                },
+                Value::TypeName(type_name) => {
+                    jerimum::max_arity(type_name, name).or_else(|| {
+                        match (type_name.as_str(), name.as_str()) {
+                            ("Lista", "imutável" | "imutavel" | "mutável" | "mutavel") => Some(2),
+                            ("Matriz", "imutável" | "imutavel" | "mutável" | "mutavel") => {
+                                Some(3)
+                            }
+                            ("Cubo", "imutável" | "imutavel" | "mutável" | "mutavel") => Some(4),
+                            _ => None,
+                        }
+                    })
+                }
+                Value::JerimumObject(object) => {
+                    jerimum::max_arity(jerimum_object_owner(&object.borrow()), name)
+                }
                 Value::Object(object) => self
                     .classes
                     .get(&object.borrow().class_name)
@@ -3171,26 +3665,42 @@ impl<'a> Interpreter<'a> {
                 environment,
                 owner,
                 receiver,
-            } => self.invoke_function(
-                declaration,
-                environment.clone(),
-                owner.as_deref(),
-                receiver.clone(),
-                arguments,
-                span,
-            ),
+            } => {
+                let receiver = receiver
+                    .as_ref()
+                    .map(|value| self.copy_value(value, span))
+                    .transpose()?;
+                self.invoke_function(
+                    declaration,
+                    environment.clone(),
+                    owner.as_deref(),
+                    receiver,
+                    arguments,
+                    span,
+                )
+            }
             Callable::Lambda {
                 id,
                 parameters,
                 body,
                 environment,
             } => self.invoke_lambda(*id, parameters, body, environment.clone(), arguments, span),
+            Callable::Builtin(name) => {
+                let [value] = arguments.as_slice() else {
+                    return Err(vec![
+                        self.error(format!("{name} recebe um argumento"), span),
+                    ]);
+                };
+                let value = self.copy_value(value, span)?;
+                self.evaluate_math_builtin(name, value, span)
+            }
             Callable::Constructor {
                 declaration,
                 environment,
             } => self.construct(declaration, environment.clone(), arguments, span),
             Callable::Member { receiver, name } => {
-                self.call_member(receiver.clone(), name, arguments, span)
+                let receiver = self.copy_value(receiver, span)?;
+                self.call_member(receiver, name, arguments, span)
             }
             Callable::Placeholder {
                 expression,
@@ -3383,7 +3893,8 @@ impl<'a> Interpreter<'a> {
                     }
                 }
                 for (parameter, value) in declaration.parameters.iter().zip(arguments.iter()) {
-                    let value = self.coerce_to_node(value.clone(), parameter.id, parameter.span)?;
+                    let value = self.copy_value(value, parameter.span)?;
+                    let value = self.coerce_to_node(value, parameter.id, parameter.span)?;
                     Environment::define(
                         &call_environment,
                         parameter.name.clone(),
@@ -3405,6 +3916,13 @@ impl<'a> Interpreter<'a> {
                     FunctionBody::Block(block) => {
                         interpreter.evaluate_tail_block(block, &declaration.name)
                     }
+                    FunctionBody::Abstract => Err(vec![interpreter.error(
+                        format!(
+                            "método abstrato '{}' não foi implementado",
+                            declaration.name
+                        ),
+                        declaration.span,
+                    )]),
                 });
             match outcome {
                 Ok(TailOutcome::Value(value)) => break Ok(value),
@@ -3443,7 +3961,7 @@ impl<'a> Interpreter<'a> {
         &mut self,
         id: NodeId,
         parameters: &[Parameter],
-        body: &Expr,
+        body: &FunctionBody,
         environment: EnvironmentRef,
         arguments: Vec<Value>,
         span: SourceSpan,
@@ -3458,7 +3976,8 @@ impl<'a> Interpreter<'a> {
         let call_environment = Environment::child(environment);
         let result = (|| {
             for (parameter, value) in parameters.iter().zip(arguments.iter()) {
-                let value = self.coerce_to_node(value.clone(), parameter.id, parameter.span)?;
+                let value = self.copy_value(value, parameter.span)?;
+                let value = self.coerce_to_node(value, parameter.id, parameter.span)?;
                 Environment::define(
                     &call_environment,
                     parameter.name.clone(),
@@ -3467,8 +3986,18 @@ impl<'a> Interpreter<'a> {
                 )
                 .map_err(|message| vec![self.error(message, parameter.span)])?;
             }
-            self.with_environment(call_environment, |interpreter| {
-                interpreter.evaluate_expression(body)
+            self.with_environment(call_environment, |interpreter| match body {
+                FunctionBody::Expression(expression) => interpreter.evaluate_expression(expression),
+                FunctionBody::Block(block) => match interpreter.execute_block(block)? {
+                    Flow::Next(value) => Ok(value),
+                    Flow::Return(value) => {
+                        interpreter.pending_return = Some(value);
+                        Ok(Value::Nothing)
+                    }
+                },
+                FunctionBody::Abstract => Err(vec![
+                    interpreter.error("lambda abstrata não pode ser chamada", span),
+                ]),
             })
         })();
         let result = self.pending_return.take().map_or(result, |value| Ok(value));
@@ -3496,11 +4025,17 @@ impl<'a> Interpreter<'a> {
                 SourceSpan::default(),
             )]
         })?;
-        let mut fields = if let Some(parent) = &declaration.parent {
-            self.effective_type_fields(parent)?
-        } else {
-            Vec::new()
-        };
+        let mut fields = Vec::<crate::ast::TypeField>::new();
+        for parent in &declaration.parents {
+            for field in self.effective_type_fields(parent)? {
+                if let Some(existing) = fields.iter_mut().find(|item| item.name == field.name) {
+                    existing.mutable |= field.mutable;
+                    existing.constructor_parameter |= field.constructor_parameter;
+                } else {
+                    fields.push(field);
+                }
+            }
+        }
         for field in &declaration.fields {
             if let Some(inherited) = fields.iter_mut().find(|item| item.name == field.name) {
                 let mut field = field.clone();
@@ -3518,18 +4053,21 @@ impl<'a> Interpreter<'a> {
         type_name: &str,
         method_name: &str,
     ) -> Option<(TypeDecl, FunctionDecl)> {
-        let mut declaration = self.classes.get(type_name)?.clone();
-        loop {
-            if let Some(method) = declaration
-                .methods
-                .iter()
-                .find(|method| method.name == method_name)
-                .cloned()
-            {
-                return Some((declaration, method));
-            }
-            declaration = self.classes.get(declaration.parent.as_deref()?)?.clone();
+        let declaration = self.classes.get(type_name)?.clone();
+        if let Some(method) = declaration
+            .methods
+            .iter()
+            .find(|method| method.name == method_name)
+            .cloned()
+        {
+            return Some((declaration, method));
         }
+        for parent in &declaration.parents {
+            if let Some(method) = self.method_declaration(parent, method_name) {
+                return Some(method);
+            }
+        }
+        None
     }
 
     fn construct(
@@ -3561,6 +4099,7 @@ impl<'a> Interpreter<'a> {
         }
         let object = Rc::new(RefCell::new(ObjectValue {
             class_name: declaration.name.clone(),
+            constructor_fields: fields.iter().map(|field| field.name.clone()).collect(),
             fields: HashMap::new(),
         }));
         let instance_environment = Environment::child(environment);
@@ -3590,9 +4129,1464 @@ impl<'a> Interpreter<'a> {
     }
 }
 
+impl<'a> Interpreter<'a> {
+    fn call_jerimum_constructor(
+        &mut self,
+        name: &str,
+        expressions: &[Expr],
+        span: SourceSpan,
+    ) -> RuntimeResult<Option<Value>> {
+        let Some(kind) = jerimum::constructor_name(name) else {
+            return Ok(None);
+        };
+        let arguments = expressions
+            .iter()
+            .map(|expression| self.evaluate_argument(expression))
+            .collect::<RuntimeResult<Vec<_>>>()?;
+        let object = match kind {
+            "Cor" => {
+                let [red, green, blue] = arguments.as_slice() else {
+                    return Err(vec![self.error("Cor recebe vermelho, verde e azul", span)]);
+                };
+                let red = self.expect_integer(red, span)?;
+                let green = self.expect_integer(green, span)?;
+                let blue = self.expect_integer(blue, span)?;
+                if [red, green, blue]
+                    .iter()
+                    .any(|channel| !(0..=255).contains(channel))
+                {
+                    return Err(vec![
+                        self.error("cada canal de cor deve estar entre 0 e 255", span),
+                    ]);
+                }
+                JerimumObject::Color { red, green, blue }
+            }
+            "Imagem" => {
+                let [Value::Text(path)] = arguments.as_slice() else {
+                    return Err(vec![
+                        self.error("Imagem recebe um caminho de arquivo", span),
+                    ]);
+                };
+                return self.load_jerimum_image(path, span).map(Some);
+            }
+            "Animacao" => {
+                let [Value::Integer(speed), images] = arguments.as_slice() else {
+                    return Err(vec![
+                        self.error("Animacao recebe velocidade e lista de imagens", span),
+                    ]);
+                };
+                if *speed <= 0 {
+                    return Err(vec![
+                        self.error("a velocidade da animação deve ser positiva", span),
+                    ]);
+                }
+                let images = self.copy_list_values(images, span)?;
+                if images.is_empty()
+                    || images.iter().any(|image| {
+                        !matches!(image, Value::JerimumObject(object) if matches!(&*object.borrow(), JerimumObject::Image { .. }))
+                    })
+                {
+                    return Err(vec![self.error("Animacao precisa de uma lista não vazia de imagens", span)]);
+                }
+                JerimumObject::Animation {
+                    speed: *speed,
+                    images,
+                    started: std::time::Instant::now(),
+                }
+            }
+            "Fonte" => {
+                let [Value::Integer(size)] = arguments.as_slice() else {
+                    return Err(vec![self.error("Fonte recebe um tamanho inteiro", span)]);
+                };
+                if !(1..=512).contains(size) {
+                    return Err(vec![
+                        self.error("o tamanho da fonte deve estar entre 1 e 512", span),
+                    ]);
+                }
+                JerimumObject::Font { size: *size }
+            }
+            "Som" | "Musica" => {
+                let [Value::Text(path)] = arguments.as_slice() else {
+                    return Err(vec![
+                        self.error("o áudio recebe um caminho de arquivo", span),
+                    ]);
+                };
+                let handle = self.jerimum_host_integer(
+                    JerimumRequest::Audio {
+                        function: if kind == "Musica" {
+                            "carregar_musica".to_owned()
+                        } else {
+                            "carregar_som".to_owned()
+                        },
+                        arguments: vec![JerimumValue::String(path.clone())],
+                    },
+                    span,
+                )?;
+                JerimumObject::Sound {
+                    path: path.clone(),
+                    handle,
+                    music: kind == "Musica",
+                }
+            }
+            "Tela" => {
+                let [
+                    Value::Text(title),
+                    Value::Integer(width),
+                    Value::Integer(height),
+                ] = arguments.as_slice()
+                else {
+                    return Err(vec![
+                        self.error("Tela recebe título, largura e altura", span),
+                    ]);
+                };
+                self.jerimum_start_window(title, *width, *height, span)?;
+                let id = self.jerimum_next_screen_id;
+                self.jerimum_next_screen_id = id
+                    .checked_add(1)
+                    .ok_or_else(|| vec![self.error("limite de telas Jerimum excedido", span)])?;
+                JerimumObject::Screen {
+                    id,
+                    title: title.clone(),
+                    width: *width,
+                    height: *height,
+                }
+            }
+            _ => return Ok(None),
+        };
+        Ok(Some(Value::JerimumObject(Rc::new(RefCell::new(object)))))
+    }
+
+    fn call_jerimum_member(
+        &mut self,
+        owner: &str,
+        name: &str,
+        arguments: Vec<Value>,
+        span: SourceSpan,
+    ) -> RuntimeResult<Value> {
+        if owner == "JerimumModule:Jogo" {
+            return match name {
+                "distância" | "distancia" => {
+                    let [x1, y1, x2, y2] = arguments.as_slice() else {
+                        return Err(vec![
+                            self.error("distância recebe quatro coordenadas", span),
+                        ]);
+                    };
+                    let number = |value| {
+                        numeric_f64(value)
+                            .ok_or_else(|| vec![self.error("esperava um número", span)])
+                    };
+                    let x1 = number(x1)?;
+                    let y1 = number(y1)?;
+                    let x2 = number(x2)?;
+                    let y2 = number(y2)?;
+                    Ok(Value::Real(((x2 - x1).powi(2) + (y2 - y1).powi(2)).sqrt()))
+                }
+                "projeção_X" | "projecao_X" | "projeçao_X" | "projecão_X" | "projeção_Y"
+                | "projecao_Y" | "projeçao_Y" | "projecão_Y" => {
+                    let [angle, magnitude] = arguments.as_slice() else {
+                        return Err(vec![self.error("projeção recebe ângulo e valor", span)]);
+                    };
+                    let angle = numeric_f64(angle)
+                        .ok_or_else(|| vec![self.error("esperava um ângulo numérico", span)])?;
+                    let magnitude = numeric_f64(magnitude)
+                        .ok_or_else(|| vec![self.error("esperava um valor numérico", span)])?;
+                    let radians = angle.to_radians();
+                    if name.ends_with('X') {
+                        Ok(Value::Real(radians.sin() * magnitude))
+                    } else {
+                        Ok(Value::Real(-radians.cos() * magnitude))
+                    }
+                }
+                "iniciar" => self.call_jerimum_game(arguments, span),
+                _ => {
+                    Err(vec![self.error(
+                        format!("membro Jerimum desconhecido: '{name}'"),
+                        span,
+                    )])
+                }
+            };
+        }
+        if owner == "JerimumModule:Arquivo" && name == "leia" {
+            let [Value::Text(path)] = arguments.as_slice() else {
+                return Err(vec![self.error("Arquivo.leia recebe um caminho", span)]);
+            };
+            return self
+                .jerimum_request_value(JerimumRequest::ReadFileLines { path: path.clone() }, span);
+        }
+        if matches!(owner, "JerimumModule:Imagem" | "JerimumType:Imagem") && name == "fatie" {
+            let [
+                Value::Text(path),
+                Value::Integer(width),
+                Value::Integer(height),
+            ] = arguments.as_slice()
+            else {
+                return Err(vec![
+                    self.error("Imagem.fatie recebe caminho, largura e altura", span),
+                ]);
+            };
+            let image = self.load_jerimum_image(path, span)?;
+            return self.slice_jerimum_image(&image, *width, *height, span);
+        }
+        if owner == "JerimumModule:Desenho" && name == "incluir" {
+            let [Value::Integer(z), callback] = arguments.as_slice() else {
+                return Err(vec![
+                    self.error("Desenho.incluir recebe camada e função", span),
+                ]);
+            };
+            self.jerimum_drawings
+                .entry(*z)
+                .or_default()
+                .push(JerimumDrawItem::Callback(callback.clone()));
+            return Ok(Value::Nothing);
+        }
+        if owner == "JerimumModule:Desenho" && name == "desenhe" {
+            let [context] = arguments.as_slice() else {
+                return Err(vec![
+                    self.error("Desenho.desenhe recebe um contexto gráfico", span),
+                ]);
+            };
+            return self
+                .flush_jerimum_drawings_with_context(context.clone(), span)
+                .map(|()| Value::Nothing);
+        }
+        Err(vec![self.error(
+            format!("método Jerimum desconhecido: '{name}'"),
+            span,
+        )])
+    }
+
+    fn call_jerimum_object(
+        &mut self,
+        object: Rc<RefCell<JerimumObject>>,
+        name: &str,
+        arguments: Vec<Value>,
+        span: SourceSpan,
+    ) -> RuntimeResult<Value> {
+        let kind = object.borrow().clone();
+        match kind {
+            JerimumObject::Image {
+                handle,
+                width,
+                height,
+                ..
+            } => match name {
+                "fatie" => {
+                    let [Value::Integer(frame_width), Value::Integer(frame_height)] =
+                        arguments.as_slice()
+                    else {
+                        return Err(vec![
+                            self.error("Imagem.fatie recebe largura e altura", span),
+                        ]);
+                    };
+                    self.slice_jerimum_image(
+                        &Value::JerimumObject(object),
+                        *frame_width,
+                        *frame_height,
+                        span,
+                    )
+                }
+                "desenhe" | "desenhe_centralizado" => {
+                    if !(3..=6).contains(&arguments.len()) {
+                        return Err(vec![
+                            self.error("Imagem.desenhe recebe de três a seis argumentos", span),
+                        ]);
+                    }
+                    let mut x = numeric_f64(&arguments[0])
+                        .ok_or_else(|| vec![self.error("esperava uma coordenada X", span)])?;
+                    let mut y = numeric_f64(&arguments[1])
+                        .ok_or_else(|| vec![self.error("esperava uma coordenada Y", span)])?;
+                    let z = self.expect_integer(&arguments[2], span)?;
+                    let angle = arguments.get(3).and_then(numeric_f64).unwrap_or(0.0);
+                    let scale_x = arguments.get(4).and_then(numeric_f64).unwrap_or(1.0);
+                    let scale_y = arguments.get(5).and_then(numeric_f64).unwrap_or(1.0);
+                    if name == "desenhe_centralizado" {
+                        x -= width as f64 / 2.0;
+                        y -= height as f64 / 2.0;
+                    }
+                    self.enqueue_jerimum_drawing(
+                        z,
+                        None,
+                        "jerimum_desenhar_imagem",
+                        vec![
+                            JerimumValue::Real(x),
+                            JerimumValue::Real(y),
+                            JerimumValue::Integer(handle),
+                            JerimumValue::Real(angle),
+                            JerimumValue::Real(scale_x),
+                            JerimumValue::Real(scale_y),
+                        ],
+                    );
+                    Ok(Value::Nothing)
+                }
+                _ => Err(vec![
+                    self.error(format!("Imagem não possui método '{name}'"), span),
+                ]),
+            },
+            JerimumObject::Animation {
+                speed,
+                images,
+                started,
+            } if name == "imagem" => {
+                if !arguments.is_empty() || images.is_empty() {
+                    return Err(vec![
+                        self.error("Animacao.imagem não recebe argumentos", span),
+                    ]);
+                }
+                let frame = (started.elapsed().as_millis() / speed as u128) % images.len() as u128;
+                self.copy_value(&images[frame as usize], span)
+            }
+            JerimumObject::Font { size } if matches!(name, "desenhe" | "desenhe_centralizado") => {
+                if !(4..=5).contains(&arguments.len()) {
+                    return Err(vec![self.error(
+                        "Fonte.desenhe recebe texto, posição, camada e cor opcional",
+                        span,
+                    )]);
+                }
+                let [Value::Text(text), x, y, z] = &arguments[..4] else {
+                    return Err(vec![
+                        self.error("argumentos inválidos para Fonte.desenhe", span),
+                    ]);
+                };
+                let x = numeric_f64(x)
+                    .ok_or_else(|| vec![self.error("esperava uma coordenada X", span)])?;
+                let y = numeric_f64(y)
+                    .ok_or_else(|| vec![self.error("esperava uma coordenada Y", span)])?;
+                let z = self.expect_integer(z, span)?;
+                let color = arguments
+                    .get(4)
+                    .cloned()
+                    .unwrap_or_else(white_jerimum_color);
+                if !matches!(&color, Value::JerimumObject(value) if matches!(&*value.borrow(), JerimumObject::Color { .. }))
+                {
+                    return Err(vec![self.error("a cor precisa ser um valor Cor", span)]);
+                }
+                self.enqueue_jerimum_drawing(
+                    z,
+                    Some(color),
+                    "jerimum_desenhar_texto",
+                    vec![
+                        JerimumValue::String(text.clone()),
+                        JerimumValue::Real(x),
+                        JerimumValue::Real(y),
+                        JerimumValue::Integer(size as i64),
+                        JerimumValue::Logical(name == "desenhe_centralizado"),
+                    ],
+                );
+                Ok(Value::Nothing)
+            }
+            JerimumObject::Sound { handle, music, .. } => {
+                self.call_jerimum_audio_object(handle, music, name, arguments, span)
+            }
+            JerimumObject::AwtColor {
+                red,
+                green,
+                blue,
+                alpha,
+            } => self.call_jerimum_color_member(red, green, blue, alpha, name, arguments, span),
+            JerimumObject::ImageBuffer {
+                handle,
+                width,
+                height,
+            } => {
+                self.call_jerimum_image_buffer_member(handle, width, height, name, arguments, span)
+            }
+            JerimumObject::Frame {
+                title,
+                width,
+                height,
+                ..
+            } => self.call_jerimum_frame_member(&title, width, height, name, arguments, span),
+            JerimumObject::Canvas { width, height, .. } => {
+                self.call_jerimum_canvas_member(width, height, name, arguments, span)
+            }
+            JerimumObject::GraphicsContext { .. } => {
+                self.call_jerimum_graphics_context_member(object, name, arguments, span)
+            }
+            JerimumObject::Color { .. } | JerimumObject::Screen { .. } => {
+                Err(vec![self.error(
+                    format!("objeto Jerimum não possui método '{name}'"),
+                    span,
+                )])
+            }
+            JerimumObject::Font { .. } => Err(vec![
+                self.error(format!("Fonte não possui método '{name}'"), span),
+            ]),
+            JerimumObject::Animation { .. } => {
+                Err(vec![self.error(
+                    format!("Animacao não possui método '{name}'"),
+                    span,
+                )])
+            }
+        }
+    }
+
+    fn jerimum_member_value(
+        &mut self,
+        owner: &str,
+        name: &str,
+        span: SourceSpan,
+    ) -> RuntimeResult<Value> {
+        if owner == "JerimumType:Cor"
+            && let Some((red, green, blue)) = jerimum::color_constant(name)
+        {
+            return Ok(Value::JerimumObject(Rc::new(RefCell::new(
+                JerimumObject::Color { red, green, blue },
+            ))));
+        }
+        if owner == "JerimumType:Imagem" && name == "fatie" {
+            return Ok(Value::Function(Rc::new(Callable::Member {
+                receiver: Value::TypeName("JerimumModule:Imagem".to_owned()),
+                name: name.to_owned(),
+            })));
+        }
+        if owner.starts_with("JerimumType:") {
+            return Err(vec![self.error(
+                format!("tipo Jerimum não possui membro estático '{name}'"),
+                span,
+            )]);
+        }
+        if jerimum::property_type(owner, name).is_some() {
+            return match owner {
+                "JerimumModule:Jogo" => Ok(match name {
+                    "titulo" => Value::Text(self.jerimum_game_title.clone()),
+                    "largura" => Value::Integer(self.jerimum_game_width),
+                    "altura" => Value::Integer(self.jerimum_game_height),
+                    "fps" => Value::Integer(self.jerimum_game_fps),
+                    _ => Value::Nothing,
+                }),
+                "JerimumModule:Relogio" => Ok(match name {
+                    "agora" => Value::Real(
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as f64,
+                    ),
+                    "milisegundos" => {
+                        Value::Integer(self.jerimum_started.elapsed().as_millis() as i32)
+                    }
+                    _ => Value::Nothing,
+                }),
+                "JerimumModule:Teclado" => {
+                    let key = jerimum_key_code(name)
+                        .ok_or_else(|| vec![self.error("tecla Jerimum desconhecida", span)])?;
+                    self.jerimum_request_value(JerimumRequest::KeyPressed { key }, span)
+                }
+                "JerimumModule:Mouse" if matches!(name, "BOTAO_ESQUERDO" | "BOTAO_DIREITO") => self
+                    .jerimum_request_value(
+                        JerimumRequest::MouseButtonPressed {
+                            button: if name == "BOTAO_ESQUERDO" { 1 } else { 3 },
+                        },
+                        span,
+                    ),
+                "JerimumModule:Mouse" if matches!(name, "x" | "y") => {
+                    let Value::List(position) =
+                        self.jerimum_request_value(JerimumRequest::MousePosition, span)?
+                    else {
+                        return Err(vec![self.error("posição do mouse inválida", span)]);
+                    };
+                    let index = usize::from(name == "y");
+                    position
+                        .get(index)
+                        .cloned()
+                        .ok_or_else(|| vec![self.error("posição do mouse inválida", span)])
+                }
+                _ => Err(vec![self.error(
+                    format!("membro Jerimum '{name}' não está disponível"),
+                    span,
+                )]),
+            };
+        }
+        if let Some(value_type) = jerimum::object_property_type(owner, name) {
+            if value_type == ValueType::Nothing {
+                return self.call_jerimum_member_no_receiver(owner, name, span);
+            }
+        }
+        if jerimum::member_type(owner, name).is_some() {
+            return Ok(Value::Function(Rc::new(Callable::Member {
+                receiver: Value::TypeName(owner.to_owned()),
+                name: name.to_owned(),
+            })));
+        }
+        Err(vec![self.error(
+            format!("membro Jerimum desconhecido: '{name}'"),
+            span,
+        )])
+    }
+
+    fn call_jerimum_member_no_receiver(
+        &mut self,
+        owner: &str,
+        name: &str,
+        span: SourceSpan,
+    ) -> RuntimeResult<Value> {
+        Err(vec![self.error(
+            format!("membro Jerimum '{owner}.{name}' requer um objeto"),
+            span,
+        )])
+    }
+
+    fn jerimum_object_member_value(
+        &mut self,
+        object: Rc<RefCell<JerimumObject>>,
+        name: &str,
+        span: SourceSpan,
+    ) -> RuntimeResult<Value> {
+        let kind = object.borrow().clone();
+        match kind {
+            JerimumObject::Color { red, green, blue } => match name {
+                "vermelho" => Ok(Value::Integer(red)),
+                "verde" => Ok(Value::Integer(green)),
+                "azul" => Ok(Value::Integer(blue)),
+                "color" => Ok(Value::JerimumObject(Rc::new(RefCell::new(
+                    JerimumObject::AwtColor {
+                        red,
+                        green,
+                        blue,
+                        alpha: 255,
+                    },
+                )))),
+                _ => Err(vec![
+                    self.error(format!("Cor não possui membro '{name}'"), span),
+                ]),
+            },
+            JerimumObject::Image {
+                handle,
+                path,
+                width,
+                height,
+            } => match name {
+                "largura" => Ok(Value::Integer(width as i32)),
+                "altura" => Ok(Value::Integer(height as i32)),
+                "caminho" => Ok(Value::Text(path)),
+                "buffer" => Ok(Value::JerimumObject(Rc::new(RefCell::new(
+                    JerimumObject::ImageBuffer {
+                        handle,
+                        width,
+                        height,
+                    },
+                )))),
+                _ => Ok(Value::Function(Rc::new(Callable::Member {
+                    receiver: Value::JerimumObject(object),
+                    name: name.to_owned(),
+                }))),
+            },
+            JerimumObject::Animation { speed, images, .. } => match name {
+                "velocidade" => Ok(Value::Integer(speed)),
+                "imagens" => self.copy_value(&Value::List(images), span),
+                "imagem" => self.call_jerimum_object(object, name, Vec::new(), span),
+                _ => {
+                    Err(vec![self.error(
+                        format!("Animacao não possui membro '{name}'"),
+                        span,
+                    )])
+                }
+            },
+            JerimumObject::Font { size } if name == "tamanho" => Ok(Value::Integer(size)),
+            JerimumObject::Sound { path, .. } if name == "arquivo" => Ok(Value::Text(path)),
+            JerimumObject::Screen {
+                id,
+                title,
+                width,
+                height,
+            } => match name {
+                "frame" => Ok(Value::JerimumObject(Rc::new(RefCell::new(
+                    JerimumObject::Frame {
+                        screen_id: id,
+                        title,
+                        width,
+                        height,
+                    },
+                )))),
+                "canvas" => Ok(Value::JerimumObject(Rc::new(RefCell::new(
+                    JerimumObject::Canvas {
+                        screen_id: id,
+                        width,
+                        height,
+                    },
+                )))),
+                _ => Err(vec![
+                    self.error(format!("Tela não possui membro '{name}'"), span),
+                ]),
+            },
+            JerimumObject::Sound { music, .. }
+                if jerimum::object_property_type(
+                    if music {
+                        "JerimumType:Musica"
+                    } else {
+                        "JerimumType:Som"
+                    },
+                    name,
+                )
+                .is_some() =>
+            {
+                self.call_jerimum_object(object, name, Vec::new(), span)
+            }
+            _ => {
+                let owner = jerimum_object_owner(&object.borrow());
+                if jerimum::member_type(owner, name).is_some() {
+                    Ok(Value::Function(Rc::new(Callable::Member {
+                        receiver: Value::JerimumObject(object),
+                        name: name.to_owned(),
+                    })))
+                } else {
+                    Err(vec![self.error(
+                        format!("membro Jerimum desconhecido: '{name}'"),
+                        span,
+                    )])
+                }
+            }
+        }
+    }
+
+    fn call_jerimum_color_member(
+        &self,
+        red: i32,
+        green: i32,
+        blue: i32,
+        alpha: i32,
+        name: &str,
+        arguments: Vec<Value>,
+        span: SourceSpan,
+    ) -> RuntimeResult<Value> {
+        if !arguments.is_empty() {
+            return Err(vec![
+                self.error("Color não recebe argumentos neste método", span),
+            ]);
+        }
+        match name {
+            "getRed" => Ok(Value::Integer(red)),
+            "getGreen" => Ok(Value::Integer(green)),
+            "getBlue" => Ok(Value::Integer(blue)),
+            "getAlpha" => Ok(Value::Integer(alpha)),
+            "getRGB" => Ok(Value::Integer(i32::from_be_bytes([
+                alpha as u8,
+                red as u8,
+                green as u8,
+                blue as u8,
+            ]))),
+            _ => Err(vec![
+                self.error(format!("Color não possui método '{name}'"), span),
+            ]),
+        }
+    }
+
+    fn call_jerimum_frame_member(
+        &self,
+        title: &str,
+        width: i32,
+        height: i32,
+        name: &str,
+        arguments: Vec<Value>,
+        span: SourceSpan,
+    ) -> RuntimeResult<Value> {
+        if !arguments.is_empty() {
+            return Err(vec![
+                self.error("JFrame não recebe argumentos neste método", span),
+            ]);
+        }
+        match name {
+            "getTitle" => Ok(Value::Text(title.to_owned())),
+            "getWidth" => Ok(Value::Integer(width)),
+            "getHeight" => Ok(Value::Integer(height)),
+            _ => Err(vec![
+                self.error(format!("JFrame não possui método '{name}'"), span),
+            ]),
+        }
+    }
+
+    fn call_jerimum_canvas_member(
+        &self,
+        width: i32,
+        height: i32,
+        name: &str,
+        arguments: Vec<Value>,
+        span: SourceSpan,
+    ) -> RuntimeResult<Value> {
+        if !arguments.is_empty() {
+            return Err(vec![
+                self.error("Canvas não recebe argumentos neste método", span),
+            ]);
+        }
+        match name {
+            "getWidth" => Ok(Value::Integer(width)),
+            "getHeight" => Ok(Value::Integer(height)),
+            _ => Err(vec![
+                self.error(format!("Canvas não possui método '{name}'"), span),
+            ]),
+        }
+    }
+
+    fn call_jerimum_image_buffer_member(
+        &mut self,
+        handle: i64,
+        width: i64,
+        height: i64,
+        name: &str,
+        arguments: Vec<Value>,
+        span: SourceSpan,
+    ) -> RuntimeResult<Value> {
+        match (name, arguments.as_slice()) {
+            ("getWidth", []) => i32::try_from(width)
+                .map(Value::Integer)
+                .map_err(|_| vec![self.error("largura da imagem excede 32 bits", span)]),
+            ("getHeight", []) => i32::try_from(height)
+                .map(Value::Integer)
+                .map_err(|_| vec![self.error("altura da imagem excede 32 bits", span)]),
+            ("getRGB", [x, y]) => {
+                let x = self.expect_integer(x, span)?;
+                let y = self.expect_integer(y, span)?;
+                let color = self.jerimum_graphics_integer(
+                    "obter_cor_pixel",
+                    vec![
+                        JerimumValue::Integer(handle),
+                        JerimumValue::Integer(i64::from(x)),
+                        JerimumValue::Integer(i64::from(y)),
+                    ],
+                    span,
+                )?;
+                i32::try_from(color)
+                    .map(Value::Integer)
+                    .map_err(|_| vec![self.error("cor do pixel excede 32 bits", span)])
+            }
+            ("getSubimage", [x, y, frame_width, frame_height]) => {
+                let x = self.expect_integer(x, span)?;
+                let y = self.expect_integer(y, span)?;
+                let frame_width = self.expect_integer(frame_width, span)?;
+                let frame_height = self.expect_integer(frame_height, span)?;
+                let x2 = i64::from(x) + i64::from(frame_width);
+                let y2 = i64::from(y) + i64::from(frame_height);
+                if x < 0
+                    || y < 0
+                    || frame_width <= 0
+                    || frame_height <= 0
+                    || x2 > width
+                    || y2 > height
+                {
+                    return Err(vec![self.error("recorte fora dos limites da imagem", span)]);
+                }
+                let subimage = self.jerimum_graphics_integer(
+                    "transformar_porcao_imagem",
+                    vec![
+                        JerimumValue::Integer(handle),
+                        JerimumValue::Integer(i64::from(x)),
+                        JerimumValue::Integer(i64::from(y)),
+                        JerimumValue::Integer(i64::from(frame_width)),
+                        JerimumValue::Integer(i64::from(frame_height)),
+                        JerimumValue::Logical(false),
+                        JerimumValue::Logical(false),
+                        JerimumValue::Integer(0),
+                        JerimumValue::Integer(0),
+                    ],
+                    span,
+                )?;
+                Ok(Value::JerimumObject(Rc::new(RefCell::new(
+                    JerimumObject::ImageBuffer {
+                        handle: subimage,
+                        width: i64::from(frame_width),
+                        height: i64::from(frame_height),
+                    },
+                ))))
+            }
+            _ => Err(vec![self.error(
+                format!("BufferedImage não possui método '{name}' com esses argumentos"),
+                span,
+            )]),
+        }
+    }
+
+    fn call_jerimum_graphics_context_member(
+        &mut self,
+        context: Rc<RefCell<JerimumObject>>,
+        name: &str,
+        arguments: Vec<Value>,
+        span: SourceSpan,
+    ) -> RuntimeResult<Value> {
+        let (red, green, blue, active) = match &*context.borrow() {
+            JerimumObject::GraphicsContext {
+                red,
+                green,
+                blue,
+                active,
+            } => (*red, *green, *blue, *active),
+            _ => return Err(vec![self.error("contexto gráfico inválido", span)]),
+        };
+        if !active {
+            return Err(vec![
+                self.error("o contexto gráfico já foi encerrado", span),
+            ]);
+        }
+        if name == "setColor" {
+            let [Value::JerimumObject(color)] = arguments.as_slice() else {
+                return Err(vec![self.error("setColor recebe uma cor", span)]);
+            };
+            let (red, green, blue) = match &*color.borrow() {
+                JerimumObject::AwtColor {
+                    red, green, blue, ..
+                }
+                | JerimumObject::Color { red, green, blue } => (*red, *green, *blue),
+                _ => return Err(vec![self.error("setColor recebe uma cor", span)]),
+            };
+            let mut context = context.borrow_mut();
+            let JerimumObject::GraphicsContext {
+                red: context_red,
+                green: context_green,
+                blue: context_blue,
+                ..
+            } = &mut *context
+            else {
+                return Err(vec![self.error("contexto gráfico inválido", span)]);
+            };
+            *context_red = red;
+            *context_green = green;
+            *context_blue = blue;
+            return Ok(Value::Nothing);
+        }
+        if name == "getColor" {
+            if !arguments.is_empty() {
+                return Err(vec![self.error("getColor não recebe argumentos", span)]);
+            }
+            return Ok(Value::JerimumObject(Rc::new(RefCell::new(
+                JerimumObject::AwtColor {
+                    red,
+                    green,
+                    blue,
+                    alpha: 255,
+                },
+            ))));
+        }
+
+        let color = i64::from(u32::from_be_bytes([255, red as u8, green as u8, blue as u8]) as i32);
+        self.jerimum_graphics("definir_cor", vec![JerimumValue::Integer(color)], span)?;
+        match name {
+            "drawLine" => {
+                let [x1, y1, x2, y2] = arguments.as_slice() else {
+                    return Err(vec![self.error("drawLine recebe quatro coordenadas", span)]);
+                };
+                self.jerimum_graphics(
+                    "desenhar_linha",
+                    vec![x1, y1, x2, y2]
+                        .into_iter()
+                        .map(|value| {
+                            numeric_f64(value)
+                                .map(JerimumValue::Real)
+                                .ok_or_else(|| vec![self.error("coordenada inválida", span)])
+                        })
+                        .collect::<RuntimeResult<Vec<_>>>()?,
+                    span,
+                )?;
+                Ok(Value::Nothing)
+            }
+            "drawRect" | "fillRect" => {
+                let [x, y, width, height] = arguments.as_slice() else {
+                    return Err(vec![self.error("retângulo recebe quatro medidas", span)]);
+                };
+                let coordinates = [x, y, width, height]
+                    .into_iter()
+                    .map(|value| {
+                        numeric_f64(value)
+                            .map(JerimumValue::Real)
+                            .ok_or_else(|| vec![self.error("medida inválida", span)])
+                    })
+                    .collect::<RuntimeResult<Vec<_>>>()?;
+                self.jerimum_graphics(
+                    "desenhar_retangulo",
+                    [
+                        coordinates,
+                        vec![
+                            JerimumValue::Logical(false),
+                            JerimumValue::Logical(name == "fillRect"),
+                        ],
+                    ]
+                    .concat(),
+                    span,
+                )?;
+                Ok(Value::Nothing)
+            }
+            "drawOval" | "fillOval" => {
+                let [x, y, width, height] = arguments.as_slice() else {
+                    return Err(vec![self.error("elipse recebe quatro medidas", span)]);
+                };
+                let coordinates = [x, y, width, height]
+                    .into_iter()
+                    .map(|value| {
+                        numeric_f64(value)
+                            .map(JerimumValue::Real)
+                            .ok_or_else(|| vec![self.error("medida inválida", span)])
+                    })
+                    .collect::<RuntimeResult<Vec<_>>>()?;
+                self.jerimum_graphics(
+                    "desenhar_elipse",
+                    [coordinates, vec![JerimumValue::Logical(name == "fillOval")]].concat(),
+                    span,
+                )?;
+                Ok(Value::Nothing)
+            }
+            "drawString" => {
+                let [Value::Text(text), x, y] = arguments.as_slice() else {
+                    return Err(vec![self.error("drawString recebe texto e posição", span)]);
+                };
+                let x = numeric_f64(x)
+                    .ok_or_else(|| vec![self.error("coordenada X inválida", span)])?;
+                let y = numeric_f64(y)
+                    .ok_or_else(|| vec![self.error("coordenada Y inválida", span)])?;
+                self.jerimum_graphics(
+                    "desenhar_texto",
+                    vec![
+                        JerimumValue::Real(x),
+                        JerimumValue::Real(y),
+                        JerimumValue::String(text.clone()),
+                    ],
+                    span,
+                )?;
+                Ok(Value::Nothing)
+            }
+            "drawImage" => {
+                if !(3..=6).contains(&arguments.len()) {
+                    return Err(vec![self.error("drawImage recebeu aridade inválida", span)]);
+                }
+                let Value::JerimumObject(image) = &arguments[0] else {
+                    return Err(vec![self.error("drawImage recebe BufferedImage", span)]);
+                };
+                let (handle, image_width, image_height) = match &*image.borrow() {
+                    JerimumObject::ImageBuffer {
+                        handle,
+                        width,
+                        height,
+                    }
+                    | JerimumObject::Image {
+                        handle,
+                        width,
+                        height,
+                        ..
+                    } => (*handle, *width, *height),
+                    _ => return Err(vec![self.error("drawImage recebe BufferedImage", span)]),
+                };
+                let x = self.expect_integer(&arguments[1], span)?;
+                let y = self.expect_integer(&arguments[2], span)?;
+                if arguments.len() == 3 || arguments.len() == 4 {
+                    self.jerimum_graphics(
+                        "desenhar_imagem",
+                        vec![
+                            JerimumValue::Real(f64::from(x)),
+                            JerimumValue::Real(f64::from(y)),
+                            JerimumValue::Integer(handle),
+                        ],
+                        span,
+                    )?;
+                } else {
+                    let width = self.expect_integer(&arguments[3], span)?;
+                    let height = self.expect_integer(&arguments[4], span)?;
+                    let scale_x = f64::from(width) / image_width as f64;
+                    let scale_y = f64::from(height) / image_height as f64;
+                    self.jerimum_graphics(
+                        "jerimum_desenhar_imagem",
+                        vec![
+                            JerimumValue::Real(f64::from(x)),
+                            JerimumValue::Real(f64::from(y)),
+                            JerimumValue::Integer(handle),
+                            JerimumValue::Real(0.0),
+                            JerimumValue::Real(scale_x),
+                            JerimumValue::Real(scale_y),
+                        ],
+                        span,
+                    )?;
+                }
+                Ok(Value::Logical(true))
+            }
+            _ => {
+                Err(vec![self.error(
+                    format!("Graphics2D não possui método '{name}'"),
+                    span,
+                )])
+            }
+        }
+    }
+
+    fn call_jerimum_audio_object(
+        &mut self,
+        handle: i64,
+        music: bool,
+        name: &str,
+        arguments: Vec<Value>,
+        span: SourceSpan,
+    ) -> RuntimeResult<Value> {
+        let host_call = match (music, name, arguments.as_slice()) {
+            (false, "toque", []) => (
+                "reproduzir_som",
+                vec![JerimumValue::Integer(handle), JerimumValue::Logical(false)],
+            ),
+            (false, "pare", []) => ("pausar_som", vec![JerimumValue::Integer(handle)]),
+            (true, "pare", []) => ("interromper_som", vec![JerimumValue::Integer(handle)]),
+            (true, "toque", []) => (
+                "reproduzir_som",
+                vec![JerimumValue::Integer(handle), JerimumValue::Logical(true)],
+            ),
+            (true, "toque", [Value::Logical(looped)]) => (
+                "reproduzir_som",
+                vec![
+                    JerimumValue::Integer(handle),
+                    JerimumValue::Logical(*looped),
+                ],
+            ),
+            (true, "pause", []) => ("pausar_som", vec![JerimumValue::Integer(handle)]),
+            (true, "continue", []) => ("continuar_som", vec![JerimumValue::Integer(handle)]),
+            (true, "feche", []) => ("liberar_som", vec![JerimumValue::Integer(handle)]),
+            (false, "tocando", []) | (true, "tocando", []) => {
+                ("som_tocando", vec![JerimumValue::Integer(handle)])
+            }
+            (true, "pausado", []) => ("musica_pausada", vec![JerimumValue::Integer(handle)]),
+            _ => {
+                return Err(vec![self.error(
+                    format!(
+                        "chamada inválida para {}.{name}",
+                        if music { "Musica" } else { "Som" }
+                    ),
+                    span,
+                )]);
+            }
+        };
+        let result = self.jerimum_request_value(
+            JerimumRequest::Audio {
+                function: host_call.0.to_owned(),
+                arguments: host_call.1,
+            },
+            span,
+        )?;
+        if matches!(host_call.0, "som_tocando" | "musica_pausada") {
+            Ok(result)
+        } else {
+            Ok(Value::Nothing)
+        }
+    }
+
+    fn call_jerimum_game(
+        &mut self,
+        arguments: Vec<Value>,
+        span: SourceSpan,
+    ) -> RuntimeResult<Value> {
+        if arguments.len() > 6 {
+            return Err(vec![
+                self.error("Jogo.iniciar recebe até seis argumentos", span),
+            ]);
+        }
+        let title = match arguments.first() {
+            Some(Value::Text(value)) => value.clone(),
+            Some(_) => return Err(vec![self.error("o título do jogo deve ser Texto", span)]),
+            None => "Potigol com Jerimum".to_owned(),
+        };
+        let width = match arguments.get(1) {
+            Some(value) => self.expect_integer(value, span)?,
+            None => 640,
+        };
+        let height = match arguments.get(2) {
+            Some(value) => self.expect_integer(value, span)?,
+            None => 480,
+        };
+        let fps = match arguments.get(5) {
+            Some(value) => self.expect_integer(value, span)?,
+            None => 60,
+        };
+        if fps <= 0 {
+            return Err(vec![
+                self.error("a taxa de quadros deve ser positiva", span),
+            ]);
+        }
+        let update = arguments.get(3).cloned();
+        let draw = arguments.get(4).cloned();
+        self.jerimum_game_title = title.clone();
+        self.jerimum_game_width = width;
+        self.jerimum_game_height = height;
+        self.jerimum_game_fps = fps;
+        self.jerimum_start_window(&title, width, height, span)?;
+        let frame_duration = std::time::Duration::from_secs_f64(1.0 / fps as f64);
+        loop {
+            if self.io.should_stop() {
+                break;
+            }
+            self.consume_step(span)?;
+            if !self.jerimum_request_logical(JerimumRequest::WindowIsOpen, span)? {
+                break;
+            }
+            if let Some(update) = &update {
+                self.apply(update.clone(), Vec::new(), span)?;
+            }
+            let black = i64::from(u32::from_be_bytes([255, 0, 0, 0]) as i32);
+            self.jerimum_graphics("definir_cor", vec![JerimumValue::Integer(black)], span)?;
+            self.jerimum_graphics("limpar", Vec::new(), span)?;
+            self.flush_jerimum_drawings(span)?;
+            self.jerimum_graphics("renderizar", Vec::new(), span)?;
+            if let Some(draw) = &draw {
+                self.apply(draw.clone(), Vec::new(), span)?;
+            }
+            self.io
+                .wait(frame_duration)
+                .map_err(|message| vec![self.error(message, span)])?;
+        }
+        self.jerimum_drawings.clear();
+        Ok(Value::Nothing)
+    }
+
+    fn jerimum_start_window(
+        &mut self,
+        title: &str,
+        width: i32,
+        height: i32,
+        span: SourceSpan,
+    ) -> RuntimeResult<()> {
+        self.jerimum_graphics(
+            "iniciar_modo_grafico",
+            vec![JerimumValue::Logical(true)],
+            span,
+        )?;
+        self.jerimum_graphics(
+            "definir_dimensoes_janela",
+            vec![
+                JerimumValue::Integer(width as i64),
+                JerimumValue::Integer(height as i64),
+            ],
+            span,
+        )?;
+        self.jerimum_graphics(
+            "definir_titulo_janela",
+            vec![JerimumValue::String(title.to_owned())],
+            span,
+        )?;
+        Ok(())
+    }
+
+    fn load_jerimum_image(&mut self, path: &str, span: SourceSpan) -> RuntimeResult<Value> {
+        self.check_string_size(path.len(), span)?;
+        if let Some(image) = self.jerimum_image_cache.get(path).cloned() {
+            return self.copy_value(&image, span);
+        }
+        let handle = self.jerimum_host_integer(
+            JerimumRequest::Graphics {
+                function: "carregar_imagem".to_owned(),
+                arguments: vec![JerimumValue::String(path.to_owned())],
+            },
+            span,
+        )?;
+        let width = self.jerimum_graphics_integer(
+            "largura_imagem",
+            vec![JerimumValue::Integer(handle)],
+            span,
+        )?;
+        let height = self.jerimum_graphics_integer(
+            "altura_imagem",
+            vec![JerimumValue::Integer(handle)],
+            span,
+        )?;
+        let image = Value::JerimumObject(Rc::new(RefCell::new(JerimumObject::Image {
+            path: path.to_owned(),
+            handle,
+            width,
+            height,
+        })));
+        self.jerimum_image_cache
+            .insert(path.to_owned(), image.clone());
+        Ok(image)
+    }
+
+    fn slice_jerimum_image(
+        &mut self,
+        image: &Value,
+        frame_width: i32,
+        frame_height: i32,
+        span: SourceSpan,
+    ) -> RuntimeResult<Value> {
+        let Value::JerimumObject(object) = image else {
+            return Err(vec![self.error("fatie precisa de uma imagem", span)]);
+        };
+        let JerimumObject::Image {
+            handle,
+            width,
+            height,
+            ..
+        } = &*object.borrow()
+        else {
+            return Err(vec![self.error("fatie precisa de uma imagem", span)]);
+        };
+        if frame_width <= 0 || frame_height <= 0 {
+            return Err(vec![
+                self.error("as dimensões dos quadros devem ser positivas", span),
+            ]);
+        }
+        let columns = (*width / i64::from(frame_width)) as usize;
+        let rows = (*height / i64::from(frame_height)) as usize;
+        let count = rows
+            .checked_mul(columns)
+            .ok_or_else(|| vec![self.error("quantidade de quadros excede o limite", span)])?;
+        self.reserve_elements(count, span)?;
+        let (handle, width, height) = (*handle, *width, *height);
+        let mut images = Vec::with_capacity(count);
+        for y in (0..height).step_by(frame_height as usize) {
+            if y + i64::from(frame_height) > height {
+                break;
+            }
+            for x in (0..width).step_by(frame_width as usize) {
+                if x + i64::from(frame_width) > width {
+                    break;
+                }
+                let frame_handle = self.jerimum_graphics_integer(
+                    "transformar_porcao_imagem",
+                    vec![
+                        JerimumValue::Integer(handle),
+                        JerimumValue::Integer(x),
+                        JerimumValue::Integer(y),
+                        JerimumValue::Integer(i64::from(frame_width)),
+                        JerimumValue::Integer(i64::from(frame_height)),
+                        JerimumValue::Logical(false),
+                        JerimumValue::Logical(false),
+                        JerimumValue::Integer(0),
+                        JerimumValue::Integer(0),
+                    ],
+                    span,
+                )?;
+                images.push(Value::JerimumObject(Rc::new(RefCell::new(
+                    JerimumObject::Image {
+                        path: String::new(),
+                        handle: frame_handle,
+                        width: i64::from(frame_width),
+                        height: i64::from(frame_height),
+                    },
+                ))));
+            }
+        }
+        Ok(Value::List(images))
+    }
+
+    fn enqueue_jerimum_drawing(
+        &mut self,
+        z: i32,
+        color: Option<Value>,
+        function: &str,
+        arguments: Vec<JerimumValue>,
+    ) {
+        self.jerimum_drawings
+            .entry(z)
+            .or_default()
+            .push(JerimumDrawItem::Command(JerimumDrawCommand {
+                color,
+                function: function.to_owned(),
+                arguments,
+            }));
+    }
+
+    fn flush_jerimum_drawings(&mut self, span: SourceSpan) -> RuntimeResult<()> {
+        let context = Value::JerimumObject(Rc::new(RefCell::new(JerimumObject::GraphicsContext {
+            red: 0,
+            green: 0,
+            blue: 0,
+            active: true,
+        })));
+        let result = self.flush_jerimum_drawings_with_context(context.clone(), span);
+        if let Value::JerimumObject(object) = context
+            && let JerimumObject::GraphicsContext { active, .. } = &mut *object.borrow_mut()
+        {
+            *active = false;
+        }
+        result
+    }
+
+    fn flush_jerimum_drawings_with_context(
+        &mut self,
+        context: Value,
+        span: SourceSpan,
+    ) -> RuntimeResult<()> {
+        let drawings = std::mem::take(&mut self.jerimum_drawings);
+        for items in drawings.into_values() {
+            for item in items.iter().rev() {
+                match item {
+                    JerimumDrawItem::Callback(callback) => {
+                        let result = self.apply(callback.clone(), vec![context.clone()], span);
+                        result?;
+                    }
+                    JerimumDrawItem::Command(command) => {
+                        if let Some(color) = &command.color {
+                            let packed = jerimum_color_value(color, span)
+                                .ok_or_else(|| vec![self.error("valor Cor inválido", span)])?;
+                            self.jerimum_graphics(
+                                "definir_cor",
+                                vec![JerimumValue::Integer(packed)],
+                                span,
+                            )?;
+                        }
+                        self.jerimum_graphics(&command.function, command.arguments.clone(), span)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn jerimum_request_value(
+        &mut self,
+        request: JerimumRequest,
+        span: SourceSpan,
+    ) -> RuntimeResult<Value> {
+        let value = self
+            .io
+            .jerimum_request(request)
+            .map_err(|message| vec![self.error(message, span)])?;
+        self.jerimum_value(value, span)
+    }
+
+    fn jerimum_value(&mut self, value: JerimumValue, span: SourceSpan) -> RuntimeResult<Value> {
+        match value {
+            JerimumValue::Null => Ok(Value::Nothing),
+            JerimumValue::Integer(value) => i32::try_from(value)
+                .map(Value::Integer)
+                .map_err(|_| vec![self.error("inteiro Jerimum excede 32 bits", span)]),
+            JerimumValue::Real(value) => Ok(Value::Real(value)),
+            JerimumValue::Logical(value) => Ok(Value::Logical(value)),
+            JerimumValue::String(value) => {
+                self.check_string_size(value.len(), span)?;
+                Ok(Value::Text(value))
+            }
+            JerimumValue::Array(values) => {
+                self.reserve_elements(values.len(), span)?;
+                let values = values
+                    .into_iter()
+                    .map(|value| self.jerimum_value(value, span))
+                    .collect::<RuntimeResult<Vec<_>>>()?;
+                Ok(Value::List(values))
+            }
+        }
+    }
+
+    fn jerimum_host_integer(
+        &mut self,
+        request: JerimumRequest,
+        span: SourceSpan,
+    ) -> RuntimeResult<i64> {
+        match self
+            .io
+            .jerimum_request(request)
+            .map_err(|message| vec![self.error(message, span)])?
+        {
+            JerimumValue::Integer(value) => Ok(value),
+            _ => Err(vec![
+                self.error("resposta inteira inválida do host Jerimum", span),
+            ]),
+        }
+    }
+
+    fn jerimum_request_logical(
+        &mut self,
+        request: JerimumRequest,
+        span: SourceSpan,
+    ) -> RuntimeResult<bool> {
+        match self
+            .io
+            .jerimum_request(request)
+            .map_err(|message| vec![self.error(message, span)])?
+        {
+            JerimumValue::Logical(value) => Ok(value),
+            _ => Err(vec![
+                self.error("resposta lógica inválida do host Jerimum", span),
+            ]),
+        }
+    }
+
+    fn jerimum_graphics(
+        &mut self,
+        function: &str,
+        arguments: Vec<JerimumValue>,
+        span: SourceSpan,
+    ) -> RuntimeResult<Value> {
+        self.jerimum_request_value(
+            JerimumRequest::Graphics {
+                function: function.to_owned(),
+                arguments,
+            },
+            span,
+        )
+    }
+
+    fn jerimum_graphics_integer(
+        &mut self,
+        function: &str,
+        arguments: Vec<JerimumValue>,
+        span: SourceSpan,
+    ) -> RuntimeResult<i64> {
+        self.jerimum_host_integer(
+            JerimumRequest::Graphics {
+                function: function.to_owned(),
+                arguments,
+            },
+            span,
+        )
+    }
+}
+
+fn jerimum_object_owner(object: &JerimumObject) -> &'static str {
+    match object {
+        JerimumObject::Color { .. } => "JerimumType:Cor",
+        JerimumObject::AwtColor { .. } => "JerimumType:AwtColor",
+        JerimumObject::Image { .. } => "JerimumType:Imagem",
+        JerimumObject::ImageBuffer { .. } => "JerimumType:BufferedImage",
+        JerimumObject::Animation { .. } => "JerimumType:Animacao",
+        JerimumObject::Font { .. } => "JerimumType:Fonte",
+        JerimumObject::Sound { music: true, .. } => "JerimumType:Musica",
+        JerimumObject::Sound { music: false, .. } => "JerimumType:Som",
+        JerimumObject::Screen { .. } => "JerimumType:Tela",
+        JerimumObject::Frame { .. } => "JerimumType:Frame",
+        JerimumObject::Canvas { .. } => "JerimumType:Canvas",
+        JerimumObject::GraphicsContext { .. } => "JerimumType:Graphics2D",
+    }
+}
+
+fn white_jerimum_color() -> Value {
+    Value::JerimumObject(Rc::new(RefCell::new(JerimumObject::Color {
+        red: 255,
+        green: 255,
+        blue: 255,
+    })))
+}
+
+fn jerimum_color_value(value: &Value, span: SourceSpan) -> Option<i64> {
+    let Value::JerimumObject(object) = value else {
+        return None;
+    };
+    let color = object.borrow();
+    let (red, green, blue) = match &*color {
+        JerimumObject::Color { red, green, blue }
+        | JerimumObject::AwtColor {
+            red, green, blue, ..
+        } => (red, green, blue),
+        _ => return None,
+    };
+    if !(0..=255).contains(red) || !(0..=255).contains(green) || !(0..=255).contains(blue) {
+        return None;
+    }
+    let _ = span;
+    Some(i64::from(
+        u32::from_be_bytes([255, *red as u8, *green as u8, *blue as u8]) as i32,
+    ))
+}
+
+fn jerimum_key_code(name: &str) -> Option<i64> {
+    match name {
+        "TECLA_ESPACO" | "TECLA_ESPAÇO" => Some(32),
+        "TECLA_ENTER" => Some(10),
+        "TECLA_PARA_CIMA" => Some(38),
+        "TECLA_PARA_BAIXO" => Some(40),
+        "TECLA_PARA_ESQUERDA" => Some(37),
+        "TECLA_PARA_DIREITA" => Some(39),
+        _ => name
+            .strip_prefix("TECLA_")
+            .and_then(|key| (key.len() == 1).then(|| key.as_bytes()[0]))
+            .filter(u8::is_ascii_alphanumeric)
+            .map(i64::from),
+    }
+}
+
 fn value_direct_payload_bytes(value: &Value) -> usize {
     match value {
         Value::BigInteger(value) | Value::Text(value) | Value::TypeName(value) => value.len(),
+        Value::Option(Some(value)) => {
+            std::mem::size_of::<Value>() + value_direct_payload_bytes(value)
+        }
         Value::FieldReference(_, name) => name.len(),
         _ => 0,
     }
@@ -3609,32 +5603,50 @@ fn value_clone_bytes(value: &Value) -> Option<usize> {
                     total.checked_add(value_clone_bytes(value)?)
                 })
             }),
+        Value::Option(Some(value)) => {
+            std::mem::size_of::<Value>().checked_add(value_clone_bytes(value)?)
+        }
         Value::FieldReference(_, name) => Some(name.len()),
         Value::Integer(_)
         | Value::Real(_)
         | Value::Character(_)
         | Value::Logical(_)
         | Value::Nothing
+        | Value::Option(None)
         | Value::MutableList(_)
         | Value::Function(_)
-        | Value::Object(_) => Some(0),
+        | Value::Object(_)
+        | Value::JerimumObject(_) => Some(0),
     }
 }
 
-fn broadcast_pattern_value(pattern: &Pattern, value: Value) -> Value {
-    match &pattern.kind {
-        PatternKind::Tuple(patterns) if !matches!(&value, Value::Tuple(_)) => Value::Tuple(
-            patterns
-                .iter()
-                .map(|pattern| broadcast_pattern_value(pattern, value.clone()))
-                .collect(),
-        ),
-        _ => value,
+fn value_clone_elements(value: &Value) -> Option<usize> {
+    match value {
+        Value::Tuple(values) | Value::List(values) => {
+            values.iter().try_fold(values.len(), |total, value| {
+                total.checked_add(value_clone_elements(value)?)
+            })
+        }
+        Value::Option(Some(value)) => value_clone_elements(value),
+        Value::Integer(_)
+        | Value::Real(_)
+        | Value::BigInteger(_)
+        | Value::Text(_)
+        | Value::Character(_)
+        | Value::Logical(_)
+        | Value::Nothing
+        | Value::Option(None)
+        | Value::MutableList(_)
+        | Value::Function(_)
+        | Value::TypeName(_)
+        | Value::Object(_)
+        | Value::JerimumObject(_)
+        | Value::FieldReference(_, _) => Some(0),
     }
 }
 
-fn normalize_index(index: i64, length: usize) -> Option<usize> {
-    let length = i64::try_from(length).ok()?;
+fn normalize_index(index: i32, length: usize) -> Option<usize> {
+    let length = i32::try_from(length).ok()?;
     let index = if index > 0 {
         index.checked_sub(1)?
     } else if index < 0 {
@@ -3668,14 +5680,14 @@ fn numeric_f64(value: &Value) -> Option<f64> {
         Value::Integer(value) => Some(*value as f64),
         Value::Real(value) => Some(*value),
         Value::BigInteger(value) => value.parse().ok(),
-        Value::Character(value) => Some(u32::from(*value) as f64),
+        Value::Character(value) => Some(f64::from(*value)),
         _ => None,
     }
 }
 
 fn numericize_character(value: Value) -> Value {
     match value {
-        Value::Character(character) => Value::Integer(i64::from(u32::from(character))),
+        Value::Character(character) => Value::Integer(i32::from(character)),
         value => value,
     }
 }
@@ -3712,21 +5724,68 @@ fn runtime_type_name(value: &Value) -> String {
         Value::Logical(_) => "Lógico".to_owned(),
         Value::Nothing => "Nada".to_owned(),
         Value::Tuple(_) => "Tupla".to_owned(),
-        Value::List(_) | Value::MutableList(_) => "Lista".to_owned(),
+        Value::List(_) => "Lista".to_owned(),
+        Value::MutableList(_) => "Vetor".to_owned(),
+        Value::Option(_) => "Option".to_owned(),
         Value::Function(_) => "Função".to_owned(),
         Value::TypeName(name) => name.clone(),
         Value::Object(object) => object.borrow().class_name.clone(),
+        Value::JerimumObject(object) => match &*object.borrow() {
+            JerimumObject::Color { .. } => "Cor".to_owned(),
+            JerimumObject::AwtColor { .. } => "Color".to_owned(),
+            JerimumObject::Image { .. } => "Imagem".to_owned(),
+            JerimumObject::ImageBuffer { .. } => "BufferedImage".to_owned(),
+            JerimumObject::Animation { .. } => "Animacao".to_owned(),
+            JerimumObject::Font { .. } => "Fonte".to_owned(),
+            JerimumObject::Sound { music: true, .. } => "Musica".to_owned(),
+            JerimumObject::Sound { music: false, .. } => "Som".to_owned(),
+            JerimumObject::Screen { .. } => "Tela".to_owned(),
+            JerimumObject::Frame { .. } => "JFrame".to_owned(),
+            JerimumObject::Canvas { .. } => "Canvas".to_owned(),
+            JerimumObject::GraphicsContext { .. } => "Graphics2D".to_owned(),
+        },
         Value::FieldReference(_, _) => "Atributo".to_owned(),
     }
 }
 
-fn parse_integer_prefix(source: &str) -> i64 {
-    let source = source.trim_start();
+fn utf16_units(text: &str) -> Vec<u16> {
+    text.encode_utf16().collect()
+}
+
+fn text_from_utf16(units: &[u16]) -> String {
+    String::from_utf16_lossy(units)
+}
+
+fn unit_subslice_position(haystack: &[u16], needle: &[u16]) -> Option<usize> {
+    if needle.is_empty() {
+        Some(0)
+    } else {
+        haystack
+            .windows(needle.len())
+            .position(|window| window == needle)
+    }
+}
+
+fn join_utf16_units(units: &[u16], separator: &str) -> String {
+    let separator = utf16_units(separator);
+    let mut joined =
+        Vec::with_capacity(units.len() + separator.len() * units.len().saturating_sub(1));
+    for (index, unit) in units.iter().enumerate() {
+        if index != 0 {
+            joined.extend_from_slice(&separator);
+        }
+        joined.push(*unit);
+    }
+    text_from_utf16(&joined)
+}
+
+fn jvm_math_round(value: f64) -> i64 {
+    (value + 0.5).floor() as i64
+}
+
+fn parse_integer_prefix(source: &str) -> i32 {
     let bytes = source.as_bytes();
-    let mut end = if bytes
-        .first()
-        .is_some_and(|byte| matches!(byte, b'+' | b'-'))
-    {
+    let mut end = if bytes.first().is_some_and(|byte| *byte == b'-') {
         1
     } else {
         0
@@ -3742,8 +5801,52 @@ fn parse_integer_prefix(source: &str) -> i64 {
     }
 }
 
+fn parse_integer_input(source: &str) -> Result<i32, ()> {
+    let bytes = source.as_bytes();
+    let mut end = usize::from(
+        bytes
+            .first()
+            .is_some_and(|byte| matches!(byte, b'+' | b'-')),
+    );
+    let digits_start = end;
+    while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+        end += 1;
+    }
+    if end == digits_start {
+        Err(())
+    } else {
+        source[..end].parse().map_err(|_| ())
+    }
+}
+
+fn parse_real_input(source: &str) -> Result<f64, ()> {
+    let bytes = source.as_bytes();
+    let mut end = usize::from(
+        bytes
+            .first()
+            .is_some_and(|byte| matches!(byte, b'+' | b'-')),
+    );
+    let integer_start = end;
+    while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+        end += 1;
+    }
+    let mut has_digits = end > integer_start;
+    if bytes.get(end) == Some(&b'.') {
+        end += 1;
+        let fraction_start = end;
+        while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+            end += 1;
+        }
+        has_digits |= end > fraction_start;
+    }
+    if has_digits {
+        source[..end].parse().map_err(|_| ())
+    } else {
+        Err(())
+    }
+}
+
 fn parse_real_prefix(source: &str) -> f64 {
-    let source = source.trim_start();
     let bytes = source.as_bytes();
     let mut end = 0;
     if bytes
@@ -3768,23 +5871,6 @@ fn parse_real_prefix(source: &str) -> f64 {
     if !has_digits {
         return 0.0;
     }
-    let mantissa_end = end;
-    if matches!(bytes.get(end), Some(b'e' | b'E')) {
-        let exponent_start = end;
-        end += 1;
-        if matches!(bytes.get(end), Some(b'+' | b'-')) {
-            end += 1;
-        }
-        let digits_start = end;
-        while bytes.get(end).is_some_and(u8::is_ascii_digit) {
-            end += 1;
-        }
-        if end == digits_start {
-            end = mantissa_end;
-        } else if end == exponent_start {
-            end = mantissa_end;
-        }
-    }
     source[..end].parse().unwrap_or(0.0)
 }
 
@@ -3806,18 +5892,10 @@ fn compare_values(left: &Value, right: &Value) -> Option<std::cmp::Ordering> {
         (Value::Real(left), Value::Real(right)) => left.partial_cmp(right),
         (Value::Integer(left), Value::Real(right)) => (*left as f64).partial_cmp(right),
         (Value::Real(left), Value::Integer(right)) => left.partial_cmp(&(*right as f64)),
-        (Value::Character(left), Value::Integer(right)) => {
-            Some(i64::from(u32::from(*left)).cmp(right))
-        }
-        (Value::Integer(left), Value::Character(right)) => {
-            Some(left.cmp(&i64::from(u32::from(*right))))
-        }
-        (Value::Character(left), Value::Real(right)) => {
-            (u32::from(*left) as f64).partial_cmp(right)
-        }
-        (Value::Real(left), Value::Character(right)) => {
-            left.partial_cmp(&(u32::from(*right) as f64))
-        }
+        (Value::Character(left), Value::Integer(right)) => Some(i32::from(*left).cmp(right)),
+        (Value::Integer(left), Value::Character(right)) => Some(left.cmp(&i32::from(*right))),
+        (Value::Character(left), Value::Real(right)) => f64::from(*left).partial_cmp(right),
+        (Value::Real(left), Value::Character(right)) => left.partial_cmp(&f64::from(*right)),
         (Value::Logical(left), Value::Logical(right)) => Some(left.cmp(right)),
         (Value::BigInteger(left), Value::BigInteger(right)) => Some(bigint::compare(left, right)),
         (Value::Integer(left), Value::BigInteger(right)) => {
@@ -3827,7 +5905,9 @@ fn compare_values(left: &Value, right: &Value) -> Option<std::cmp::Ordering> {
             Some(bigint::compare(left, &right.to_string()))
         }
         (Value::Character(left), Value::Character(right)) => Some(left.cmp(right)),
-        (Value::Text(left), Value::Text(right)) => Some(left.cmp(right)),
+        (Value::Text(left), Value::Text(right)) => {
+            Some(left.encode_utf16().cmp(right.encode_utf16()))
+        }
         (Value::Tuple(left), Value::Tuple(right)) | (Value::List(left), Value::List(right)) => {
             compare_slices(left, right)
         }
@@ -3850,17 +5930,119 @@ fn compare_slices(left: &[Value], right: &[Value]) -> Option<std::cmp::Ordering>
     Some(left.len().cmp(&right.len()))
 }
 
-fn make_nested_list(sizes: &[usize], initial: Value) -> Vec<Value> {
+fn make_nested_list(sizes: &[usize], initial: &Value) -> Vec<Value> {
     let Some((&size, remainder)) = sizes.split_first() else {
         return Vec::new();
     };
     if remainder.is_empty() {
-        vec![initial; size]
+        (0..size).map(|_| initial.clone()).collect()
     } else {
         (0..size)
-            .map(|_| Value::List(make_nested_list(remainder, initial.clone())))
+            .map(|_| Value::List(make_nested_list(remainder, initial)))
             .collect()
     }
+}
+
+fn nested_list_counts(sizes: &[usize]) -> Option<(usize, usize)> {
+    sizes
+        .iter()
+        .try_fold((1usize, 0usize), |(product, total), size| {
+            let product = product.checked_mul(*size)?;
+            Some((product, total.checked_add(product)?))
+        })
+}
+
+fn split_text_regex(text: &str, pattern: &str) -> Option<Vec<String>> {
+    if text.is_empty() {
+        return Some(vec![String::new()]);
+    }
+    if pattern.is_empty() {
+        return Some(
+            text.chars()
+                .map(|character| character.to_string())
+                .collect(),
+        );
+    }
+    let (atom, repeated) = pattern
+        .strip_suffix('+')
+        .map_or((pattern, false), |atom| (atom, true));
+    let has_regex_syntax = atom.chars().any(|character| {
+        matches!(
+            character,
+            '[' | ']' | '\\' | '.' | '^' | '$' | '|' | '?' | '*' | '+' | '(' | ')'
+        )
+    });
+    if !has_regex_syntax {
+        let mut pieces = text.split(atom).map(str::to_owned).collect::<Vec<_>>();
+        while pieces.last().is_some_and(String::is_empty) {
+            pieces.pop();
+        }
+        return Some(pieces);
+    }
+    // shortcut: split covers literal separators, character classes, \d/\s/\w, dot, and +; add full Pattern syntax if programs use groups, alternation, or lookarounds.
+    let matches = |character: char| {
+        if atom == "." {
+            return Some(!matches!(character, '\n' | '\r'));
+        }
+        if let Some(class) = atom
+            .strip_prefix('[')
+            .and_then(|atom| atom.strip_suffix(']'))
+        {
+            let (negated, class) = class
+                .strip_prefix('^')
+                .map_or((false, class), |class| (true, class));
+            let chars = class.chars().collect::<Vec<_>>();
+            let mut index = 0;
+            let mut found = false;
+            while index < chars.len() {
+                if index + 2 < chars.len() && chars[index + 1] == '-' {
+                    found |= chars[index] <= character && character <= chars[index + 2];
+                    index += 3;
+                } else {
+                    found |= chars[index] == character;
+                    index += 1;
+                }
+            }
+            return Some(if negated { !found } else { found });
+        }
+        match atom {
+            "\\d" => Some(character.is_ascii_digit()),
+            "\\s" => Some(character.is_whitespace()),
+            "\\w" => Some(character.is_ascii_alphanumeric() || character == '_'),
+            _ if atom.starts_with('\\') && atom.chars().count() == 2 => {
+                Some(atom.chars().nth(1) == Some(character))
+            }
+            _ if atom.chars().count() == 1 => Some(atom.chars().next() == Some(character)),
+            _ => None,
+        }
+    };
+    if !matches(atom.chars().next()?)? {
+        matches('\0')?;
+    }
+    let characters = text.chars().collect::<Vec<_>>();
+    let mut pieces = Vec::new();
+    let mut field_start = 0;
+    let mut index = 0;
+    while index < characters.len() {
+        if matches(characters[index])? {
+            let start = index;
+            index += 1;
+            if repeated {
+                while index < characters.len() && matches(characters[index])? {
+                    index += 1;
+                }
+            }
+            pieces.push(characters[field_start..start].iter().collect());
+            field_start = index;
+        } else {
+            index += 1;
+        }
+    }
+    pieces.push(characters[field_start..].iter().collect());
+    while pieces.last().is_some_and(String::is_empty) {
+        pieces.pop();
+    }
+    Some(pieces)
 }
 
 fn format_value(value: &Value, format: &str, maximum_bytes: usize) -> Result<Option<String>, ()> {
@@ -4089,7 +6271,11 @@ fn count_placeholders(expression: &Expr) -> usize {
         ExprKind::Index { receiver, indices } => {
             count_placeholders(receiver) + indices.iter().map(count_placeholders).sum::<usize>()
         }
-        ExprKind::Lambda { body, .. } => count_placeholders(body),
+        ExprKind::Lambda { body, .. } => match body {
+            FunctionBody::Expression(expression) => count_placeholders(expression),
+            FunctionBody::Block(block) => count_block_placeholders(block),
+            FunctionBody::Abstract => 0,
+        },
         ExprKind::Conditional {
             condition,
             then_branch,
@@ -4109,12 +6295,23 @@ fn count_placeholders(expression: &Expr) -> usize {
                     })
                     .sum::<usize>()
         }
-        ExprKind::Comprehension { generators, value } => {
+        ExprKind::Comprehension { generators, body } => {
             generators
                 .iter()
                 .map(count_generator_placeholders)
                 .sum::<usize>()
-                + count_placeholders(value)
+                + count_block_placeholders(body)
+        }
+        ExprKind::Block(block) => count_block_placeholders(block),
+        ExprKind::While { condition, body } => {
+            count_placeholders(condition) + count_block_placeholders(body)
+        }
+        ExprKind::For { generators, body } => {
+            generators
+                .iter()
+                .map(count_generator_placeholders)
+                .sum::<usize>()
+                + count_block_placeholders(body)
         }
         _ => 0,
     }
@@ -4142,9 +6339,11 @@ fn count_block_placeholders(block: &Block) -> usize {
                     .sum::<usize>()
                     + count_block_placeholders(body)
             }
+            StmtKind::Block(block) => count_block_placeholders(block),
             StmtKind::Function(function) => match &function.body {
                 FunctionBody::Expression(expression) => count_placeholders(expression),
                 FunctionBody::Block(block) => count_block_placeholders(block),
+                FunctionBody::Abstract => 0,
             },
             StmtKind::Type(declaration) => declaration
                 .fields
@@ -4152,6 +6351,7 @@ fn count_block_placeholders(block: &Block) -> usize {
                 .filter_map(|field| field.default_value.as_ref())
                 .map(count_placeholders)
                 .sum(),
+            StmtKind::TypeAlias { .. } | StmtKind::Import(_) => 0,
         })
         .sum()
 }

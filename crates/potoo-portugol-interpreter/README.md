@@ -1,6 +1,6 @@
 # potoo-portugol-interpreter
 
-A reusable Portugol interpreter written in Rust. The crate has no third-party dependencies and can be embedded in the Potoo IDE or another Rust application.
+A reusable Portugol interpreter written in Rust. The crate depends on `indexmap` and can be embedded in the Potoo IDE or another Rust application.
 
 ## Use
 
@@ -8,7 +8,7 @@ Add the crate as a dependency:
 
 ```toml
 [dependencies]
-potoo-portugol-interpreter = { git = "https://github.com/diegopn/potoo-portugol-interpreter" }
+potoo-portugol-interpreter = { git = "https://github.com/diegopn/potoo-ide", branch = "develop" }
 ```
 
 Provide input and output through `RuntimeIo`, then call `execute`:
@@ -69,7 +69,7 @@ Call `parse` instead of `execute` when a host needs to inspect the public syntax
 
 ## Dialect reference
 
-This crate uses the Portugol Studio language (Portugol 2.0) as its compatibility reference. The upstream project publishes its [grammar](https://github.com/UNIVALI-LITE/Portugol-Studio/blob/master/core/src/main/antlr/Portugol.g4), [lexer](https://github.com/UNIVALI-LITE/Portugol-Studio/blob/master/core/src/main/antlr/PortugolLexico.g4), and library implementations. There is no single language-wide Portugol standard that covers all tools and dialects.
+This crate targets **Portugol 2.0**. The [Potoo language reference](https://diegopn.github.io/potoo-site/en/manual/portugol/) identifies the upstream sources used for compatibility work. There is no single language-wide Portugol standard that covers all tools and dialects.
 
 The interpreter does not claim full compatibility yet: its parser reports the first lexical or syntax error, and graphics, keyboard, mouse, audio, HTTP, file, and calendar behavior depends on the host implementing the corresponding `RuntimeIo` callbacks. The Potoo IDE now provides GTK host handlers for graphics, keyboard, mouse, and audio, but those interactive features still need manual validation on each supported desktop platform. Runtime diagnostics include a source line and column.
 

@@ -26,7 +26,6 @@ pub enum TokenKind {
     Minus,
     Star,
     Slash,
-    IntegerSlash,
     Percent,
     PlusPlus,
     MinusMinus,
@@ -44,7 +43,6 @@ pub enum TokenKind {
     Greater,
     GreaterEqual,
     ShiftRight,
-    Not,
     Eof,
 }
 
@@ -85,7 +83,7 @@ impl Scanner {
             let character = self.advance();
             match character {
                 ' ' | '\t' | '\r' => {}
-                '\n' => self.push(TokenKind::Newline),
+                '\n' => {}
                 '(' => self.push(TokenKind::LeftParen),
                 ')' => self.push(TokenKind::RightParen),
                 '{' => self.push(TokenKind::LeftBrace),
@@ -150,7 +148,7 @@ impl Scanner {
                     }
                 }
                 '%' => self.push(TokenKind::Percent),
-                '\\' => self.push(TokenKind::IntegerSlash),
+                '\\' => return Err(self.error("caractere inesperado '\\\\'")),
                 '=' => {
                     let kind = if self.matches('=') {
                         TokenKind::EqualEqual
@@ -159,19 +157,11 @@ impl Scanner {
                     };
                     self.push(kind);
                 }
-                '!' => {
-                    let kind = if self.matches('=') {
-                        TokenKind::BangEqual
-                    } else {
-                        TokenKind::Not
-                    };
-                    self.push(kind);
-                }
+                '!' if self.matches('=') => self.push(TokenKind::BangEqual),
+                '!' => return Err(self.error("caractere inesperado '!'")),
                 '<' => {
                     let kind = if self.matches('=') {
                         TokenKind::LessEqual
-                    } else if self.matches('>') {
-                        TokenKind::BangEqual
                     } else if self.matches('<') {
                         TokenKind::ShiftLeft
                     } else {
@@ -236,6 +226,9 @@ impl Scanner {
             if digits.is_empty() {
                 return Err(self.error("literal hexadecimal inválido"));
             }
+            if digits.len() > 6 {
+                return Err(self.error("literal hexadecimal inválido"));
+            }
             let value = i64::from_str_radix(&digits, 16).map_err(|_| {
                 vec![Diagnostic::new(
                     DiagnosticKind::Lexical,
@@ -274,17 +267,9 @@ impl Scanner {
                     self.token_column,
                 )]
             })?;
-            if !number.is_finite() {
-                return Err(vec![Diagnostic::new(
-                    DiagnosticKind::Lexical,
-                    "número real fora do limite",
-                    self.token_line,
-                    self.token_column,
-                )]);
-            }
             self.push(TokenKind::Real(number));
         } else {
-            let number = value.parse::<i64>().map_err(|_| {
+            let number = value.parse::<i32>().map_err(|_| {
                 vec![Diagnostic::new(
                     DiagnosticKind::Lexical,
                     "número inteiro fora do limite",
@@ -292,7 +277,7 @@ impl Scanner {
                     self.token_column,
                 )]
             })?;
-            self.push(TokenKind::Integer(number));
+            self.push(TokenKind::Integer(i64::from(number)));
         }
         Ok(())
     }
@@ -305,12 +290,19 @@ impl Scanner {
                 self.push(TokenKind::String(value));
                 return Ok(());
             }
-            if character == '\n' {
-                return Err(self.error("texto não terminado antes do fim da linha"));
-            }
             if character == '\\' {
                 self.advance();
-                value.push(self.escape_character()?);
+                if self.peek().is_some_and(is_valid_escape_start) {
+                    value.push(self.escape_character()?);
+                } else if let Some(escaped) = self.peek() {
+                    value.push('\\');
+                    value.push(self.advance());
+                    if escaped == '\n' {
+                        continue;
+                    }
+                } else {
+                    value.push('\\');
+                }
             } else {
                 value.push(self.advance());
             }
@@ -324,7 +316,7 @@ impl Scanner {
                 self.advance();
                 self.escape_character()?
             }
-            Some('\n') | None => return Err(self.error("caractere não terminado")),
+            None => return Err(self.error("caractere não terminado")),
             Some(_) => self.advance(),
         };
         if !self.matches('\'') {
@@ -408,15 +400,7 @@ impl Scanner {
                 self.advance();
                 return Ok(());
             }
-            let line = self.line;
-            let column = self.column;
-            if self.advance() == '\n' {
-                self.tokens.push(Token {
-                    kind: TokenKind::Newline,
-                    line,
-                    column,
-                });
-            }
+            self.advance();
         }
         Err(self.error("comentário de bloco não terminado"))
     }
@@ -477,9 +461,16 @@ pub fn scan(source: &str) -> Result<Vec<Token>, Vec<Diagnostic>> {
 }
 
 fn is_identifier_start(character: char) -> bool {
-    character == '_' || character.is_alphabetic()
+    character == '_' || character.is_ascii_alphabetic()
 }
 
 fn is_identifier_continue(character: char) -> bool {
-    character == '_' || character.is_alphanumeric()
+    character == '_' || character.is_ascii_alphanumeric()
+}
+
+fn is_valid_escape_start(character: char) -> bool {
+    matches!(
+        character,
+        'b' | 'f' | 'n' | 'r' | 't' | '\\' | '"' | 'u' | '0'..='7'
+    )
 }

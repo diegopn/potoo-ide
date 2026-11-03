@@ -12,6 +12,7 @@ use potoo_portugol_interpreter::HostValue;
 use crate::execution::HostRequest;
 
 type HostReply = Sender<Result<HostValue, String>>;
+const MAX_IMAGE_MEMORY_BYTES: usize = 128 * 1024 * 1024;
 
 struct ImageAsset {
     frames: Vec<gtk::gdk_pixbuf::Pixbuf>,
@@ -35,6 +36,8 @@ struct GraphicsState {
     window: Option<gtk::Window>,
     area: Option<gtk::DrawingArea>,
     surface: Option<gtk::cairo::ImageSurface>,
+    presented_surface: Option<gtk::cairo::ImageSurface>,
+    fullscreen_restore: Option<(i32, i32)>,
     width: i32,
     height: i32,
     color: i64,
@@ -48,6 +51,7 @@ struct GraphicsState {
     opacity: i64,
     icon: Option<gtk::gdk_pixbuf::Pixbuf>,
     images: HashMap<i64, ImageAsset>,
+    image_bytes: usize,
     next_image_handle: i64,
     pressed_keys: HashMap<u32, i64>,
     pressed_buttons: HashSet<i64>,
@@ -64,6 +68,8 @@ impl Default for GraphicsState {
             window: None,
             area: None,
             surface: None,
+            presented_surface: None,
+            fullscreen_restore: None,
             width: 640,
             height: 480,
             color: -1,
@@ -77,6 +83,7 @@ impl Default for GraphicsState {
             opacity: 255,
             icon: None,
             images: HashMap::new(),
+            image_bytes: 0,
             next_image_handle: 1,
             pressed_keys: HashMap::new(),
             pressed_buttons: HashSet::new(),
@@ -165,11 +172,21 @@ impl GraphicsHost {
                 }
                 HostValue::Null
             }
-            HostRequest::Graphics { .. } | HostRequest::Audio { .. } => {
+            HostRequest::GraphicsWindowIsOpen
+            | HostRequest::Graphics { .. }
+            | HostRequest::Audio { .. } => {
                 return Err("requisição incompatível com o serviço de entrada".to_owned());
             }
         };
         Ok(Some(value))
+    }
+
+    pub(crate) fn is_open(&self) -> bool {
+        self.state
+            .borrow()
+            .window
+            .as_ref()
+            .is_some_and(gtk::prelude::WidgetExt::is_visible)
     }
 
     pub(crate) fn finish(&mut self) {
@@ -194,6 +211,16 @@ impl GraphicsHost {
         function: &str,
         arguments: &[HostValue],
     ) -> Result<HostValue, String> {
+        if requires_initialized_graphics(function)
+            && !self
+                .state
+                .borrow()
+                .window
+                .as_ref()
+                .is_some_and(gtk::prelude::WidgetExt::is_visible)
+        {
+            return Err("inicie o modo gráfico antes de usar esta função".to_owned());
+        }
         match function {
             "iniciar_modo_grafico" => {
                 let _keep_visible = logical_argument(arguments, 0)?;
@@ -251,6 +278,7 @@ impl GraphicsHost {
                 return Ok(HostValue::Null);
             }
             "renderizar" => {
+                present_frame(&mut self.state.borrow_mut())?;
                 self.queue_draw();
                 return Ok(HostValue::Null);
             }
@@ -327,14 +355,38 @@ impl GraphicsHost {
                 return Ok(HostValue::Integer(i64::from(dimension)));
             }
             "entrar_modo_tela_cheia" => {
-                if let Some(window) = &self.state.borrow().window {
+                let window = self.state.borrow().window.clone();
+                if let Some(window) = window {
+                    if self.state.borrow().fullscreen_restore.is_none() {
+                        let dimensions = gtk::prelude::WidgetExt::display(&window)
+                            .monitors()
+                            .item(0)
+                            .and_downcast::<gtk::gdk::Monitor>()
+                            .map(|monitor| {
+                                let geometry = monitor.geometry();
+                                (geometry.width(), geometry.height())
+                            });
+                        {
+                            let mut state = self.state.borrow_mut();
+                            state.fullscreen_restore = Some((state.width, state.height));
+                        }
+                        if let Some((width, height)) = dimensions {
+                            self.resize(width, height)?;
+                        }
+                    }
                     window.fullscreen();
+                    self.queue_draw();
                 }
                 return Ok(HostValue::Null);
             }
             "sair_modo_tela_cheia" => {
-                if let Some(window) = &self.state.borrow().window {
+                let window = self.state.borrow().window.clone();
+                if let Some(window) = window {
                     window.unfullscreen();
+                    let restore = self.state.borrow_mut().fullscreen_restore.take();
+                    if let Some((width, height)) = restore {
+                        self.resize(width, height)?;
+                    }
                 }
                 return Ok(HostValue::Null);
             }
@@ -342,7 +394,7 @@ impl GraphicsHost {
                 let x = real_argument(arguments, 0)?;
                 let y = real_argument(arguments, 1)?;
                 self.with_draw_context(|context, state| {
-                    set_graphics_source(context, state)?;
+                    set_graphics_source(context, state, (x, y, 1.0, 1.0))?;
                     context.rectangle(x, y, 1.0, 1.0);
                     context.fill().map_err(|error| error.to_string())
                 })?;
@@ -354,10 +406,14 @@ impl GraphicsHost {
                 let x2 = real_argument(arguments, 2)?;
                 let y2 = real_argument(arguments, 3)?;
                 self.with_draw_context(|context, state| {
-                    set_graphics_source(context, state)?;
+                    let bounds = bounds_from_points(&[(x1, y1), (x2, y2)]);
+                    set_graphics_source(context, state, bounds)?;
+                    rotate_about(context, state.rotation, (x1 + x2) / 2.0, (y1 + y2) / 2.0)?;
                     context.move_to(x1, y1);
                     context.line_to(x2, y2);
-                    context.stroke().map_err(|error| error.to_string())
+                    let result = context.stroke().map_err(|error| error.to_string());
+                    context.restore().map_err(|error| error.to_string())?;
+                    result
                 })?;
                 return Ok(HostValue::Null);
             }
@@ -369,17 +425,20 @@ impl GraphicsHost {
                 let rounded = logical_argument(arguments, 4)?;
                 let filled = logical_argument(arguments, 5)?;
                 self.with_draw_context(|context, state| {
-                    set_graphics_source(context, state)?;
+                    set_graphics_source(context, state, (x, y, width, height))?;
+                    rotate_about(context, state.rotation, x + width / 2.0, y + height / 2.0)?;
                     if rounded {
                         rounded_rectangle(context, x, y, width, height, 8.0);
                     } else {
                         context.rectangle(x, y, width, height);
                     }
-                    if filled {
+                    let result = if filled {
                         context.fill().map_err(|error| error.to_string())
                     } else {
                         context.stroke().map_err(|error| error.to_string())
-                    }
+                    };
+                    context.restore().map_err(|error| error.to_string())?;
+                    result
                 })?;
                 return Ok(HostValue::Null);
             }
@@ -390,16 +449,9 @@ impl GraphicsHost {
                 let height = real_argument(arguments, 3)?;
                 let filled = logical_argument(arguments, 4)?;
                 self.with_draw_context(|context, state| {
-                    set_graphics_source(context, state)?;
-                    context.save().map_err(|error| error.to_string())?;
-                    context.translate(x + width / 2.0, y + height / 2.0);
-                    context.scale(width / 2.0, height / 2.0);
-                    context.arc(0.0, 0.0, 1.0, 0.0, std::f64::consts::TAU);
-                    let result = if filled {
-                        context.fill().map_err(|error| error.to_string())
-                    } else {
-                        context.stroke().map_err(|error| error.to_string())
-                    };
+                    set_graphics_source(context, state, (x, y, width, height))?;
+                    rotate_about(context, state.rotation, x + width / 2.0, y + height / 2.0)?;
+                    let result = draw_ellipse(context, x, y, width, height, filled);
                     context.restore().map_err(|error| error.to_string())?;
                     result
                 })?;
@@ -412,17 +464,17 @@ impl GraphicsHost {
                     return Err("um polígono precisa de pelo menos dois pontos".to_owned());
                 }
                 self.with_draw_context(|context, state| {
-                    set_graphics_source(context, state)?;
-                    context.move_to(points[0].0, points[0].1);
-                    for (x, y) in points.iter().skip(1) {
-                        context.line_to(*x, *y);
-                    }
-                    if filled {
-                        context.close_path();
-                        context.fill().map_err(|error| error.to_string())
-                    } else {
-                        context.stroke().map_err(|error| error.to_string())
-                    }
+                    let bounds = bounds_from_points(&points);
+                    set_graphics_source(context, state, bounds)?;
+                    rotate_about(
+                        context,
+                        state.rotation,
+                        bounds.0 + bounds.2 / 2.0,
+                        bounds.1 + bounds.3 / 2.0,
+                    )?;
+                    let result = draw_polygon(context, &points, filled);
+                    context.restore().map_err(|error| error.to_string())?;
+                    result
                 })?;
                 return Ok(HostValue::Null);
             }
@@ -433,19 +485,35 @@ impl GraphicsHost {
                 self.draw_text(x, y, &text)?;
                 return Ok(HostValue::Null);
             }
+            "jerimum_desenhar_texto" => {
+                let text = string_argument(arguments, 0)?;
+                let mut x = real_argument(arguments, 1)?;
+                let mut y = real_argument(arguments, 2)?;
+                let size = real_argument(arguments, 3)?;
+                let centered = logical_argument(arguments, 4)?;
+                if !size.is_finite() || !(1.0..=512.0).contains(&size) {
+                    return Err("o tamanho da fonte deve estar entre 1 e 512".to_owned());
+                }
+                {
+                    let mut state = self.state.borrow_mut();
+                    state.text_size = size;
+                    state.bold = true;
+                }
+                if centered {
+                    let context = self.measure_context()?;
+                    x -= text_advance(&context, &text)? / 2.0;
+                    y -= text_height(&context)? / 2.0;
+                }
+                self.draw_text(x, y, &text)?;
+                return Ok(HostValue::Null);
+            }
             "largura_texto" | "altura_texto" => {
                 let text = string_argument(arguments, 0)?;
                 let context = self.measure_context()?;
                 let value = if function == "largura_texto" {
-                    context
-                        .text_extents(&text)
-                        .map_err(|error| error.to_string())?
-                        .width()
+                    text_advance(&context, &text)?
                 } else {
-                    context
-                        .font_extents()
-                        .map_err(|error| error.to_string())?
-                        .height()
+                    text_height(&context)?
                 };
                 return Ok(HostValue::Integer(value.round() as i64));
             }
@@ -499,26 +567,8 @@ impl GraphicsHost {
     }
 
     fn resize(&self, width: i32, height: i32) -> Result<(), String> {
-        check_pixel_count(width, height)?;
-        let mut state = self.state.borrow_mut();
-        let previous = state.surface.clone();
-        let surface = gtk::cairo::ImageSurface::create(gtk::cairo::Format::ARgb32, width, height)
-            .map_err(|error| {
-            format!("não foi possível redimensionar a tela gráfica: {error}")
-        })?;
-        let context = gtk::cairo::Context::new(&surface).map_err(|error| error.to_string())?;
-        context.set_source_rgb(0.0, 0.0, 0.0);
-        context.paint().map_err(|error| error.to_string())?;
-        context.set_operator(gtk::cairo::Operator::Source);
-        if let Some(previous) = previous {
-            context
-                .set_source_surface(&previous, 0.0, 0.0)
-                .map_err(|e| e.to_string())?;
-            context.paint().map_err(|error| error.to_string())?;
-        }
-        state.width = width;
-        state.height = height;
-        state.surface = Some(surface);
+        resize_graphics_state(&mut self.state.borrow_mut(), width, height)?;
+        let state = self.state.borrow();
         if let Some(area) = &state.area {
             area.set_content_width(width);
             area.set_content_height(height);
@@ -537,12 +587,10 @@ impl GraphicsHost {
         let surface = state.surface.as_ref().unwrap();
         let context = gtk::cairo::Context::new(surface).map_err(|error| error.to_string())?;
         context.set_operator(gtk::cairo::Operator::Source);
-        let (red, green, blue, _) = rgba(state.color, 1.0);
-        context.set_source_rgb(red, green, blue);
+        let (red, green, blue, alpha) = rgba(state.color, state.opacity as f64 / 255.0);
+        context.set_source_rgba(red, green, blue, alpha);
         context.paint().map_err(|error| error.to_string())?;
         surface.flush();
-        drop(state);
-        self.queue_draw();
         Ok(())
     }
 
@@ -560,37 +608,33 @@ impl GraphicsHost {
         let state = self.state.borrow();
         let surface = state.surface.as_ref().unwrap();
         let context = gtk::cairo::Context::new(surface).map_err(|error| error.to_string())?;
-        if state.rotation.rem_euclid(360) != 0 {
-            context.translate(f64::from(state.width) / 2.0, f64::from(state.height) / 2.0);
-            context.rotate((state.rotation as f64).to_radians());
-            context.translate(
-                -f64::from(state.width) / 2.0,
-                -f64::from(state.height) / 2.0,
-            );
-        }
+        context.set_line_width(1.0);
         draw(&context, &state)?;
         surface.flush();
-        drop(state);
-        self.queue_draw();
         Ok(())
     }
 
     fn draw_text(&self, x: f64, y: f64, text: &str) -> Result<(), String> {
         self.with_draw_context(|context, state| {
-            set_graphics_source(context, state)?;
             select_font(context, state);
-            context.move_to(x, y + state.text_size);
-            context.show_text(text).map_err(|error| error.to_string())?;
+            let extents = context
+                .text_extents(text)
+                .map_err(|error| error.to_string())?;
+            let font_extents = context.font_extents().map_err(|error| error.to_string())?;
+            let width = extents.x_advance();
+            let height = font_extents.height();
+            set_graphics_source(context, state, (x, y, width, height))?;
+            rotate_about(context, state.rotation, x + width / 2.0, y + height / 2.0)?;
+            context.move_to(x, y + font_extents.ascent());
+            let result = context.show_text(text).map_err(|error| error.to_string());
+            result?;
             if state.underline {
-                let width = context
-                    .text_extents(text)
-                    .map_err(|error| error.to_string())?
-                    .width();
-                context.move_to(x, y + state.text_size + 2.0);
-                context.line_to(x + width, y + state.text_size + 2.0);
+                let underline_y = y + font_extents.ascent() + 2.0;
+                context.move_to(x, underline_y);
+                context.line_to(x + width, underline_y);
                 context.stroke().map_err(|error| error.to_string())?;
             }
-            Ok(())
+            context.restore().map_err(|error| error.to_string())
         })
     }
 
@@ -614,17 +658,15 @@ impl GraphicsHost {
                 self.ensure_surface()?;
                 let width = checked_dimension(integer_argument(arguments, 0)?)?;
                 let height = checked_dimension(integer_argument(arguments, 1)?)?;
-                check_pixel_count(width, height)?;
-                let surface = self.state.borrow().surface.as_ref().unwrap().clone();
-                let mut pixbuf = surface_to_pixbuf(&surface)?;
-                if width != pixbuf.width() || height != pixbuf.height() {
-                    pixbuf = pixbuf
-                        .scale_simple(width, height, gtk::gdk_pixbuf::InterpType::Bilinear)
-                        .ok_or_else(|| "não foi possível redimensionar a captura".to_owned())?;
-                }
-                Ok(HostValue::Integer(
-                    self.insert_image(ImageAsset::still(pixbuf))?,
-                ))
+                let state = self.state.borrow();
+                checked_image_memory(state.image_bytes, width as usize * height as usize * 4)?;
+                let pending = state.surface.as_ref().unwrap().clone();
+                let pixbuf = capture_pending_pixbuf(&pending, width, height)?;
+                let empty_surface = transparent_surface(state.width, state.height)?;
+                drop(state);
+                let handle = self.insert_image(ImageAsset::still(pixbuf))?;
+                self.state.borrow_mut().surface = Some(empty_surface);
+                Ok(HostValue::Integer(handle))
             }
             "carregar_imagem" => {
                 let path = safe_project_file(root, &string_argument(arguments, 0)?)?;
@@ -677,12 +719,15 @@ impl GraphicsHost {
                 } else {
                     gtk::gdk_pixbuf::InterpType::Nearest
                 };
-                let pixbuf = source
-                    .scale_simple(width, height, interpolation)
-                    .ok_or_else(|| "não foi possível redimensionar a imagem".to_owned())?;
-                Ok(HostValue::Integer(
-                    self.insert_image(ImageAsset::still(pixbuf))?,
-                ))
+                let image = {
+                    let state = self.state.borrow();
+                    let source = state
+                        .images
+                        .get(&handle)
+                        .ok_or_else(|| format!("endereço de imagem inválido ({handle})"))?;
+                    resize_image_asset(source, width, height, interpolation)?
+                };
+                Ok(HostValue::Integer(self.insert_image(image)?))
             }
             "obter_cor_pixel" => {
                 let handle = integer_argument(arguments, 0)?;
@@ -722,6 +767,38 @@ impl GraphicsHost {
                 }
                 let pixbuf = self.image_pixbuf(handle)?;
                 self.draw_pixbuf(x, y, &pixbuf)?;
+                Ok(HostValue::Null)
+            }
+            "jerimum_desenhar_imagem" => {
+                let x = real_argument(arguments, 0)?;
+                let y = real_argument(arguments, 1)?;
+                let handle = integer_argument(arguments, 2)?;
+                let angle = real_argument(arguments, 3)?;
+                let scale_x = real_argument(arguments, 4)?;
+                let scale_y = real_argument(arguments, 5)?;
+                if !angle.is_finite() || !scale_x.is_finite() || !scale_y.is_finite() {
+                    return Err("transformação de imagem inválida".to_owned());
+                }
+                let pixbuf = self.image_pixbuf(handle)?;
+                self.with_draw_context(|context, state| {
+                    context.save().map_err(|error| error.to_string())?;
+                    context.translate(
+                        x + f64::from(pixbuf.width()) / 2.0,
+                        y + f64::from(pixbuf.height()) / 2.0,
+                    );
+                    context.rotate(angle.to_radians());
+                    context.scale(scale_x, scale_y);
+                    context.set_source_pixbuf(
+                        &pixbuf,
+                        -f64::from(pixbuf.width()) / 2.0,
+                        -f64::from(pixbuf.height()) / 2.0,
+                    );
+                    let result = context
+                        .paint_with_alpha(state.opacity as f64 / 255.0)
+                        .map_err(|error| error.to_string());
+                    context.restore().map_err(|error| error.to_string())?;
+                    result
+                })?;
                 Ok(HostValue::Null)
             }
             "desenhar_porcao_imagem" => {
@@ -805,7 +882,12 @@ impl GraphicsHost {
             }
             "liberar_imagem" => {
                 let handle = integer_argument(arguments, 0)?;
-                self.state.borrow_mut().images.remove(&handle);
+                let mut state = self.state.borrow_mut();
+                if let Some(image) = state.images.remove(&handle) {
+                    state.image_bytes = state
+                        .image_bytes
+                        .saturating_sub(image_asset_memory_bytes(&image).unwrap_or(0));
+                }
                 Ok(HostValue::Null)
             }
             "largura_imagem" | "altura_imagem" => {
@@ -823,13 +905,16 @@ impl GraphicsHost {
     }
 
     fn insert_image(&self, image: ImageAsset) -> Result<i64, String> {
+        let image_bytes = image_asset_memory_bytes(&image)?;
         let mut state = self.state.borrow_mut();
+        let total_image_bytes = checked_image_memory(state.image_bytes, image_bytes)?;
         let handle = state.next_image_handle;
         state.next_image_handle = state
             .next_image_handle
             .checked_add(1)
             .ok_or_else(|| "não há mais identificadores de imagem disponíveis".to_owned())?;
         state.images.insert(handle, image);
+        state.image_bytes = total_image_bytes;
         Ok(handle)
     }
 
@@ -848,10 +933,18 @@ impl GraphicsHost {
 
     fn draw_pixbuf(&self, x: f64, y: f64, pixbuf: &gtk::gdk_pixbuf::Pixbuf) -> Result<(), String> {
         self.with_draw_context(|context, state| {
+            rotate_about(
+                context,
+                state.rotation,
+                x + f64::from(pixbuf.width()) / 2.0,
+                y + f64::from(pixbuf.height()) / 2.0,
+            )?;
             context.set_source_pixbuf(pixbuf, x, y);
-            context
+            let result = context
                 .paint_with_alpha(state.opacity as f64 / 255.0)
-                .map_err(|error| error.to_string())
+                .map_err(|error| error.to_string());
+            context.restore().map_err(|error| error.to_string())?;
+            result
         })
     }
 
@@ -880,9 +973,25 @@ impl GraphicsHost {
         area.set_focusable(true);
         area.set_draw_func(move |_, context, _, _| {
             let state = state_for_draw.borrow();
-            if let Some(surface) = &state.surface {
+            context.set_source_rgb(0.0, 0.0, 0.0);
+            let _ = context.paint();
+            if let Some(surface) = &state.presented_surface {
                 let _ = context.set_source_surface(surface, 0.0, 0.0);
                 let _ = context.paint();
+            }
+        });
+        let state_for_resize = self.state.clone();
+        area.connect_resize(move |_, width, height| {
+            let current_dimensions = {
+                let state = state_for_resize.borrow();
+                (state.width, state.height)
+            };
+            if width > 0
+                && height > 0
+                && check_pixel_count(width, height).is_ok()
+                && current_dimensions != (width, height)
+            {
+                let _ = resize_graphics_state(&mut state_for_resize.borrow_mut(), width, height);
             }
         });
         let window = gtk::Window::builder()
@@ -915,7 +1024,7 @@ impl GraphicsHost {
         let mut state = self.state.borrow_mut();
         state.window = Some(window.clone());
         state.area = Some(area.clone());
-        if let Some(surface) = &state.surface {
+        if let Some(surface) = &state.presented_surface {
             let _ = surface.flush();
         }
         drop(state);
@@ -928,20 +1037,86 @@ impl GraphicsHost {
     }
 }
 
+fn image_asset_memory_bytes(image: &ImageAsset) -> Result<usize, String> {
+    image.frames.iter().try_fold(0_usize, |total, frame| {
+        let rowstride = usize::try_from(frame.rowstride())
+            .map_err(|_| "dimensão de imagem inválida".to_owned())?;
+        let height = usize::try_from(frame.height())
+            .map_err(|_| "dimensão de imagem inválida".to_owned())?;
+        total
+            .checked_add(
+                rowstride
+                    .checked_mul(height)
+                    .ok_or_else(|| "uso de memória das imagens excede o limite".to_owned())?,
+            )
+            .ok_or_else(|| "uso de memória das imagens excede o limite".to_owned())
+    })
+}
+
+fn checked_image_memory(current: usize, additional: usize) -> Result<usize, String> {
+    let total = current
+        .checked_add(additional)
+        .filter(|total| *total <= MAX_IMAGE_MEMORY_BYTES)
+        .ok_or_else(|| "o limite agregado de 128 MiB para imagens foi atingido".to_owned())?;
+    Ok(total)
+}
+
 fn ensure_surface(state: &mut GraphicsState) -> Result<(), String> {
     if state.surface.is_some() {
         return Ok(());
     }
     check_pixel_count(state.width, state.height)?;
-    let surface =
-        gtk::cairo::ImageSurface::create(gtk::cairo::Format::ARgb32, state.width, state.height)
-            .map_err(|error| format!("não foi possível criar a tela gráfica: {error}"))?;
+    state.surface = Some(transparent_surface(state.width, state.height)?);
+    Ok(())
+}
+
+fn transparent_surface(width: i32, height: i32) -> Result<gtk::cairo::ImageSurface, String> {
+    check_pixel_count(width, height)?;
+    let surface = gtk::cairo::ImageSurface::create(gtk::cairo::Format::ARgb32, width, height)
+        .map_err(|error| format!("não foi possível criar a tela gráfica: {error}"))?;
     let context = gtk::cairo::Context::new(&surface)
         .map_err(|error| format!("não foi possível preparar a tela gráfica: {error}"))?;
-    context.set_source_rgb(0.0, 0.0, 0.0);
+    context.set_operator(gtk::cairo::Operator::Source);
+    context.set_source_rgba(0.0, 0.0, 0.0, 0.0);
     context.paint().map_err(|error| error.to_string())?;
+    Ok(surface)
+}
+
+fn resize_graphics_state(state: &mut GraphicsState, width: i32, height: i32) -> Result<(), String> {
+    check_pixel_count(width, height)?;
+    let resize = |source: &Option<gtk::cairo::ImageSurface>| {
+        let target = transparent_surface(width, height)?;
+        if let Some(source) = source {
+            let context = gtk::cairo::Context::new(&target).map_err(|error| error.to_string())?;
+            context
+                .set_source_surface(source, 0.0, 0.0)
+                .map_err(|error| error.to_string())?;
+            context.paint().map_err(|error| error.to_string())?;
+        }
+        Ok::<_, String>(target)
+    };
+    let surface = resize(&state.surface)?;
+    let presented_surface = resize(&state.presented_surface)?;
+    state.width = width;
+    state.height = height;
     state.surface = Some(surface);
+    state.presented_surface = Some(presented_surface);
     Ok(())
+}
+
+fn present_frame(state: &mut GraphicsState) -> Result<(), String> {
+    ensure_surface(state)?;
+    state.presented_surface = state.surface.clone();
+    state.surface = Some(transparent_surface(state.width, state.height)?);
+    Ok(())
+}
+
+fn capture_pending_pixbuf(
+    pending: &gtk::cairo::ImageSurface,
+    width: i32,
+    height: i32,
+) -> Result<gtk::gdk_pixbuf::Pixbuf, String> {
+    surface_region_to_pixbuf(pending, width, height)
 }
 
 fn set_window_icon(window: &gtk::Window, pixbuf: &gtk::gdk_pixbuf::Pixbuf) -> Result<(), String> {
@@ -1250,6 +1425,44 @@ fn check_pixel_count(width: i32, height: i32) -> Result<(), String> {
     Ok(())
 }
 
+fn requires_initialized_graphics(function: &str) -> bool {
+    matches!(
+        function,
+        "fechar_janela"
+            | "minimizar_janela"
+            | "restaurar_janela"
+            | "ocultar_borda_janela"
+            | "exibir_borda_janela"
+            | "encerrar_modo_grafico"
+            | "definir_dimensoes_janela"
+            | "definir_titulo_janela"
+            | "limpar"
+            | "renderizar"
+            | "definir_fonte_texto"
+            | "definir_tamanho_texto"
+            | "definir_estilo_texto"
+            | "largura_janela"
+            | "altura_janela"
+            | "entrar_modo_tela_cheia"
+            | "sair_modo_tela_cheia"
+            | "desenhar_ponto"
+            | "desenhar_linha"
+            | "desenhar_retangulo"
+            | "desenhar_elipse"
+            | "desenhar_poligono"
+            | "desenhar_texto"
+            | "jerimum_desenhar_texto"
+            | "largura_texto"
+            | "altura_texto"
+            | "carregar_fonte"
+            | "definir_icone_janela"
+            | "desenhar_imagem"
+            | "jerimum_desenhar_imagem"
+            | "desenhar_quadro_atual_gif"
+            | "desenhar_porcao_imagem"
+    )
+}
+
 fn color_channel(value: i64) -> Result<u8, String> {
     u8::try_from(value).map_err(|_| "cada canal de cor deve estar entre 0 e 255".to_owned())
 }
@@ -1275,22 +1488,47 @@ fn point_array_argument(arguments: &[HostValue], index: usize) -> Result<Vec<(f6
         .collect()
 }
 
-fn set_graphics_source(context: &gtk::cairo::Context, state: &GraphicsState) -> Result<(), String> {
+fn bounds_from_points(points: &[(f64, f64)]) -> (f64, f64, f64, f64) {
+    let mut min_x = f64::INFINITY;
+    let mut min_y = f64::INFINITY;
+    let mut max_x = f64::NEG_INFINITY;
+    let mut max_y = f64::NEG_INFINITY;
+    for (x, y) in points {
+        min_x = min_x.min(*x);
+        min_y = min_y.min(*y);
+        max_x = max_x.max(*x);
+        max_y = max_y.max(*y);
+    }
+    (min_x, min_y, max_x - min_x, max_y - min_y)
+}
+
+fn rotate_about(
+    context: &gtk::cairo::Context,
+    degrees: i64,
+    center_x: f64,
+    center_y: f64,
+) -> Result<(), String> {
+    context.save().map_err(|error| error.to_string())?;
+    if degrees.rem_euclid(360) != 0 {
+        context.translate(center_x, center_y);
+        context.rotate((degrees as f64).to_radians());
+        context.translate(-center_x, -center_y);
+    }
+    Ok(())
+}
+
+fn set_graphics_source(
+    context: &gtk::cairo::Context,
+    state: &GraphicsState,
+    (x, y, shape_width, shape_height): (f64, f64, f64, f64),
+) -> Result<(), String> {
     let alpha_scale = state.opacity as f64 / 255.0;
     if let Some((kind, first, second)) = state.gradient {
-        let width = f64::from(state.width);
-        let height = f64::from(state.height);
-        let (x1, y1, x2, y2) = match kind {
-            0 => (0.0, 0.0, width, 0.0),
-            1 => (width, 0.0, 0.0, 0.0),
-            2 => (0.0, height, 0.0, 0.0),
-            3 => (0.0, 0.0, 0.0, height),
-            4 => (0.0, 0.0, width, height),
-            5 => (width, 0.0, 0.0, height),
-            6 => (0.0, height, width, 0.0),
-            7 => (width, height, 0.0, 0.0),
-            _ => return Err("tipo de gradiente inválido".to_owned()),
-        };
+        let left = x.min(x + shape_width);
+        let top = y.min(y + shape_height);
+        let width = shape_width.abs().max(1.0);
+        let height = shape_height.abs().max(1.0);
+        let (x1, y1, x2, y2) = gradient_endpoints(kind, (left, top, width, height))?;
         let gradient = gtk::cairo::LinearGradient::new(x1, y1, x2, y2);
         let (r1, g1, b1, a1) = rgba(first, alpha_scale);
         let (r2, g2, b2, a2) = rgba(second, alpha_scale);
@@ -1306,13 +1544,97 @@ fn set_graphics_source(context: &gtk::cairo::Context, state: &GraphicsState) -> 
     }
 }
 
+fn gradient_endpoints(
+    kind: i64,
+    (x, y, width, height): (f64, f64, f64, f64),
+) -> Result<(f64, f64, f64, f64), String> {
+    match kind {
+        0 => Ok((x, y, x + width, y)),
+        1 => Ok((x + width, y, x, y)),
+        2 => Ok((x, y + height, x, y)),
+        3 => Ok((x, y, x, y + height)),
+        4 => Ok((x, y, x + width, y + height)),
+        5 => Ok((x + width, y, x, y + height)),
+        6 => Ok((x, y + height, x + width, y)),
+        7 => Ok((x + width, y + height, x, y)),
+        _ => Err("tipo de gradiente inválido".to_owned()),
+    }
+}
+
+fn draw_ellipse(
+    context: &gtk::cairo::Context,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    filled: bool,
+) -> Result<(), String> {
+    context.save().map_err(|error| error.to_string())?;
+    context.translate(x + width / 2.0, y + height / 2.0);
+    context.scale(width / 2.0, height / 2.0);
+    context.arc(0.0, 0.0, 1.0, 0.0, std::f64::consts::TAU);
+    if filled {
+        let result = context.fill().map_err(|error| error.to_string());
+        context.restore().map_err(|error| error.to_string())?;
+        result
+    } else {
+        context.restore().map_err(|error| error.to_string())?;
+        context.set_line_width(1.0);
+        context.stroke().map_err(|error| error.to_string())
+    }
+}
+
+fn draw_polygon(
+    context: &gtk::cairo::Context,
+    points: &[(f64, f64)],
+    filled: bool,
+) -> Result<(), String> {
+    context.move_to(points[0].0, points[0].1);
+    for (x, y) in points.iter().skip(1) {
+        context.line_to(*x, *y);
+    }
+    context.close_path();
+    if filled {
+        context.fill().map_err(|error| error.to_string())
+    } else {
+        context.stroke().map_err(|error| error.to_string())
+    }
+}
+
+fn resize_image_asset(
+    source: &ImageAsset,
+    width: i32,
+    height: i32,
+    interpolation: gtk::gdk_pixbuf::InterpType,
+) -> Result<ImageAsset, String> {
+    check_pixel_count(width, height)?;
+    if i64::from(width) * i64::from(height) * source.frames.len() as i64 > 32 * 1024 * 1024 {
+        return Err("a animação GIF excede o limite total de pixels".to_owned());
+    }
+    let frames = source
+        .frames
+        .iter()
+        .map(|frame| {
+            frame
+                .scale_simple(width, height, interpolation)
+                .ok_or_else(|| "não foi possível redimensionar a imagem".to_owned())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(ImageAsset {
+        frames,
+        frame_delays: source.frame_delays.clone(),
+        current_frame: source.current_frame,
+        is_gif: source.is_gif,
+    })
+}
+
 fn rgba(color: i64, alpha_scale: f64) -> (f64, f64, f64, f64) {
     let bytes = (color as u32).to_be_bytes();
     (
         f64::from(bytes[1]) / 255.0,
         f64::from(bytes[2]) / 255.0,
         f64::from(bytes[3]) / 255.0,
-        f64::from(bytes[0]) / 255.0 * alpha_scale,
+        alpha_scale,
     )
 }
 
@@ -1329,6 +1651,20 @@ fn select_font(context: &gtk::cairo::Context, state: &GraphicsState) {
     };
     context.select_font_face(&state.font, slant, weight);
     context.set_font_size(state.text_size);
+}
+
+fn text_advance(context: &gtk::cairo::Context, text: &str) -> Result<f64, String> {
+    context
+        .text_extents(text)
+        .map(|extents| extents.x_advance())
+        .map_err(|error| error.to_string())
+}
+
+fn text_height(context: &gtk::cairo::Context) -> Result<f64, String> {
+    context
+        .font_extents()
+        .map(|extents| extents.height() - extents.descent())
+        .map_err(|error| error.to_string())
 }
 
 fn rounded_rectangle(
@@ -1571,18 +1907,26 @@ fn pixbuf_pixel_color(pixbuf: &gtk::gdk_pixbuf::Pixbuf, x: i32, y: i32) -> Resul
 fn surface_to_pixbuf(
     surface: &gtk::cairo::ImageSurface,
 ) -> Result<gtk::gdk_pixbuf::Pixbuf, String> {
+    surface_region_to_pixbuf(surface, surface.width(), surface.height())
+}
+
+fn surface_region_to_pixbuf(
+    surface: &gtk::cairo::ImageSurface,
+    width: i32,
+    height: i32,
+) -> Result<gtk::gdk_pixbuf::Pixbuf, String> {
     if surface.format() != gtk::cairo::Format::ARgb32 {
         return Err("formato de captura gráfica não suportado".to_owned());
     }
-    check_pixel_count(surface.width(), surface.height())?;
-    let width = surface.width();
-    let height = surface.height();
+    check_pixel_count(width, height)?;
+    let source_width = surface.width().min(width);
+    let source_height = surface.height().min(height);
     let stride = usize::try_from(surface.stride()).map_err(|_| "superfície inválida".to_owned())?;
     let mut rgba = vec![0; width as usize * height as usize * 4];
     surface
         .with_data(|source| {
-            for y in 0..height as usize {
-                for x in 0..width as usize {
+            for y in 0..source_height as usize {
+                for x in 0..source_width as usize {
                     let start = y * stride + x * 4;
                     let pixel = u32::from_ne_bytes(source[start..start + 4].try_into().unwrap());
                     let alpha = (pixel >> 24) as u8;
@@ -1819,6 +2163,17 @@ mod tests {
         ]
     }
 
+    fn pixel(surface: &gtk::cairo::ImageSurface, x: i32, y: i32) -> i64 {
+        pixbuf_pixel_color(&surface_to_pixbuf(surface).unwrap(), x, y).unwrap()
+    }
+
+    fn paint_pixel(surface: &gtk::cairo::ImageSurface, x: f64, y: f64, rgba: (f64, f64, f64, f64)) {
+        let context = gtk::cairo::Context::new(surface).unwrap();
+        context.set_source_rgba(rgba.0, rgba.1, rgba.2, rgba.3);
+        context.rectangle(x, y, 1.0, 1.0);
+        context.fill().unwrap();
+    }
+
     #[test]
     fn graphics_rotation_expands_bounds_and_chroma_key_makes_color_transparent() {
         let pixbuf = pixbuf_2_by_1();
@@ -1857,6 +2212,212 @@ mod tests {
             pixbuf_pixel_color(&pixbuf, 0, 0).unwrap() as u32,
             0x80ff0000
         );
+    }
+
+    #[test]
+    fn graphics_compat_initialization_guards_leave_image_only_calls_available() {
+        assert!(requires_initialized_graphics("largura_janela"));
+        assert!(requires_initialized_graphics("desenhar_retangulo"));
+        assert!(requires_initialized_graphics("desenhar_imagem"));
+        assert!(requires_initialized_graphics("jerimum_desenhar_texto"));
+        assert!(requires_initialized_graphics("jerimum_desenhar_imagem"));
+        assert!(requires_initialized_graphics("renderizar"));
+        assert!(!requires_initialized_graphics("renderizar_imagem"));
+        assert!(!requires_initialized_graphics("carregar_imagem"));
+        assert!(!requires_initialized_graphics("obter_numero_quadros_gif"));
+    }
+
+    #[test]
+    fn graphics_compat_rendering_commits_one_frame_and_starts_the_next_empty() {
+        let mut state = GraphicsState::default();
+        state.width = 2;
+        state.height = 1;
+        state.surface = Some(transparent_surface(2, 1).unwrap());
+        paint_pixel(
+            state.surface.as_ref().unwrap(),
+            0.0,
+            0.0,
+            (1.0, 0.0, 0.0, 1.0),
+        );
+
+        present_frame(&mut state).unwrap();
+        assert_eq!(
+            pixel(state.presented_surface.as_ref().unwrap(), 0, 0) as u32,
+            0xffff0000
+        );
+        assert_eq!(pixel(state.surface.as_ref().unwrap(), 0, 0) as u32 >> 24, 0);
+
+        paint_pixel(
+            state.surface.as_ref().unwrap(),
+            1.0,
+            0.0,
+            (0.0, 0.0, 1.0, 1.0),
+        );
+        assert_eq!(
+            pixel(state.presented_surface.as_ref().unwrap(), 1, 0) as u32 >> 24,
+            0
+        );
+        present_frame(&mut state).unwrap();
+        assert_eq!(
+            pixel(state.presented_surface.as_ref().unwrap(), 0, 0) as u32 >> 24,
+            0
+        );
+        assert_eq!(
+            pixel(state.presented_surface.as_ref().unwrap(), 1, 0) as u32,
+            0xff0000ff
+        );
+    }
+
+    #[test]
+    fn graphics_compat_image_capture_keeps_coordinates_and_transparent_background() {
+        let pending = transparent_surface(5, 2).unwrap();
+        paint_pixel(&pending, 2.0, 1.0, (0.0, 1.0, 0.0, 1.0));
+        let capture = capture_pending_pixbuf(&pending, 3, 2).unwrap();
+        assert_eq!(
+            pixbuf_pixel_color(&capture, 2, 1).unwrap() as u32,
+            0xff00ff00
+        );
+        assert_eq!(pixbuf_pixel_color(&capture, 1, 1).unwrap() as u32 >> 24, 0);
+        assert_eq!((capture.width(), capture.height()), (3, 2));
+    }
+
+    #[test]
+    fn graphics_compat_rotation_uses_the_object_center() {
+        let surface = transparent_surface(50, 50).unwrap();
+        let context = gtk::cairo::Context::new(&surface).unwrap();
+        rotate_about(&context, 90, 20.0, 15.0).unwrap();
+        context.set_source_rgba(1.0, 0.0, 0.0, 1.0);
+        context.rectangle(10.0, 10.0, 20.0, 10.0);
+        context.fill().unwrap();
+        context.restore().unwrap();
+        assert_eq!(pixel(&surface, 20, 10) as u32, 0xffff0000);
+        assert_eq!(pixel(&surface, 27, 15) as u32 >> 24, 0);
+    }
+
+    #[test]
+    fn graphics_compat_ellipse_outline_uses_a_one_pixel_stroke() {
+        let surface = transparent_surface(130, 130).unwrap();
+        let context = gtk::cairo::Context::new(&surface).unwrap();
+        context.set_source_rgba(1.0, 1.0, 1.0, 1.0);
+        draw_ellipse(&context, 10.0, 10.0, 100.0, 100.0, false).unwrap();
+        assert_eq!(pixel(&surface, 60, 60) as u32 >> 24, 0);
+        assert_ne!(pixel(&surface, 60, 10) as u32 >> 24, 0);
+        assert_eq!(pixel(&surface, 60, 8) as u32 >> 24, 0);
+    }
+
+    #[test]
+    fn graphics_compat_gradient_endpoints_are_relative_to_the_shape() {
+        assert_eq!(
+            gradient_endpoints(0, (100.0, 100.0, 20.0, 10.0)).unwrap(),
+            (100.0, 100.0, 120.0, 100.0)
+        );
+        assert_eq!(
+            gradient_endpoints(7, (100.0, 100.0, 20.0, 10.0)).unwrap(),
+            (120.0, 110.0, 100.0, 100.0)
+        );
+    }
+
+    #[test]
+    fn graphics_compat_gradient_fills_the_shape_bounds() {
+        let surface = transparent_surface(140, 120).unwrap();
+        let context = gtk::cairo::Context::new(&surface).unwrap();
+        let mut state = GraphicsState::default();
+        state.gradient = Some((0, 0x00ff0000, 0x000000ff));
+        set_graphics_source(&context, &state, (100.0, 100.0, 20.0, 10.0)).unwrap();
+        context.rectangle(100.0, 100.0, 20.0, 10.0);
+        context.fill().unwrap();
+        let left = pixel(&surface, 100, 104) as u32;
+        let right = pixel(&surface, 119, 104) as u32;
+        assert!(((left >> 16) & 0xff) > (left & 0xff));
+        assert!((right & 0xff) > ((right >> 16) & 0xff));
+    }
+
+    #[test]
+    fn graphics_compat_raw_rgb_colors_are_opaque_and_opacity_is_separate() {
+        assert_eq!(rgba(255, 1.0), (0.0, 0.0, 1.0, 1.0));
+        assert_eq!(rgba(255, 0.5), (0.0, 0.0, 1.0, 0.5));
+    }
+
+    #[test]
+    fn graphics_compat_unfilled_polygons_draw_the_closing_edge() {
+        let surface = transparent_surface(24, 24).unwrap();
+        let context = gtk::cairo::Context::new(&surface).unwrap();
+        context.set_source_rgba(1.0, 0.0, 0.0, 1.0);
+        context.set_line_width(1.0);
+        draw_polygon(&context, &[(3.0, 3.0), (20.0, 3.0), (20.0, 20.0)], false).unwrap();
+        assert_ne!(pixel(&surface, 10, 10) as u32 >> 24, 0);
+    }
+
+    #[test]
+    fn graphics_compat_gif_resizing_preserves_all_frames_and_animation_state() {
+        let first = pixbuf_2_by_1();
+        let second =
+            gtk::gdk_pixbuf::Pixbuf::new(gtk::gdk_pixbuf::Colorspace::Rgb, true, 8, 2, 1).unwrap();
+        second.put_pixel(0, 0, 0, 0, 255, 255);
+        second.put_pixel(1, 0, 255, 255, 0, 255);
+        let source = ImageAsset {
+            frames: vec![first, second],
+            frame_delays: vec![40, 80],
+            current_frame: 1,
+            is_gif: true,
+        };
+        let resized =
+            resize_image_asset(&source, 4, 2, gtk::gdk_pixbuf::InterpType::Nearest).unwrap();
+        assert_eq!(resized.frames.len(), 2);
+        assert_eq!(resized.frame_delays, [40, 80]);
+        assert_eq!(resized.current_frame, 1);
+        assert!(resized.is_gif);
+        assert_eq!(
+            (resized.frames[1].width(), resized.frames[1].height()),
+            (4, 2)
+        );
+    }
+
+    #[test]
+    fn graphics_compat_resizing_updates_reported_dimensions_and_surfaces() {
+        let mut state = GraphicsState::default();
+        state.surface = Some(transparent_surface(2, 1).unwrap());
+        state.presented_surface = Some(transparent_surface(2, 1).unwrap());
+        paint_pixel(
+            state.surface.as_ref().unwrap(),
+            1.0,
+            0.0,
+            (1.0, 0.0, 0.0, 1.0),
+        );
+        resize_graphics_state(&mut state, 4, 3).unwrap();
+        assert_eq!((state.width, state.height), (4, 3));
+        assert_eq!(
+            (
+                state.surface.as_ref().unwrap().width(),
+                state.surface.as_ref().unwrap().height()
+            ),
+            (4, 3)
+        );
+        assert_eq!(
+            pixel(state.surface.as_ref().unwrap(), 1, 0) as u32,
+            0xffff0000
+        );
+    }
+
+    #[test]
+    fn graphics_compat_text_metrics_include_whitespace_advance_and_match_text_height() {
+        let surface = transparent_surface(1, 1).unwrap();
+        let context = gtk::cairo::Context::new(&surface).unwrap();
+        context.select_font_face(
+            "Sans",
+            gtk::cairo::FontSlant::Normal,
+            gtk::cairo::FontWeight::Normal,
+        );
+        context.set_font_size(14.0);
+        let space = context.text_extents(" ").unwrap();
+        let trailing_space = context.text_extents("x ").unwrap();
+        let font = context.font_extents().unwrap();
+        assert!(space.x_advance() > 0.0);
+        assert!(trailing_space.x_advance() > trailing_space.width());
+        assert_eq!(text_advance(&context, " ").unwrap(), space.x_advance());
+        let measured_height = text_height(&context).unwrap();
+        assert!(measured_height > 0.0);
+        assert!(measured_height < font.height());
     }
 
     #[test]
@@ -1912,5 +2473,19 @@ mod tests {
             std::fs::remove_file(outside).unwrap();
         }
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn image_memory_accounting_enforces_an_aggregate_budget() {
+        let asset = ImageAsset::still(pixbuf_2_by_1());
+        let expected_bytes =
+            asset.frames[0].rowstride() as usize * asset.frames[0].height() as usize;
+        assert_eq!(image_asset_memory_bytes(&asset).unwrap(), expected_bytes);
+        assert_eq!(
+            checked_image_memory(0, MAX_IMAGE_MEMORY_BYTES).unwrap(),
+            MAX_IMAGE_MEMORY_BYTES
+        );
+        assert!(checked_image_memory(MAX_IMAGE_MEMORY_BYTES, 1).is_err());
+        assert!(checked_image_memory(usize::MAX, 1).is_err());
     }
 }

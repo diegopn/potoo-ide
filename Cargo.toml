@@ -1,7 +1,7 @@
 [package]
 name = "potoo-ide"
 version = "0.1.0"
-description = "Uma IDE desktop para aprender lógica com Portugol e VisuAlg"
+description = "Uma IDE desktop para aprender lógica de programação com pseudolinguagens"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/diegopn/potoo-ide"
 homepage = "https://diegopn.github.io/potoo-site/"
@@ -18,6 +18,7 @@ path = "src/main.rs"
 gtk = { package = "gtk4", version = "=0.11.3", features = ["v4_20"] }
 relm4 = { version = "=0.11.0", default-features = false }
 potoo-portugol-interpreter = { path = "crates/potoo-portugol-interpreter" }
+potoo-gportugol-interpreter = { path = "crates/potoo-gportugol-interpreter" }
 potoo-visualg-interpreter = { path = "crates/potoo-visualg-interpreter" }
 potoo-potigol-interpreter = { path = "crates/potoo-potigol-interpreter" }
 
@@ -28,6 +29,7 @@ strip = "symbols"
 
 [workspace]
 members = [
+    "crates/potoo-gportugol-interpreter",
     "crates/potoo-portugol-interpreter",
     "crates/potoo-visualg-interpreter",
     "crates/potoo-potigol-interpreter",

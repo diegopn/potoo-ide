@@ -1,6 +1,6 @@
-/// Returns a Portugol Studio keyboard constant using Java `KeyEvent` values.
+/// Returns a Portugol 2.0 keyboard constant using Java `KeyEvent` values.
 pub(crate) fn constant_code(name: &str) -> Option<i64> {
-    Some(match name.to_ascii_uppercase().as_str() {
+    Some(match name {
         "TECLA_ENTER" => 10,
         "TECLA_BACKSPACE" => 8,
         "TECLA_TAB" => 9,
@@ -112,28 +112,6 @@ pub(crate) fn constant_code(name: &str) -> Option<i64> {
         "TECLA_PRINTSCREEN" => 154,
         "TECLA_INSERT" => 155,
         "TECLA_AJUDA" => 156,
-        "TECLA_META" => 157,
-        "TECLA_BACK_QUOTE" => 192,
-        "TECLA_QUOTE" => 222,
-        "TECLA_AMPERSAND" => 150,
-        "TECLA_ASTERISK" => 151,
-        "TECLA_QUOTEDBL" => 152,
-        "TECLA_LESS" => 153,
-        "TECLA_GREATER" => 160,
-        "TECLA_BRACELEFT" => 161,
-        "TECLA_BRACERIGHT" => 162,
-        "TECLA_AT" => 512,
-        "TECLA_COLON" => 513,
-        "TECLA_CIRCUMFLEX" => 514,
-        "TECLA_DOLLAR" => 515,
-        "TECLA_EURO_SIGN" => 516,
-        "TECLA_EXCLAMATION_MARK" => 517,
-        "TECLA_INVERTED_EXCLAMATION_MARK" => 518,
-        "TECLA_LEFT_PARENTHESIS" => 519,
-        "TECLA_NUMBER_SIGN" => 520,
-        "TECLA_PLUS" => 521,
-        "TECLA_RIGHT_PARENTHESIS" => 522,
-        "TECLA_UNDERSCORE" => 523,
         "TECLA_WINDOWS" => 524,
         "TECLA_MENU_CONTEXTO" => 525,
         _ => return None,

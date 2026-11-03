@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use potoo_potigol_interpreter::{
     ControlAction, DataType, DiagnosticKind, ExecutionEvent, ExecutionOptions, InputPrompt,
-    RuntimeIo, check, execute, execute_with_options, parse,
+    RuntimeIo, check, execute, execute_with_options, lex, parse, parse_with_options,
 };
 
 #[derive(Debug, Default)]
@@ -67,6 +67,7 @@ resultados = [
   1.5 + 2.3 == 3.8,
   'a' + 1 == 98,
   'a' + 'b' == 195,
+  'a' + "b" == "ab",
   'b' - 1.5 == 96.5,
   'b' - 'a' == 1,
   5 div 3 == 1,
@@ -93,10 +94,78 @@ escreva resultados
 "#;
 
     let io = run(source, &[]).unwrap();
+    assert_eq!(io.output, format!("[{}]\n", vec!["true"; 26].join(", ")));
+}
+
+#[test]
+fn integer_literals_arithmetic_and_input_match_scala_int32() {
+    let io = run(
+        "escreva 2147483647\nescreva 2147483647 + 1\nescreva 2147483647 * 2\nescreva -2147483648\nescreva -2147483648 - 1\nescreva -2147483648 div -1",
+        &[],
+    )
+    .unwrap();
     assert_eq!(
         io.output,
-        format!("[{}]\n", vec!["verdadeiro"; 25].join(", "))
+        "2147483647\n-2147483648\n-2\n-2147483648\n2147483647\n-2147483648\n"
     );
+
+    assert!(run("escreva 2147483648", &[]).is_err());
+    assert!(run("x = leia_inteiro", &["2147483648"]).is_err());
+    assert!(run("escreva BigInt(\"2147483648\").inteiro", &[]).is_err());
+}
+
+#[test]
+fn potigol_text_uses_utf16_code_units_for_size_iteration_and_order() {
+    let io = run(
+        "escreva \"😀\".tamanho\nescreva \"😀\".lista.tamanho\nescreva \"😀a\".posicao('a')\nvar total := 0\npara caractere em \"😀\" faça\n total := total + 1\nfim\nescreva total\nescreva \"😀\" < \"\"",
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(io.output, "2\n2\n3\n2\nverdadeiro\n");
+}
+
+#[test]
+fn conversions_and_case_class_values_match_the_reference() {
+    let io = run(
+        r#"
+escreva " +12x".inteiro
+escreva " 12".inteiro
+escreva "+12".inteiro
+escreva "1e2".real
+escreva 65537.caractere.inteiro
+escreva (-1).caractere.inteiro
+tipo P
+  x: Inteiro
+fim
+a = P(1)
+b = P(1)
+escreva a
+escreva a == b
+f(): Nada
+  escreva 1
+fim
+escreva f()
+"#,
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(
+        io.output,
+        "0\n0\n0\n1.0\n1\n65535\nP(1)\nverdadeiro\n1\n()\n"
+    );
+}
+
+#[test]
+fn real_rounding_matches_scala_math_round_at_negative_ties() {
+    let io = run(
+        "escreva (-1.5).arredonde\nescreva (-1.25).arredonde(1)\nescreva 1.25.arredonde(1)",
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(io.output, "-1\n-1.2\n1.3\n");
 }
 
 #[test]
@@ -127,10 +196,7 @@ escreva resultados
 "#;
 
     let io = run(source, &[]).unwrap();
-    assert_eq!(
-        io.output,
-        format!("[{}]\n", vec!["verdadeiro"; 19].join(", "))
-    );
+    assert_eq!(io.output, format!("[{}]\n", vec!["true"; 19].join(", ")));
 }
 
 #[test]
@@ -196,10 +262,7 @@ escreva verificacoes
 "#;
 
     let io = run(source, &[]).unwrap();
-    assert_eq!(
-        io.output,
-        format!("[{}]\n", vec!["verdadeiro"; 34].join(", "))
-    );
+    assert_eq!(io.output, format!("[{}]\n", vec!["true"; 34].join(", ")));
 }
 
 #[test]
@@ -393,7 +456,488 @@ escreva "{original} {atualizada} {valores} {snapshot}"
 "#;
 
     let io = run(source, &[]).unwrap();
-    assert_eq!(io.output, "[2, 4, 6] [2, 5, 6] [9, 4, 6] [2, 4, 6]\n");
+    assert_eq!(io.output, "[2, 4, 6] [2, 4, 5] [9, 4, 6] [2, 4, 6]\n");
+}
+
+#[test]
+fn collection_operations_and_factories_match_potigol() {
+    let io = run(
+        r#"
+escreva [1, 2, 1] - [1]
+escreva [1, 2].zip([3, 4]) == [(1, 3), (2, 4)]
+escreva [1, 2].zip("ab") == [(1, 'a'), (2, 'b')]
+escreva [1, 2].ache(x => x > 1)
+escreva [1, 2].get(1)
+escreva [1, 2].ache(x => x > 3)
+escreva "ab".ache(x => x == 'a')
+escreva [1, 2].reduza((x: Inteiro, y: Inteiro) => x + y)
+escreva [1, 2].lista
+escreva [1, 2].para_lista
+escreva Lista(2, 2, 0)
+escreva Matriz.mutável(2, 2, 0).qual_tipo
+escreva raiz(8, 3)
+"#
+        .trim(),
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(
+        io.output,
+        "[2, 1]\nverdadeiro\nverdadeiro\nSome(2)\nSome(2)\nNone\nSome(a)\n3\n[1, 2]\n[1, 2]\n[[0, 0], [0, 0]]\nVetor\n2.0\n"
+    );
+}
+
+#[test]
+fn mutable_collection_transforms_copy_but_atualize_uses_zero_based_index() {
+    let io = run(
+        r#"
+xs = Lista.mutável(2, 1)
+removida = xs.remova(1)
+inserida = xs.insira(1, 9)
+mapa = xs.mapeie(x => x + 1)
+cauda = xs.cauda
+escreva xs
+escreva removida
+escreva inserida
+escreva mapa.qual_tipo
+escreva cauda.qual_tipo
+escreva [10, 20].atualize(0, 99)
+escreva [10, 20].atualize(0, x => x + 1)
+var alteravel := Lista.mutável(2, 10)
+alteravel.atualize(0, 99)
+escreva alteravel
+"#
+        .trim(),
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(
+        io.output,
+        "[1, 1]\n[1]\n[9, 1, 1]\nVetor\nVetor\n[99, 20]\n[11, 20]\n[99, 10]\n"
+    );
+}
+
+#[test]
+fn list_factory_evaluates_its_initializer_once_per_element() {
+    let io = run(
+        r#"
+var i := 0
+proximo(): Inteiro
+  i := i + 1
+  retorne i
+fim
+escreva Lista(3, proximo())
+escreva i
+escreva Lista.mutável(2, proximo())
+escreva Matriz.mutável(2, 2, proximo())
+escreva i
+escreva Lista(-1, 0)
+"#
+        .trim(),
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(io.output, "[1, 2, 3]\n3\n[4, 5]\n[[6, 7], [8, 9]]\n9\n[]\n");
+}
+
+#[test]
+fn counted_numeric_input_consumes_tokens_on_one_or_multiple_lines() {
+    let one_line = run("numeros = leia_inteiros(3)\nescreva numeros", &["1 2 3"]).unwrap();
+    assert_eq!(one_line.output, "[1, 2, 3]\n");
+
+    let multiple_lines = run("numeros = leia_inteiros(3)\nescreva numeros", &["1 2", "3"]).unwrap();
+    assert_eq!(multiple_lines.output, "[1, 2, 3]\n");
+
+    let prefixes = run(
+        "inteiro = leia_inteiro\nreal = leia_real\nescreva \"{inteiro} {real}\"",
+        &["12abc", "1.5xyz"],
+    )
+    .unwrap();
+    assert_eq!(prefixes.output, "12 1.5\n");
+}
+
+#[test]
+fn text_split_uses_regex_and_reference_whitespace_rules() {
+    let io = run(
+        r#"
+escreva "a1b2c".divida("[0-9]")
+escreva " a  b ".divida()
+escreva "a,b,".divida(",")
+"#
+        .trim(),
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(io.output, "[a, b, c]\n[, a, b]\n[a, b]\n");
+
+    let inputs = run("partes = leia_textos(\",;\")\nescreva partes", &["a,b;c"]).unwrap();
+    assert_eq!(inputs.output, "[a, b, c]\n");
+}
+
+#[test]
+fn contextual_collection_literals_widen_and_infer_nested_empty_lists() {
+    let io = run(
+        r#"
+a: Lista[Inteiro] = []
+b: Lista[Real] = [1, 2]
+c: Lista[Lista[Inteiro]] = [[]]
+tamanho(xs: Lista[Inteiro]): Inteiro = xs.tamanho
+tamanho_zero = tamanho([])
+lista_mista = 1.5 :: [1, 2]
+escreva a
+escreva b
+escreva c
+escreva tamanho_zero
+escreva lista_mista
+escreva [1, verdadeiro]
+escreva se verdadeiro então 1 senão falso fim
+"#
+        .trim(),
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(
+        io.output,
+        "[]\n[1.0, 2.0]\n[[]]\n0\n[1.5, 1.0, 2.0]\n[1, true]\n1\n"
+    );
+}
+
+#[test]
+fn nested_output_matches_scala_real_tuple_and_case_class_display() {
+    let io = run(
+        r#"
+escreva 1.0
+escreva (1, "a")
+tipo P
+  x, y: Inteiro
+fim
+escreva P(1, 2)
+"#
+        .trim(),
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(io.output, "1.0\n(1,a)\nP(1,2)\n");
+}
+
+#[test]
+fn incompatible_function_parameter_variance_is_rejected() {
+    let source = r#"
+f(g: Real => Real): Real = g(1.5)
+h(x: Inteiro): Inteiro = x + 1
+escreva f(h)
+"#;
+
+    let errors = check(&parse(source).unwrap()).unwrap_err();
+    assert!(errors[0].message.contains("tipos incompatíveis"));
+}
+
+#[test]
+fn lexical_functions_shadow_builtins_and_builtins_are_first_class() {
+    let io = run(
+        r#"
+raiz(x: Inteiro): Inteiro = x + 1
+f(g: Real => Real): Real = g(0.0)
+escreva raiz(9)
+escreva f(cos)
+"#
+        .trim(),
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(io.output, "10\n1.0\n");
+}
+
+#[test]
+fn subtype_constructors_match_patterns_against_base_typed_values() {
+    let io = run(
+        r#"
+tipo abstrato A
+  x: Inteiro
+fim
+tipo B: A
+  x: Inteiro
+fim
+a: A = B(1)
+escreva escolha a
+  caso B(x) => x
+  caso _ => 0
+fim
+"#
+        .trim(),
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(io.output, "1\n");
+}
+
+#[test]
+fn reference_type_aliases_cover_numbers_matrices_cubes_and_vectors() {
+    let io = run(
+        r#"
+a: Número = 1.5
+b: Numero = 2.5
+c: InteiroGrande = BigInt(3)
+matriz_valor: Matriz[Inteiro] = [[4]]
+cubo_valor: Cubo[Inteiro] = [[[5]]]
+f: Vetor[Inteiro] = Lista.mutável(1, 6)
+escreva a
+escreva b
+escreva c
+escreva matriz_valor
+escreva cubo_valor
+escreva f.qual_tipo
+"#
+        .trim(),
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(io.output, "1.5\n2.5\n3\n[[4]]\n[[[5]]]\nVetor\n");
+}
+
+#[test]
+fn typed_function_values_are_displayable_and_bad_reductions_are_rejected() {
+    let io = run("f: Inteiro => Inteiro = x => x + 1\nescreva f", &[]).unwrap();
+    assert_eq!(io.output, "<função>\n");
+
+    let errors = check(&parse("escreva [1, 2].reduza((a: Texto, b: Inteiro) => \"12\")").unwrap())
+        .unwrap_err();
+    assert!(errors[0].message.contains("tipos incompatíveis"));
+}
+
+#[test]
+fn default_sort_of_case_classes_is_rejected_by_the_checker() {
+    let source = r#"
+tipo A
+  x: Inteiro
+fim
+escreva [A(1), A(2)].ordene
+"#;
+
+    let errors = check(&parse(source).unwrap()).unwrap_err();
+    assert!(errors[0].message.contains("não podem ser ordenados"));
+
+    let errors = check(&parse(&source.replace(".ordene", ".ordene()")).unwrap()).unwrap_err();
+    assert!(errors[0].message.contains("não podem ser ordenados"));
+}
+
+#[test]
+fn text_mapping_and_split_when_match_the_collection_signatures() {
+    let io = run(
+        "escreva \"abc\".mapeie(c => c)\nescreva \"aabbc\".divida_quando((a, b) => a <> b)\nescreva \"abc\".primeiro",
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(io.output, "abc\n[aa, bb, c]\na\n");
+}
+
+#[test]
+fn one_argument_reduce_requires_the_collection_element_as_accumulator() {
+    let error = check(&parse("escreva [1, 2].injete((a: Texto, b: Inteiro) => a + b)").unwrap())
+        .unwrap_err();
+    assert!(error[0].message.contains("tipos incompatíveis"));
+}
+
+#[test]
+fn optional_val_and_type_alias_declarations_are_supported() {
+    let io = run(
+        "val inteiro = 3\ntipo Contagem = Inteiro\nvalor: Contagem = inteiro\nescreva valor",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(io.output, "3\n");
+}
+
+#[test]
+fn optional_entao_same_line_statements_and_standalone_blocks_work() {
+    let io = run(
+        "escreva se verdadeiro 1 senão 2 fim\nescreva 3 escreva 4\nfaça\nescreva 5\nfim",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(io.output, "1\n3\n4\n5\n");
+}
+
+#[test]
+fn lambda_and_comprehension_bodies_accept_instruction_lists() {
+    let io = run(
+        "f = (x: Inteiro) =>\n  escreva x\n  x + 1\nescreva f(2)\nvalores = para i de 1 até 2 gere\n  proximo = i + 1\n  proximo * 2\nfim\nescreva valores",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(io.output, "2\n3\n[4, 6]\n");
+}
+
+#[test]
+fn statement_initial_para_gere_is_a_comprehension() {
+    let parsed = parse("para i de 1 até 2 gere i fim\nescreva 1").unwrap();
+    assert_eq!(parsed.statements.len(), 2);
+}
+
+#[test]
+fn reference_operator_precedence_and_newline_continuation_are_preserved() {
+    let io = run(
+        "identidade(x: Inteiro) = x\nescreva 1 + 2 formato \"%d\"\nescreva (1\n)\nescreva 1\n  .texto\nescreva identidade\n  (2)\nescreva [4, 5]\n  [1]\nescreva 1 + 2\n  formato \"%d\"",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(io.output, "3\n1\n1\n2\n4\n3\n");
+
+    assert!(run("escreva 2 * 3 :: [4]", &[]).is_err());
+    assert!(run("escreva -1 :: [2]", &[]).is_err());
+}
+
+#[test]
+fn typed_patterns_multiple_parents_and_abstract_methods_parse() {
+    let io = run(
+        "escreva escolha 1 caso n: Inteiro => n fim\ntipo A\n  x: Inteiro\nfim\ntipo B\n  y: Texto\nfim\ntipo C: A, B\nfim\nc = C(2, \"ok\")\nescreva \"{c.x} {c.y}\"",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(io.output, "1\n2 ok\n");
+
+    assert!(parse("tipo abstrato F\n  calcula(x: Inteiro): Inteiro\nfim").is_ok());
+}
+
+#[test]
+fn lexer_matches_reference_number_comment_and_multiline_string_rules() {
+    assert!(run("escreva 1e2", &[]).is_err());
+    assert!(parse("escreva 1 // comentário").is_err());
+    assert!(parse("escreva 1 # comentário").is_err());
+    assert!(parse("escreva 1; escreva 2").is_err());
+    assert!(parse("escreva \"\"\"texto\"\"\"").is_err());
+    assert!(parse("use \"jerimum\"\nescreva 1").is_ok());
+    assert!(parse("escreva 1 # comentário\n").is_ok());
+
+    let io = run("escreva \"a\nb\"", &[]).unwrap();
+    assert_eq!(io.output, "a\nb\n");
+
+    let io = run("escreva \"a\r\nb\"", &[]).unwrap();
+    assert_eq!(io.output, "a\r\nb\n");
+    assert!(lex("'\\n'").is_err());
+    assert!(lex("escreva \u{1f600}").is_err());
+    assert!(lex("escreva a©\n").is_ok());
+    assert!(parse("val então = 1").is_err());
+}
+
+#[test]
+fn inferred_function_blocks_and_expression_control_forms_work() {
+    let io = run(
+        "soma(x: Inteiro)\nx + 1\nfim\nidentidade(x: Inteiro) x fim\nescreva soma(2)\nescreva identidade(4)\nvalor = faça\n  7\nfim\nescreva valor",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(io.output, "3\n4\n7\n");
+
+    let io = run(
+        "para i de 1 até 2 gere escreva i fim\nescreva enquanto falso faça 1 fim",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(io.output, "1\n2\n()\n");
+}
+
+#[test]
+fn optional_val_works_in_fields_and_typed_parameters() {
+    let io = run(
+        "soma(val a, val b: Inteiro): Inteiro = a + b\ninc = (val x: Inteiro) => x + 1\ntipo Caixa\n  val conteudo: Texto\nfim\ncaixa = Caixa(\"ok\")\nescreva \"{soma(1, 2)} {inc(2)} {caixa.conteudo}\"",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(io.output, "3 3 ok\n");
+}
+
+#[test]
+fn multiple_inheritance_merges_fields_and_dispatches_methods() {
+    let io = run(
+        "tipo A\n  val x: Inteiro\n  dobro() = x * 2\nfim\ntipo B\n  val y: Texto\n  tamanho() = y.tamanho\nfim\ntipo abstrato C\n  calcula(valor: Inteiro): Inteiro\nfim\ntipo D: A, B, C\n  calcula(valor: Inteiro): Inteiro = valor + x\nfim\nd = D(4, \"abc\")\nescreva \"{d.dobro} {d.tamanho} {d.calcula(3)} {d.x} {d.y}\"",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(io.output, "8 3 7 4 abc\n");
+}
+
+#[test]
+fn interpolation_comments_nesting_guards_and_node_ids_are_consistent() {
+    let io = run("escreva \"{1 # } is inside a comment\n + 2}\"", &[]).unwrap();
+    assert_eq!(io.output, "3\n");
+
+    let mut expression = "1".to_owned();
+    for _ in 0..30 {
+        expression = format!("\"{{{expression}}}\"");
+    }
+    let source = format!("escreva {expression}");
+    assert!(
+        parse_with_options(
+            &source,
+            ExecutionOptions {
+                max_parse_depth: 8,
+                ..ExecutionOptions::default()
+            }
+        )
+        .is_err()
+    );
+
+    let program = parse("f(a, b: Lista[Inteiro], c: Real) = a").unwrap();
+    let potoo_potigol_interpreter::ast::StmtKind::Function(function) = &program.statements[0].kind
+    else {
+        panic!("expected function declaration");
+    };
+    let mut ids = std::collections::HashSet::new();
+    for annotation in function
+        .parameters
+        .iter()
+        .filter_map(|parameter| parameter.annotation.as_ref())
+    {
+        collect_type_ids(annotation, &mut ids);
+    }
+    assert_eq!(ids.len(), 5);
+}
+
+fn collect_type_ids(
+    ty: &potoo_potigol_interpreter::ast::TypeExpr,
+    ids: &mut std::collections::HashSet<potoo_potigol_interpreter::ast::NodeId>,
+) {
+    assert!(ids.insert(ty.id));
+    match &ty.kind {
+        potoo_potigol_interpreter::ast::TypeExprKind::Named(_, args)
+        | potoo_potigol_interpreter::ast::TypeExprKind::Tuple(args) => {
+            for arg in args {
+                collect_type_ids(arg, ids);
+            }
+        }
+        potoo_potigol_interpreter::ast::TypeExprKind::Function(params, result) => {
+            for param in params {
+                collect_type_ids(param, ids);
+            }
+            collect_type_ids(result, ids);
+        }
+    }
+}
+
+#[test]
+fn flat_operator_chains_obey_the_parse_depth_limit() {
+    let source = format!("escreva {}", vec!["1"; 100].join(" + "));
+    assert!(
+        parse_with_options(
+            &source,
+            ExecutionOptions {
+                max_parse_depth: 16,
+                ..ExecutionOptions::default()
+            }
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -484,7 +1028,7 @@ escreva "{vazia} {matriz[2][1]} {cubo[1][2][1]} {t.primeiro} {t.segundo} {t.terc
 "#;
 
     let io = run(source, &[]).unwrap();
-    assert_eq!(io.output, "[] 0 - 2015 potigol 1 4 ok\n");
+    assert_eq!(io.output, "[] 0 - 2015 potigol 1.0 4 ok\n");
 }
 
 #[test]
@@ -577,10 +1121,10 @@ fn official_formatted_interpolation_multiline_text_and_print_work() {
 preço = 49.9
 imprima "Total: R$ "
 escreva "{(preço * 3) formato "%8.2f"}"
-texto = """
+texto = "
 Olá,
 { "mundo".maiúsculo }
-"""
+"
 escreva texto
 "#;
 
@@ -693,6 +1237,27 @@ fn collection_byte_limit_stops_repeated_large_values() {
         options,
     )
     .unwrap_err();
+    assert!(errors[0].message.contains("limite de memória de coleções"));
+}
+
+#[test]
+fn nested_identifier_clones_are_charged_to_collection_budget() {
+    let mut source = String::from("a0 = [1]\n");
+    for index in 1..=8 {
+        source.push_str(&format!("a{index} = [a{}, a{}]\n", index - 1, index - 1));
+    }
+    source.push_str("escreva 1");
+
+    let errors = execute_with_options(
+        &source,
+        &mut TestIo::default(),
+        ExecutionOptions {
+            max_collection_bytes: 1024,
+            ..ExecutionOptions::default()
+        },
+    )
+    .unwrap_err();
+
     assert!(errors[0].message.contains("limite de memória de coleções"));
 }
 

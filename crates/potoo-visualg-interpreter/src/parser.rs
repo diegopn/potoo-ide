@@ -2,8 +2,8 @@ use std::collections::HashSet;
 
 use crate::ast::{
     ArrayDimension, ChoiceCase, DataFileDeclaration, Expression, ExpressionKind,
-    FormattedExpression, Parameter, Program, Routine, RoutineKind, Statement, StatementKind, Type,
-    Variable,
+    FormattedExpression, NumericConstant, Parameter, Program, Routine, RoutineKind, Statement,
+    StatementKind, Type, Variable,
 };
 use crate::lexer::{Token, TokenKind, scan};
 use crate::{Diagnostic, DiagnosticKind};
@@ -143,6 +143,7 @@ impl Parser {
                 column: token.column,
             });
         }
+        self.match_symbol(';');
         Ok(variables)
     }
 
@@ -154,10 +155,10 @@ impl Parser {
                 let (lower, lower_token) = self.parse_signed_integer()?;
                 self.expect_operator("..")?;
                 let (upper, _) = self.parse_signed_integer()?;
-                if lower > upper {
+                if lower >= upper {
                     return Err(vec![Diagnostic::new(
                         DiagnosticKind::Syntax,
-                        "o limite inicial do vetor deve ser menor ou igual ao limite final",
+                        "o limite final do vetor deve ser maior que o limite inicial",
                         lower_token.line,
                         lower_token.column,
                     )]);
@@ -282,7 +283,9 @@ impl Parser {
     }
 
     fn parse_parameters(&mut self) -> Result<Vec<Parameter>, Vec<Diagnostic>> {
-        self.expect_symbol('(')?;
+        if !self.match_symbol('(') {
+            return Ok(Vec::new());
+        }
         let mut parameters = Vec::new();
         if self.match_symbol(')') {
             return Ok(parameters);
@@ -309,6 +312,7 @@ impl Parser {
                     data_type,
                     by_reference,
                     dimensions: dimensions.len(),
+                    bounds: dimensions.clone(),
                 });
             }
             if self.match_symbol(')') {
@@ -638,16 +642,33 @@ impl Parser {
 
     fn parse_random_command(&mut self, token: Token) -> Result<Statement, Vec<Diagnostic>> {
         let (enabled, minimum, maximum) = if self.match_keyword("off") {
-            (false, 0, 100)
+            (
+                false,
+                NumericConstant::Integer(0),
+                NumericConstant::Integer(100),
+            )
         } else if self.match_keyword("on") || self.at_newline() || self.at_eof() {
-            (true, 0, 100)
+            (
+                true,
+                NumericConstant::Integer(0),
+                NumericConstant::Integer(100),
+            )
         } else {
-            let (first, _) = self.parse_signed_integer()?;
+            let first = self.parse_signed_number()?;
             let (minimum, maximum) = if self.match_symbol(',') {
-                let (second, _) = self.parse_signed_integer()?;
-                (first.min(second), first.max(second))
+                let second = self.parse_signed_number()?;
+                if first.compare(second).is_gt() {
+                    (second, first)
+                } else {
+                    (first, second)
+                }
             } else {
-                (first.min(0), first.max(0))
+                let zero = NumericConstant::Integer(0);
+                if first.compare(zero).is_gt() {
+                    (zero, first)
+                } else {
+                    (first, zero)
+                }
             };
             (true, minimum, maximum)
         };
@@ -660,6 +681,34 @@ impl Parser {
             line: token.line,
             column: token.column,
         })
+    }
+
+    fn parse_signed_number(&mut self) -> Result<NumericConstant, Vec<Diagnostic>> {
+        let negative = if self.match_operator("-") {
+            true
+        } else {
+            self.match_operator("+");
+            false
+        };
+        let token = self.current().clone();
+        let value = match token.kind {
+            TokenKind::Integer(value) => NumericConstant::Integer(if negative {
+                value.checked_neg().ok_or_else(|| {
+                    vec![Diagnostic::new(
+                        DiagnosticKind::Syntax,
+                        "limite inteiro fora do intervalo permitido",
+                        token.line,
+                        token.column,
+                    )]
+                })?
+            } else {
+                value
+            }),
+            TokenKind::Real(value) => NumericConstant::Real(if negative { -value } else { value }),
+            _ => return self.error_current("esperado um limite numérico constante para aleatorio"),
+        };
+        self.advance();
+        Ok(value)
     }
 
     fn parse_formatted_list(&mut self) -> Result<Vec<FormattedExpression>, Vec<Diagnostic>> {
@@ -985,24 +1034,7 @@ impl Parser {
             self.skip_newlines();
             return Ok(());
         }
-        if self.at_eof()
-            || [
-                "senao",
-                "fimse",
-                "caso",
-                "outrocaso",
-                "fimescolha",
-                "fimenquanto",
-                "ate",
-                "fimrepita",
-                "fimpara",
-                "fimalgoritmo",
-                "fimprocedimento",
-                "fimfuncao",
-            ]
-            .iter()
-            .any(|keyword| self.at_keyword(keyword))
-        {
+        if self.at_eof() {
             return Ok(());
         }
         self.error_current("esperado o fim da linha")
@@ -1071,6 +1103,7 @@ fn is_reserved_word(name: &str) -> bool {
             | "fimprocedimento"
             | "funcao"
             | "fimfuncao"
+            | "se"
             | "entao"
             | "senao"
             | "fimse"
@@ -1273,7 +1306,10 @@ fimalgoritmo
         };
 
         assert!(enabled);
-        assert_eq!((minimum, maximum), (-3, 0));
+        assert_eq!(
+            (minimum, maximum),
+            (NumericConstant::Integer(-3), NumericConstant::Integer(0))
+        );
     }
 
     #[test]
