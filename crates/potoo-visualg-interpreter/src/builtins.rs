@@ -87,6 +87,15 @@ pub(crate) fn call(
             )),
         }
     };
+    let real_only = |index: usize| -> Result<f64, Diagnostic> {
+        match argument(index) {
+            Value::Real(value) => Ok(*value),
+            value => Err(runtime_error(
+                expression,
+                &format!("'{name}' exige valor real, recebeu {}", value.type_name()),
+            )),
+        }
+    };
     let integer = |index: usize| -> Result<i64, Diagnostic> {
         match argument(index) {
             Value::Integer(value) => Ok(*value),
@@ -151,7 +160,7 @@ pub(crate) fn call(
             finite(1.0 / tangent, expression, "resultado inválido em 'CoTan'")?
         }
         "exp" => {
-            let value = real(0)?.powf(real(1)?);
+            let value = real_only(0)?.powf(real_only(1)?);
             finite(value, expression, "resultado inválido em 'Exp'")?
         }
         "grauprad" => Value::Real(real(0)?.to_radians()),
@@ -180,7 +189,11 @@ pub(crate) fn call(
             let value = real(0)?;
             finite(value * value, expression, "resultado inválido em 'Quad'")?
         }
-        "radpgrau" => Value::Real(real(0)?.to_degrees()),
+        "radpgrau" => finite(
+            real(0)?.to_degrees(),
+            expression,
+            "resultado inválido em 'RadpGrau'",
+        )?,
         "raizq" => {
             let value = real(0)?;
             if value < 0.0 {

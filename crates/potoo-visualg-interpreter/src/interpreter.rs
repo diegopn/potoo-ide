@@ -1234,7 +1234,7 @@ fn apply_unary(operator: &str, value: Value, expression: &Expression) -> Result<
             .map(Value::Integer)
             .ok_or_else(|| runtime_error(expression, "estouro na operação inteira")),
         ("-", Value::Real(value)) => checked_real(-value, expression),
-        ("nao" | "not", Value::Logical(value)) => Ok(Value::Logical(!value)),
+        ("nao", Value::Logical(value)) => Ok(Value::Logical(!value)),
         ("+" | "-", value) => Err(runtime_error(
             expression,
             &format!(
@@ -1242,7 +1242,7 @@ fn apply_unary(operator: &str, value: Value, expression: &Expression) -> Result<
                 value.type_name()
             ),
         )),
-        ("nao" | "not", value) => Err(runtime_error(
+        ("nao", value) => Err(runtime_error(
             expression,
             &format!(
                 "o operador 'nao' exige um valor lógico, recebeu {}",
@@ -1443,8 +1443,8 @@ fn parse_input(input: &str, data_type: Type) -> Result<Value, String> {
         }
         Type::Character => Ok(Value::Text(input.to_owned())),
         Type::Logical => match trimmed.to_lowercase().as_str() {
-            "verdadeiro" | "true" => Ok(Value::Logical(true)),
-            "falso" | "false" => Ok(Value::Logical(false)),
+            "verdadeiro" => Ok(Value::Logical(true)),
+            "falso" => Ok(Value::Logical(false)),
             _ => Err(format!("'{input}' não é um valor lógico válido")),
         },
     }

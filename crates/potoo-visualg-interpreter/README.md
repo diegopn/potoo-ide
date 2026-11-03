@@ -59,7 +59,7 @@ RuntimeIo::is_debugging enables statement events. RuntimeIo::on_execution_event 
 - Runtime commands aleatorio, arquivo, timer, pausa, debug, eco, cronometro, and limpatela
 - Source-located lexical, syntax, and runtime diagnostics, and debugger snapshots that include array elements
 
-The arquivo command delegates storage to RuntimeIo; the interpreter itself does not access the filesystem. The IDE host confines data-file paths to the open project. Numeric random ranges, character generation, timers, and debugger pauses follow the classic manual.
+The arquivo command delegates storage to RuntimeIo; the interpreter itself does not access the filesystem. The IDE host confines data-file paths to the open project. Numeric random ranges, character generation, timers, and debugger pauses follow the classic manual. The IDE host has no separate simulated DOS screen, so `limpatela` has no visible effect there; other hosts can implement `RuntimeIo::clear_screen` when they provide that screen.
 
 ## Runtime limits
 

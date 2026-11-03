@@ -23,7 +23,7 @@ fn evaluates_every_numeric_builtin() {
     let source = r#"algoritmo "numericas"
 inicio
   escreval(Abs(-2), ArcCos(1), ArcSen(0), ArcTan(0), Cos(0), CoTan(Pi / 4))
-  escreval(Exp(2, 3), GrauPrad(180), Int(-1.8), Log(100), LogN(1), Pi)
+  escreval(Exp(2.0, 3.0), GrauPrad(180), Int(-1.8), Log(100), LogN(1), Pi)
   escreval(Quad(3), RadpGrau(Pi), RaizQ(9), Sen(0), Tan(0))
   escreval(Rand(), RandI(10))
 fimalgoritmo

@@ -54,11 +54,10 @@ impl Value {
 
     pub(crate) fn coerce_to(self, data_type: Type) -> Result<Self, String> {
         match (self, data_type) {
-            (Self::Integer(value), Type::Real) => Ok(Self::Real(value as f64)),
-            (value, Type::Integer) if matches!(value, Self::Integer(_)) => Ok(value),
-            (value, Type::Real) if matches!(value, Self::Real(_)) => Ok(value),
-            (value, Type::Logical) if matches!(value, Self::Logical(_)) => Ok(value),
-            (value, Type::Character) if matches!(value, Self::Text(_)) => Ok(value),
+            (value @ Self::Integer(_), Type::Integer)
+            | (value @ Self::Real(_), Type::Real)
+            | (value @ Self::Logical(_), Type::Logical)
+            | (value @ Self::Text(_), Type::Character) => Ok(value),
             (value, expected) => Err(format!(
                 "não é possível atribuir {} a uma variável do tipo {}",
                 value.type_name(),

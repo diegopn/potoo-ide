@@ -464,7 +464,31 @@ impl Parser {
             });
         }
 
-        let expression = self.parse_expression(0, depth + 1)?;
+        let target_or_expression = self.parse_expression(0, depth + 1)?;
+        let expression = if self.match_operator("<-") {
+            if !matches!(
+                &target_or_expression.kind,
+                ExpressionKind::Identifier(_) | ExpressionKind::Index { .. }
+            ) {
+                return Err(vec![Diagnostic::new(
+                    DiagnosticKind::Syntax,
+                    "o lado esquerdo de '<-' precisa ser uma variável",
+                    target_or_expression.line,
+                    target_or_expression.column,
+                )]);
+            }
+            let value = self.parse_expression(0, depth + 1)?;
+            Expression {
+                line: target_or_expression.line,
+                column: target_or_expression.column,
+                kind: ExpressionKind::Assign {
+                    target: Box::new(target_or_expression),
+                    value: Box::new(value),
+                },
+            }
+        } else {
+            target_or_expression
+        };
         Ok(Statement {
             kind: StatementKind::Expression(expression),
             line: token.line,
@@ -712,25 +736,13 @@ impl Parser {
     }
 
     fn parse_formatted_list(&mut self) -> Result<Vec<FormattedExpression>, Vec<Diagnostic>> {
-        if self.match_symbol('(') {
-            let mut values = Vec::new();
-            if !self.match_symbol(')') {
-                loop {
-                    values.push(self.parse_formatted_expression(0)?);
-                    if self.match_symbol(')') {
-                        break;
-                    }
-                    self.expect_symbol(',')?;
-                }
-            }
-            Ok(values)
-        } else {
-            let mut values = vec![self.parse_formatted_expression(0)?];
-            while self.match_symbol(',') {
-                values.push(self.parse_formatted_expression(0)?);
-            }
-            Ok(values)
+        self.expect_symbol('(')?;
+        let mut values = vec![self.parse_formatted_expression(0)?];
+        while self.match_symbol(',') {
+            values.push(self.parse_formatted_expression(0)?);
         }
+        self.expect_symbol(')')?;
+        Ok(values)
     }
 
     fn parse_formatted_expression(
@@ -761,7 +773,7 @@ impl Parser {
         }
         let mut arguments = Vec::new();
         if self.match_symbol(')') {
-            return Ok(arguments);
+            return self.error_previous("a lista de variáveis não pode estar vazia");
         }
         loop {
             arguments.push(self.parse_expression(0, 1)?);
@@ -795,17 +807,10 @@ impl Parser {
             };
             let right = self.parse_expression(next_minimum, depth + 1)?;
             let location = (left.line, left.column);
-            let kind = if operator == "<-" {
-                ExpressionKind::Assign {
-                    target: Box::new(left),
-                    value: Box::new(right),
-                }
-            } else {
-                ExpressionKind::Binary {
-                    left: Box::new(left),
-                    operator,
-                    right: Box::new(right),
-                }
+            let kind = ExpressionKind::Binary {
+                left: Box::new(left),
+                operator,
+                right: Box::new(right),
             };
             left = Expression {
                 kind,
@@ -822,9 +827,7 @@ impl Parser {
             TokenKind::Operator(operator) if matches!(operator.as_str(), "+" | "-") => {
                 Some(operator.clone())
             }
-            TokenKind::Identifier(operator) if matches!(operator.as_str(), "nao" | "not") => {
-                Some(operator.clone())
-            }
+            TokenKind::Identifier(operator) if operator == "nao" => Some(operator.clone()),
             _ => None,
         };
         if let Some(operator) = unary_operator {
@@ -926,7 +929,6 @@ impl Parser {
     fn current_infix(&self) -> Option<(String, u8, bool)> {
         let (operator, precedence, right_associative) = match &self.current().kind {
             TokenKind::Operator(operator) => match operator.as_str() {
-                "<-" => ("<-", 0, true),
                 "=" | "<>" | "<" | "<=" | ">" | ">=" => (operator.as_str(), 3, false),
                 "+" | "-" => (operator.as_str(), 4, false),
                 "*" | "/" | "\\" | "%" => (operator.as_str(), 5, false),
@@ -1144,7 +1146,6 @@ fn is_reserved_word(name: &str) -> bool {
             | "ou"
             | "xou"
             | "nao"
-            | "not"
             | "mod"
     )
 }
