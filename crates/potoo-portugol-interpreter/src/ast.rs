@@ -73,8 +73,6 @@ pub enum StatementKind {
     Switch {
         expression: Expression,
         cases: Vec<SwitchCase>,
-        default: Vec<Statement>,
-        default_position: Option<usize>,
     },
     Return(Option<Expression>),
     Break,
@@ -91,7 +89,7 @@ pub struct Variable {
 
 #[derive(Clone, Debug)]
 pub struct SwitchCase {
-    pub value: Expression,
+    pub value: Option<Expression>,
     pub body: Vec<Statement>,
 }
 

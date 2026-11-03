@@ -191,10 +191,9 @@ fn analyze_statement(statement: &Statement, line: usize) -> Option<SourceLineAna
             .as_deref()
             .and_then(|statement| analyze_statement(statement, line))
             .or_else(|| analyze_statement(body, line)),
-        StatementKind::Switch { cases, default, .. } => cases
+        StatementKind::Switch { cases, .. } => cases
             .iter()
-            .find_map(|case| analyze_statements(&case.body, line))
-            .or_else(|| analyze_statements(default, line)),
+            .find_map(|case| analyze_statements(&case.body, line)),
         StatementKind::Variables(_)
         | StatementKind::Expression(_)
         | StatementKind::Return(_)

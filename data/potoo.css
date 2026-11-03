@@ -77,6 +77,25 @@ window.potoo-window {
   min-height: 48px;
 }
 
+button.potoo-start-recent-more {
+  min-height: 32px;
+  margin-top: 6px;
+  padding: 0 6px;
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 0;
+  color: var(--potoo-accent-text);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+button.potoo-start-recent-more:hover {
+  background-color: var(--potoo-accent-soft-bg);
+  color: var(--potoo-accent-text);
+}
+
 button.potoo-start-recent-open {
   min-height: 48px;
   padding: 6px 14px;

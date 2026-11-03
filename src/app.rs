@@ -167,6 +167,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
                 "Pick up where you left off or start turning your ideas into algorithms."
             }
             "Programas recentes" => "Recent programs",
+            "Ver todos os programas recentes" => "View all recent programs",
             "Remover dos recentes" => "Remove from recent list",
             "Comece um novo programa" => "Start a new program",
             "Retome um trabalho existente" => "Continue existing work",
@@ -254,7 +255,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Portugol 2.0" => "Portugol 2.0",
             "G-Portugol" => "G-Portugol",
             "Potigol Clássico" => "Classic Potigol",
-            "Potigol Jerimum (Jogos 2D)" => "Potigol Jerimum (2D Games)",
+            "Potigol Jerimum (Jogo 2D)" => "Potigol Jerimum (2D Game)",
             "Arquivo inicial .por" => "Initial .por file",
             "Arquivo inicial .alg" => "Initial .alg file",
             "Arquivo inicial .poti" => "Initial .poti file",
@@ -758,6 +759,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
                 "Continúa donde lo dejaste o empieza a convertir tus ideas en algoritmos."
             }
             "Programas recentes" => "Programas recientes",
+            "Ver todos os programas recentes" => "Ver todos los programas recientes",
             "Remover dos recentes" => "Quitar de recientes",
             "Comece um novo programa" => "Empieza un programa nuevo",
             "Retome um trabalho existente" => "Retoma un trabajo existente",
@@ -847,7 +849,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Portugol 2.0" => "Portugol 2.0",
             "G-Portugol" => "G-Portugol",
             "Potigol Clássico" => "Potigol clásico",
-            "Potigol Jerimum (Jogos 2D)" => "Potigol Jerimum (juegos 2D)",
+            "Potigol Jerimum (Jogo 2D)" => "Potigol Jerimum (juego 2D)",
             "Arquivo inicial .por" => "Archivo inicial .por",
             "Arquivo inicial .alg" => "Archivo inicial .alg",
             "Arquivo inicial .poti" => "Archivo inicial .poti",
@@ -1421,6 +1423,7 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Vamos programar?",
     "Continue de onde parou ou comece a transformar suas ideias em algoritmos.",
     "Programas recentes",
+    "Ver todos os programas recentes",
     "Remover dos recentes",
     "Comece um novo programa",
     "Retome um trabalho existente",
@@ -1487,7 +1490,7 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Portugol 2.0",
     "G-Portugol",
     "Potigol Clássico",
-    "Potigol Jerimum (Jogos 2D)",
+    "Potigol Jerimum (Jogo 2D)",
     "Arquivo inicial .por",
     "Arquivo inicial .alg",
     "Arquivo inicial .poti",
@@ -3883,13 +3886,27 @@ impl SimpleComponent for MainWindow {
             sender.clone(),
         );
         sender.input(MainWindowMsg::CursorMoved(1));
+        let recent_preview = &model.recent_paths[..model.recent_paths.len().min(2)];
+        widgets
+            .start_page
+            .recent_section
+            .set_visible(!model.recent_paths.is_empty());
         start_page::rebuild_recent_items(
-            &widgets.start_page.recent_section,
             &widgets.start_page.recent_list,
+            recent_preview,
+            model.ui_language,
+            sender.clone(),
+        );
+        start_page::rebuild_recent_items(
+            &widgets.start_page.all_recent_list,
             &model.recent_paths,
             model.ui_language,
             sender,
         );
+        widgets
+            .start_page
+            .recent_more_button
+            .set_visible(model.recent_paths.len() > 2);
         widgets.displayed_tabs = model
             .documents
             .iter()
@@ -4436,11 +4453,23 @@ impl SimpleComponent for MainWindow {
         ui.project_files_for_new_items
             .replace(self.project_files.clone());
 
-        if ui.displayed_right_panel_section != Some(self.right_panel_section)
+        let active_document = self.active_document();
+        let active_language = active_document.map(|document| document.language);
+        let game_preview_available = active_language == Some(Language::Potigol);
+        ui.game_preview_button.set_visible(game_preview_available);
+        let right_panel_section = if !game_preview_available
+            && self.right_panel_section == RightPanelSection::GamePreview
+        {
+            RightPanelSection::Learning
+        } else {
+            self.right_panel_section
+        };
+
+        if ui.displayed_right_panel_section != Some(right_panel_section)
             || ui.displayed_right_panel_collapsed != self.right_panel_collapsed
         {
             let collapsed = self.right_panel_collapsed;
-            let section = self.right_panel_section;
+            let section = right_panel_section;
             ui.right_panel_stack.set_visible_child_name(match section {
                 RightPanelSection::Learning => "learning",
                 RightPanelSection::Debugger => "debugger",
@@ -4508,9 +4537,7 @@ impl SimpleComponent for MainWindow {
             ui.displayed_game_preview_active = self.game_preview_active;
         }
 
-        let active_document = self.active_document();
         let active_document_id = active_document.map(|document| document.id);
-        let active_language = active_document.map(|document| document.language);
         let current_learning_hint = if self.learning_loading {
             ui.displayed_learning_hint.clone()
         } else {
@@ -4710,13 +4737,25 @@ impl SimpleComponent for MainWindow {
         }
 
         if ui.displayed_recent_paths != self.recent_paths {
+            let recent_preview = &self.recent_paths[..self.recent_paths.len().min(2)];
+            ui.start_page
+                .recent_section
+                .set_visible(!self.recent_paths.is_empty());
             start_page::rebuild_recent_items(
-                &ui.start_page.recent_section,
                 &ui.start_page.recent_list,
+                recent_preview,
+                self.ui_language,
+                sender.clone(),
+            );
+            start_page::rebuild_recent_items(
+                &ui.start_page.all_recent_list,
                 &self.recent_paths,
                 self.ui_language,
                 sender.clone(),
             );
+            ui.start_page
+                .recent_more_button
+                .set_visible(self.recent_paths.len() > 2);
             ui.displayed_recent_paths.clone_from(&self.recent_paths);
         }
 
@@ -6904,7 +6943,7 @@ fn show_new_project_dialog(
     potigol_options.set_hexpand(true);
     let potigol_variant_buttons = [
         language_option_button("Potigol Clássico", ".poti"),
-        language_option_button("Potigol Jerimum (Jogos 2D)", ".poti"),
+        language_option_button("Potigol Jerimum (Jogo 2D)", ".poti"),
     ];
     for button in portugol_variant_buttons
         .iter()
@@ -6931,7 +6970,7 @@ fn show_new_project_dialog(
     portugol_variant_picker.set_hexpand(true);
     portugol_variant_picker.set_selected(project_template_variant_index(default_template));
     let potigol_variant_picker =
-        gtk::DropDown::from_strings(&["Potigol Clássico", "Potigol Jerimum (Jogos 2D)"]);
+        gtk::DropDown::from_strings(&["Potigol Clássico", "Potigol Jerimum (Jogo 2D)"]);
     potigol_variant_picker.add_css_class("potoo-settings-picker");
     potigol_variant_picker.set_hexpand(true);
     potigol_variant_picker.set_selected(if default_template == ProjectTemplate::PotigolJerimum {
@@ -7419,7 +7458,7 @@ fn show_new_file_dialog(
         _ => 1,
     });
     let potigol_variant_picker =
-        gtk::DropDown::from_strings(&["Potigol Clássico", "Potigol Jerimum (Jogos 2D)"]);
+        gtk::DropDown::from_strings(&["Potigol Clássico", "Potigol Jerimum (Jogo 2D)"]);
     potigol_variant_picker.add_css_class("potoo-settings-picker");
     potigol_variant_picker.set_hexpand(true);
     potigol_variant_picker.set_selected(if default_template == ProjectTemplate::PotigolJerimum {

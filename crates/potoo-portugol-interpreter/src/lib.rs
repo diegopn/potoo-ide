@@ -194,6 +194,16 @@ pub trait RuntimeIo {
         Err("o host não oferece suporte ao download de arquivos".to_owned())
     }
 
+    /// Decodes and saves an image in the requested format for `Internet.baixar_imagem`.
+    fn portugol_file_write_image(
+        &mut self,
+        _path: &str,
+        _bytes: &[u8],
+        _format: &str,
+    ) -> Result<(), String> {
+        Err("o host não oferece suporte ao download de imagens".to_owned())
+    }
+
     /// Tests a Java-compatible key code while a Portugol graphics window is focused.
     fn portugol_key_pressed(&mut self, _key: i64) -> Result<bool, String> {
         Err("o host não oferece suporte à biblioteca Teclado".to_owned())

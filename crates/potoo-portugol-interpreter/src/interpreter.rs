@@ -208,10 +208,11 @@ impl<'a> Interpreter<'a> {
                 .or_default()
                 .push(function);
         }
-        let random_state = SystemTime::now()
+        let random_seed = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
-            .as_nanos() as u64;
+            .as_millis() as u64;
+        let random_state = (random_seed ^ 0x5DEECE66D) & ((1_u64 << 48) - 1);
         Self {
             libraries: program.libraries,
             functions,
@@ -396,39 +397,27 @@ impl<'a> Interpreter<'a> {
                 self.scopes.pop();
                 loop_result
             }
-            StatementKind::Switch {
-                expression,
-                cases,
-                default,
-                default_position,
-            } => {
+            StatementKind::Switch { expression, cases } => {
                 let value = self.evaluate(expression)?;
                 let mut matching_case = None;
                 for (index, case) in cases.iter().enumerate() {
-                    let candidate = self.evaluate(&case.value)?;
-                    if values_equal(&value, &candidate) {
-                        matching_case = Some(index);
-                        break;
+                    if let Some(case_value) = &case.value {
+                        let candidate = self.evaluate(case_value)?;
+                        if values_equal(&value, &candidate) {
+                            matching_case = Some(index);
+                            break;
+                        }
                     }
                 }
-                let start = matching_case.or(*default_position);
+                let start =
+                    matching_case.or_else(|| cases.iter().position(|case| case.value.is_none()));
                 if let Some(start) = start {
-                    for index in start..=cases.len() {
-                        if *default_position == Some(index) {
-                            match self.execute_statements(default)? {
-                                Flow::Normal => {}
-                                Flow::Break => return Ok(Flow::Normal),
-                                Flow::Stop => return Ok(Flow::Stop),
-                                flow @ Flow::Return(_) => return Ok(flow),
-                            }
-                        }
-                        if let Some(case) = cases.get(index) {
-                            match self.execute_statements(&case.body)? {
-                                Flow::Normal => {}
-                                Flow::Break => return Ok(Flow::Normal),
-                                Flow::Stop => return Ok(Flow::Stop),
-                                flow @ Flow::Return(_) => return Ok(flow),
-                            }
+                    for case in &cases[start..] {
+                        match self.execute_statements(&case.body)? {
+                            Flow::Normal => {}
+                            Flow::Break => return Ok(Flow::Normal),
+                            Flow::Stop => return Ok(Flow::Stop),
+                            flow @ Flow::Return(_) => return Ok(flow),
                         }
                     }
                 }
@@ -481,7 +470,11 @@ impl<'a> Interpreter<'a> {
 
     fn visible_variables(&self) -> Vec<VariableSnapshot> {
         let mut visible = std::collections::BTreeMap::new();
-        for scope in &self.scopes {
+        let function_scope = self.function_scope_indices.last().copied().unwrap_or(0);
+        for (index, scope) in self.scopes.iter().enumerate() {
+            if index != 0 && index < function_scope {
+                continue;
+            }
             for (name, binding) in scope {
                 visible.insert(name.clone(), binding.value.borrow().to_text());
             }
@@ -1572,15 +1565,14 @@ impl<'a> Interpreter<'a> {
                     return Err(runtime_error(expression, "esperada uma matriz"));
                 };
                 let rows = rows.borrow();
-                let columns = if let Some(first_row) = rows.first() {
-                    let first_row = first_row.borrow();
-                    let Value::Array(columns) = &*first_row else {
-                        return Err(runtime_error(expression, "esperada uma matriz"));
-                    };
-                    columns.borrow().len()
-                } else {
-                    0
+                let first_row = rows
+                    .first()
+                    .ok_or_else(|| runtime_error(expression, "matriz sem linhas"))?
+                    .borrow();
+                let Value::Array(columns) = &*first_row else {
+                    return Err(runtime_error(expression, "esperada uma matriz"));
                 };
+                let columns = columns.borrow().len();
                 Value::Integer(columns as i32 as i64)
             }
             "sorteia" => {
@@ -1598,9 +1590,17 @@ impl<'a> Interpreter<'a> {
                         "os limites inferior e superior não podem ser iguais",
                     ));
                 }
-                let span = (i128::from(maximum) - i128::from(minimum) + 1) as u128;
-                let offset = u128::from(self.next_random()) % span;
-                Value::Integer((i128::from(minimum) + offset as i128) as i32 as i64)
+                let minimum = minimum as i32;
+                let bound = (maximum as i32).wrapping_add(1).wrapping_sub(minimum);
+                if bound <= 0 {
+                    return Err(runtime_error(
+                        expression,
+                        "limite aleatório fora do intervalo",
+                    ));
+                }
+                Value::Integer(i64::from(
+                    minimum.wrapping_add(self.next_random_bounded(bound)),
+                ))
             }
             "aguarde" => {
                 let delay = u64::try_from(integer_argument(0)?)
@@ -2222,8 +2222,6 @@ impl<'a> Interpreter<'a> {
                 let extension = match content_type.as_str() {
                     "image/jpeg" | "image/jpg" => "jpg",
                     "image/png" => "png",
-                    "image/gif" => "gif",
-                    "image/bmp" | "image/x-ms-bmp" => "bmp",
                     _ => return Err(runtime_error(expression, "formato de imagem não suportado")),
                 };
                 let response = self.send_http_request(
@@ -2243,16 +2241,12 @@ impl<'a> Interpreter<'a> {
                         ),
                     ));
                 }
-                let valid_image = match extension {
+                let valid_signature = match extension {
                     "jpg" => response.body.starts_with(&[0xff, 0xd8, 0xff]),
                     "png" => response.body.starts_with(b"\x89PNG\r\n\x1a\n"),
-                    "gif" => {
-                        response.body.starts_with(b"GIF87a") || response.body.starts_with(b"GIF89a")
-                    }
-                    "bmp" => response.body.starts_with(b"BM"),
                     _ => false,
                 };
-                if !valid_image {
+                if !valid_signature {
                     return Err(runtime_error(
                         expression,
                         "a resposta não corresponde ao formato de imagem anunciado",
@@ -2260,7 +2254,11 @@ impl<'a> Interpreter<'a> {
                 }
                 let target = format!("{path}.{extension}");
                 self.io
-                    .portugol_file_write_bytes(&target, &response.body)
+                    .portugol_file_write_image(
+                        &target,
+                        &response.body,
+                        if extension == "jpg" { "jpeg" } else { "png" },
+                    )
                     .map_err(|message| runtime_error(expression, message))?;
                 let handle = self
                     .call_graphics_builtin(
@@ -2747,13 +2745,26 @@ impl<'a> Interpreter<'a> {
         Ok(response)
     }
 
-    fn next_random(&mut self) -> u64 {
-        let mut value = self.random_state;
-        value ^= value >> 12;
-        value ^= value << 25;
-        value ^= value >> 27;
-        self.random_state = value;
-        value.wrapping_mul(0x2545_F491_4F6C_DD1D)
+    fn next_random(&mut self, bits: u32) -> u32 {
+        self.random_state = self
+            .random_state
+            .wrapping_mul(0x5DEECE66D)
+            .wrapping_add(0xB)
+            & ((1_u64 << 48) - 1);
+        (self.random_state >> (48 - bits)) as u32
+    }
+
+    fn next_random_bounded(&mut self, bound: i32) -> i32 {
+        if (bound as u32).is_power_of_two() {
+            return ((i64::from(bound) * i64::from(self.next_random(31))) >> 31) as i32;
+        }
+        loop {
+            let bits = self.next_random(31) as i32;
+            let value = bits % bound;
+            if bits.wrapping_sub(value).wrapping_add(bound - 1) >= 0 {
+                return value;
+            }
+        }
     }
 
     fn tick(&mut self, line: usize, column: usize) -> Result<(), Diagnostic> {
@@ -2834,6 +2845,7 @@ fn evaluate_binary(
     use BinaryOperator as Op;
     match operator {
         Op::Add => match (&left, &right) {
+            (Value::Logical(left), Value::Logical(right)) => Ok(Value::Logical(*left || *right)),
             (Value::String(_), _) | (_, Value::String(_)) => Ok(Value::String(format!(
                 "{}{}",
                 left.to_text(),
@@ -3653,10 +3665,49 @@ fn parse_radix_integer(text: &str, radix: u32) -> Result<i64, ()> {
     if digits.is_empty() {
         return Err(());
     }
-    let value = i128::from_str_radix(&digits, radix).map_err(|_| ())?;
+    let mut value = 0_i128;
+    for character in digits.chars() {
+        let digit = java_digit(character, radix).ok_or(())?;
+        if digit >= radix {
+            return Err(());
+        }
+        value = value
+            .checked_mul(i128::from(radix))
+            .and_then(|value| value.checked_add(i128::from(digit)))
+            .ok_or(())?;
+    }
     let value = if negative { -value } else { value };
     let value = i64::try_from(value).map_err(|_| ())?;
     Ok(i64::from(value as i32))
+}
+
+fn java_digit(character: char, radix: u32) -> Option<u32> {
+    if let Some(digit) = character.to_digit(radix) {
+        return Some(digit);
+    }
+    let codepoint = u32::from(character);
+    // shortcut: covers Unicode decimal digit blocks known to the reference JDK; update with JDK data if new blocks matter.
+    const DECIMAL_ZEROES: &[u32] = &[
+        0x0660, 0x06f0, 0x07c0, 0x0966, 0x09e6, 0x0a66, 0x0ae6, 0x0b66, 0x0be6, 0x0c66, 0x0ce6,
+        0x0d66, 0x0de6, 0x0e50, 0x0ed0, 0x0f20, 0x1040, 0x1090, 0x17e0, 0x1810, 0x1946, 0x19d0,
+        0x1a80, 0x1a90, 0x1b50, 0x1bb0, 0x1c40, 0x1c50, 0xa620, 0xa8d0, 0xa900, 0xa9d0, 0xa9f0,
+        0xaa50, 0xabf0, 0xff10, 0x104a0, 0x10d30, 0x11066, 0x110f0, 0x11136, 0x111d0, 0x112f0,
+        0x11450, 0x114d0, 0x11650, 0x116c0, 0x11730, 0x118e0, 0x11950, 0x11c50, 0x11d50, 0x11da0,
+        0x11f50, 0x16a60, 0x16ac0, 0x16b50, 0x1d7ce, 0x1e140, 0x1e2f0, 0x1e4f0, 0x1e5f1, 0x1e950,
+        0x1fbf0,
+    ];
+    if let Some(zero) = DECIMAL_ZEROES
+        .iter()
+        .find(|&&zero| codepoint >= zero && codepoint < zero + 10)
+    {
+        return Some(codepoint - *zero);
+    }
+    let fullwidth_letter = match codepoint {
+        0xff21..=0xff3a => codepoint - 0xff21 + 10,
+        0xff41..=0xff5a => codepoint - 0xff41 + 10,
+        _ => return None,
+    };
+    (fullwidth_letter < radix).then_some(fullwidth_letter)
 }
 
 fn parse_input(text: &str, ty: Type, expression: &Expression) -> Result<Value, Diagnostic> {
@@ -3743,9 +3794,12 @@ fn parse_java_double(source: &str) -> Option<f64> {
         let (significand, exponent) = hex.split_at(exponent_index);
         let exponent = parse_saturated_exponent(&exponent[1..])?;
         let mut mantissa = 0.0;
-        let mut fractional_digits = 0_i32;
+        let mut fractional_digits = 0_i64;
+        let mut discarded_digits = 0_i64;
         let mut after_decimal = false;
         let mut saw_digit = false;
+        let mut saw_significant_digit = false;
+        let mut kept_significant_digits = 0;
         for character in significand.chars() {
             if character == '.' && !after_decimal {
                 after_decimal = true;
@@ -3753,9 +3807,17 @@ fn parse_java_double(source: &str) -> Option<f64> {
             }
             let digit = character.to_digit(16)?;
             saw_digit = true;
-            mantissa = mantissa * 16.0 + f64::from(digit);
             if after_decimal {
                 fractional_digits += 1;
+            }
+            if saw_significant_digit || digit != 0 {
+                saw_significant_digit = true;
+                if kept_significant_digits < 16 {
+                    mantissa = mantissa * 16.0 + f64::from(digit);
+                    kept_significant_digits += 1;
+                } else {
+                    discarded_digits += 1;
+                }
             }
         }
         if !saw_digit {
@@ -3764,7 +3826,28 @@ fn parse_java_double(source: &str) -> Option<f64> {
         if mantissa == 0.0 {
             return Some(sign * 0.0);
         }
-        return Some(sign * mantissa * 16_f64.powi(-fractional_digits) * 2_f64.powi(exponent));
+        let scale = i64::from(exponent).saturating_add(
+            discarded_digits
+                .saturating_sub(fractional_digits)
+                .saturating_mul(4),
+        );
+        let mantissa_exponent = mantissa.log2().floor() as i64;
+        let normalized_mantissa = mantissa / 2_f64.powi(mantissa_exponent as i32);
+        let exponent = scale.saturating_add(mantissa_exponent);
+        let magnitude = if exponent > 1023 {
+            f64::INFINITY
+        } else if exponent < -1075 {
+            0.0
+        } else if exponent == -1075 {
+            if normalized_mantissa > 1.0 {
+                f64::from_bits(1)
+            } else {
+                0.0
+            }
+        } else {
+            normalized_mantissa * 2_f64.powi(exponent as i32)
+        };
+        return Some(sign * magnitude);
     }
     if !is_java_decimal_literal(without_suffix) {
         return None;

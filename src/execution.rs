@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::{Cursor, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, SyncSender};
 use std::time::Duration;
@@ -1391,6 +1391,30 @@ impl portugol::RuntimeIo for WorkerIo {
         }
         fs::write(path, bytes)
             .map_err(|error| format!("não foi possível gravar o arquivo baixado: {error}"))
+    }
+
+    fn portugol_file_write_image(
+        &mut self,
+        path: &str,
+        bytes: &[u8],
+        format: &str,
+    ) -> Result<(), String> {
+        if bytes.len() > MAX_HTTP_BODY_BYTES {
+            return Err("imagem baixada excede o limite de 10 MiB".to_owned());
+        }
+        let path = self.safe_data_path(path)?;
+        if self
+            .open_portugol_files
+            .values()
+            .any(|file| file.path() == path)
+        {
+            return Err("feche o arquivo antes de gravar a imagem baixada".to_owned());
+        }
+        let pixbuf = gtk::gdk_pixbuf::Pixbuf::from_read(Cursor::new(bytes.to_vec()))
+            .map_err(|error| format!("não foi possível decodificar a imagem: {error}"))?;
+        pixbuf
+            .savev(&path, format, &[])
+            .map_err(|error| format!("não foi possível salvar a imagem: {error}"))
     }
 
     fn portugol_key_pressed(&mut self, key: i64) -> Result<bool, String> {

@@ -321,32 +321,30 @@ impl Parser {
             "esperado '{' após a expressão de 'escolha'",
         )?;
         let mut cases = Vec::new();
-        let mut default = Vec::new();
-        let mut default_position = None;
         self.skip_terminators();
         while !self.check(&TokenKind::RightBrace) && !self.is_at_end() {
             self.consume_word("caso", "esperado 'caso' dentro de 'escolha'")?;
             self.skip_newlines();
             if self.matches_word("contrario") {
-                default_position = Some(cases.len());
                 self.consume_case_separator()?;
-                default = self.case_body()?;
+                cases.push(SwitchCase {
+                    value: None,
+                    body: self.case_body()?,
+                });
             } else {
                 let value = self.expression(0)?;
                 self.consume_case_separator()?;
                 let body = self.case_body()?;
-                cases.push(SwitchCase { value, body });
+                cases.push(SwitchCase {
+                    value: Some(value),
+                    body,
+                });
             }
             self.skip_terminators();
         }
         self.consume(TokenKind::RightBrace, "esperado '}' para fechar 'escolha'")?;
         Ok(Statement {
-            kind: StatementKind::Switch {
-                expression,
-                cases,
-                default,
-                default_position,
-            },
+            kind: StatementKind::Switch { expression, cases },
             line: token.line,
             column: token.column,
         })
@@ -362,9 +360,15 @@ impl Parser {
                 self.skip_terminators();
             }
             self.consume(TokenKind::RightBrace, "esperado '}' para fechar o caso")?;
-            // A `pare` after a braced case is accepted but ignored by the original dialect.
             self.skip_newlines();
-            self.matches_word("pare");
+            if self.matches_word("pare") {
+                let token = self.previous();
+                statements.push(Statement {
+                    kind: StatementKind::Break,
+                    line: token.line,
+                    column: token.column,
+                });
+            }
             return Ok(statements);
         }
 

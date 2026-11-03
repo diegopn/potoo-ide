@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     rc::{Rc, Weak},
 };
 
@@ -21,6 +21,7 @@ pub(crate) enum PropertyValue {
 #[derive(Default)]
 pub(crate) struct ObjectStore {
     objects: HashMap<i64, Rc<RefCell<IndexMap<String, PropertyValue>>>>,
+    null_objects: HashSet<i64>,
     json_metadata: HashMap<usize, JsonObjectMetadata>,
     next_handle: i64,
 }
@@ -54,9 +55,10 @@ impl ObjectStore {
 
     pub(crate) fn create_json(&mut self, json: &str, maximum_values: usize) -> i64 {
         match parse_json_object(json, maximum_values) {
-            Ok((object, root_metadata, nested_metadata)) => {
+            Ok(Some((object, root_metadata, nested_metadata))) => {
                 self.insert_json(object, root_metadata, nested_metadata)
             }
+            Ok(None) => self.insert_null(),
             Err(()) => self.insert(IndexMap::new()),
         }
     }
@@ -68,6 +70,13 @@ impl ObjectStore {
 
     fn insert(&mut self, object: IndexMap<String, PropertyValue>) -> i64 {
         self.insert_shared(Rc::new(RefCell::new(object)))
+    }
+
+    fn insert_null(&mut self) -> i64 {
+        let handle = self.next_handle;
+        self.next_handle = self.next_handle.saturating_add(1);
+        self.null_objects.insert(handle);
+        handle
     }
 
     fn insert_json(
@@ -211,6 +220,9 @@ impl ObjectStore {
     }
 
     pub(crate) fn json(&self, handle: i64) -> Result<String, String> {
+        if self.null_objects.contains(&handle) {
+            return Ok("null".to_owned());
+        }
         let object = self.get_object(handle)?;
         let mut output = String::new();
         write_json(
@@ -224,14 +236,15 @@ impl ObjectStore {
     }
 
     pub(crate) fn release(&mut self, handle: i64) -> Result<(), String> {
-        self.objects
-            .remove(&handle)
-            .map(|_| ())
-            .ok_or_else(|| "endereço de objeto inválido".to_owned())?;
+        if self.objects.remove(&handle).is_none() && !self.null_objects.remove(&handle) {
+            return Err("endereço de objeto inválido".to_owned());
+        }
         let mut shifted = handle.saturating_add(1);
         while shifted < self.next_handle {
             if let Some(object) = self.objects.remove(&shifted) {
                 self.objects.insert(shifted - 1, object);
+            } else if self.null_objects.remove(&shifted) {
+                self.null_objects.insert(shifted - 1);
             }
             shifted += 1;
         }
@@ -242,6 +255,7 @@ impl ObjectStore {
 
     pub(crate) fn release_all(&mut self) {
         self.objects.clear();
+        self.null_objects.clear();
         self.json_metadata.clear();
         self.next_handle = 0;
     }
@@ -250,6 +264,9 @@ impl ObjectStore {
         &self,
         handle: i64,
     ) -> Result<&Rc<RefCell<IndexMap<String, PropertyValue>>>, String> {
+        if self.null_objects.contains(&handle) {
+            return Err("objeto nulo".to_owned());
+        }
         self.objects
             .get(&handle)
             .ok_or_else(|| "endereço de objeto inválido".to_owned())
@@ -303,11 +320,11 @@ fn parse_json_object(
     json: &str,
     maximum_values: usize,
 ) -> Result<
-    (
+    Option<(
         IndexMap<String, PropertyValue>,
         HashMap<String, JsonValueMetadata>,
         HashMap<usize, JsonObjectMetadata>,
-    ),
+    )>,
     (),
 > {
     let mut parser = JsonParser {
@@ -328,12 +345,16 @@ fn parse_json_object(
                 .remove(&object_key(&object))
                 .map(|metadata| metadata.properties)
                 .unwrap_or_default();
-            Ok((
+            Ok(Some((
                 object.borrow().clone(),
                 root_metadata,
                 parser.object_metadata,
-            ))
+            )))
         }
+        ParsedJsonValue {
+            value: PropertyValue::Null,
+            ..
+        } => Ok(None),
         _ => Err(()),
     }
 }

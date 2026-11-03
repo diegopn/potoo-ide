@@ -164,6 +164,16 @@ impl RuntimeIo for TestIo {
         Ok(())
     }
 
+    fn portugol_file_write_image(
+        &mut self,
+        path: &str,
+        bytes: &[u8],
+        _format: &str,
+    ) -> Result<(), String> {
+        self.downloads.push((path.to_owned(), bytes.to_vec()));
+        Ok(())
+    }
+
     fn portugol_key_pressed(&mut self, key: i64) -> Result<bool, String> {
         Ok(self.pressed_keys.contains(&key))
     }

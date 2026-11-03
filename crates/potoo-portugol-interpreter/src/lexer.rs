@@ -292,16 +292,10 @@ impl Scanner {
             }
             if character == '\\' {
                 self.advance();
-                if self.peek().is_some_and(is_valid_escape_start) {
+                if self.peek().is_some_and(is_simple_string_escape) {
                     value.push(self.escape_character()?);
-                } else if let Some(escaped) = self.peek() {
-                    value.push('\\');
-                    value.push(self.advance());
-                    if escaped == '\n' {
-                        continue;
-                    }
                 } else {
-                    value.push('\\');
+                    return Err(self.error("sequência de escape inválida em texto"));
                 }
             } else {
                 value.push(self.advance());
@@ -475,9 +469,6 @@ fn is_identifier_continue(character: char) -> bool {
     character == '_' || character.is_ascii_alphanumeric()
 }
 
-fn is_valid_escape_start(character: char) -> bool {
-    matches!(
-        character,
-        'b' | 'f' | 'n' | 'r' | 't' | '\\' | '"' | 'u' | '0'..='7'
-    )
+fn is_simple_string_escape(character: char) -> bool {
+    matches!(character, 'b' | 'f' | 'n' | 'r' | 't' | '\\' | '"')
 }

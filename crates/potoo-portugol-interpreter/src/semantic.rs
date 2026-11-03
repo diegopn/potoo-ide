@@ -413,17 +413,12 @@ impl<'a> Analyzer<'a> {
             } => {
                 let condition_type = self.expression(condition)?;
                 self.expect_scalar(condition_type, Type::Logical, condition)?;
-                let before = self.scopes.clone();
                 let then_returns = self.statement(then_branch)?;
-                let after_then = self.scopes.clone();
-                self.scopes = before.clone();
                 let else_returns = if let Some(else_branch) = else_branch {
                     self.statement(else_branch)?
                 } else {
                     false
                 };
-                let after_else = self.scopes.clone();
-                self.scopes = merge_scopes(&before, &after_then, &after_else);
                 Ok(else_branch.is_some() && then_returns && else_returns)
             }
             StatementKind::While { condition, body } => {
@@ -431,18 +426,18 @@ impl<'a> Analyzer<'a> {
                 self.expect_scalar(condition_type, Type::Logical, condition)?;
                 let before = self.scopes.clone();
                 self.loop_depth += 1;
-                let body_returns = self.statement(body)?;
+                self.statement(body)?;
                 self.loop_depth -= 1;
                 self.scopes = before;
-                Ok(matches!(condition.kind, ExpressionKind::Logical(true)) && body_returns)
+                Ok(false)
             }
             StatementKind::DoWhile { body, condition } => {
                 self.loop_depth += 1;
-                let body_returns = self.statement(body)?;
+                self.statement(body)?;
                 self.loop_depth -= 1;
                 let condition_type = self.expression(condition)?;
                 self.expect_scalar(condition_type, Type::Logical, condition)?;
-                Ok(body_returns)
+                Ok(false)
             }
             StatementKind::For {
                 initializer,
@@ -469,12 +464,7 @@ impl<'a> Analyzer<'a> {
                 self.scopes.pop();
                 Ok(false)
             }
-            StatementKind::Switch {
-                expression,
-                cases,
-                default,
-                default_position,
-            } => {
+            StatementKind::Switch { expression, cases } => {
                 let switch_type = self.expression(expression)?;
                 if !matches!(
                     switch_type,
@@ -488,25 +478,23 @@ impl<'a> Analyzer<'a> {
                     )]);
                 }
                 self.switch_depth += 1;
-                let before = self.scopes.clone();
                 let mut case_returns = true;
                 for case in cases {
-                    let case_type = self.expression(&case.value)?;
-                    if switch_type != case_type {
-                        return Err(vec![self.error_at(
-                            DiagnosticKind::Type,
-                            "o valor de 'caso' deve ter o mesmo tipo da expressão de 'escolha'",
-                            case.value.line,
-                            case.value.column,
-                        )]);
+                    if let Some(value) = &case.value {
+                        let case_type = self.expression(value)?;
+                        if switch_type != case_type {
+                            return Err(vec![self.error_at(
+                                DiagnosticKind::Type,
+                                "o valor de 'caso' deve ter o mesmo tipo da expressão de 'escolha'",
+                                value.line,
+                                value.column,
+                            )]);
+                        }
                     }
-                    self.scopes = before.clone();
-                    case_returns &= self.sequence(&case.body)?;
+                    case_returns &= self.sequence_until_break(&case.body)?;
                 }
-                self.scopes = before;
-                let default_returns = self.sequence(default)?;
                 self.switch_depth -= 1;
-                Ok(default_position.is_some() && case_returns && default_returns)
+                Ok(cases.last().is_some_and(|case| case.value.is_none()) && case_returns)
             }
             StatementKind::Return(value) => {
                 if !self.in_function {
@@ -566,6 +554,25 @@ impl<'a> Analyzer<'a> {
                 self.scopes = before;
             } else {
                 always_returns = self.statement(statement)?;
+            }
+        }
+        Ok(always_returns)
+    }
+
+    fn sequence_until_break(&mut self, statements: &[Statement]) -> Result<bool, Vec<Diagnostic>> {
+        let mut always_returns = false;
+        let mut stopped = false;
+        for statement in statements {
+            if stopped {
+                let before = self.scopes.clone();
+                self.statement(statement)?;
+                self.scopes = before;
+            } else if matches!(&statement.kind, StatementKind::Break) {
+                self.statement(statement)?;
+                stopped = true;
+            } else {
+                always_returns = self.statement(statement)?;
+                stopped = always_returns;
             }
         }
         Ok(always_returns)
@@ -1024,6 +1031,12 @@ impl<'a> Analyzer<'a> {
             {
                 Ok(ValueType::Scalar(Type::String))
             }
+            Op::Add
+                if left == ValueType::Scalar(Type::Logical)
+                    && right == ValueType::Scalar(Type::Logical) =>
+            {
+                Ok(ValueType::Scalar(Type::Logical))
+            }
             Op::Add | Op::Subtract | Op::Multiply | Op::Divide => {
                 if is_numeric(left) && is_numeric(right) {
                     Ok(
@@ -1352,35 +1365,6 @@ impl<'a> Analyzer<'a> {
     ) -> Diagnostic {
         Diagnostic::new(kind, message, line, column)
     }
-}
-
-fn merge_scopes(
-    before: &[HashMap<String, VariableInfo>],
-    left: &[HashMap<String, VariableInfo>],
-    right: &[HashMap<String, VariableInfo>],
-) -> Vec<HashMap<String, VariableInfo>> {
-    before
-        .iter()
-        .enumerate()
-        .map(|(scope_index, scope)| {
-            scope
-                .iter()
-                .map(|(name, variable)| {
-                    let initialized = left
-                        .get(scope_index)
-                        .and_then(|scope| scope.get(name))
-                        .is_some_and(|left| left.initialized)
-                        && right
-                            .get(scope_index)
-                            .and_then(|scope| scope.get(name))
-                            .is_some_and(|right| right.initialized);
-                    let mut variable = variable.clone();
-                    variable.initialized = initialized;
-                    (name.clone(), variable)
-                })
-                .collect()
-        })
-        .collect()
 }
 
 fn variable_type(variable: &VariableInfo) -> ValueType {
