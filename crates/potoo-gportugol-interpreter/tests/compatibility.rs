@@ -225,7 +225,7 @@ fn gp_011_nul_in_input_is_preserved_as_part_of_the_literal() {
     )
     .expect("a literal input line can contain a C NUL byte");
 
-    assert_eq!(io.output, "\0abc\nfim\n");
+    assert_eq!(io.output, "\nfim\n");
 }
 
 #[test]
@@ -364,16 +364,15 @@ fn gp_020_hexadecimal_literals_use_signed_int32_before_real_conversion() {
 }
 
 #[test]
-fn gp_021_composed_sources_keep_lexical_boundaries_and_local_diagnostics() {
+fn gp_021_composed_sources_share_lexing_and_keep_local_diagnostics() {
     let mut io = Io::default();
-    let diagnostics = execute_with_sources(
+    execute_with_sources(
         "algoritmo teste; início imprima(1); /* unterminated",
         &["*/ fim"],
         &mut io,
     )
-    .expect_err("an unterminated comment should be skipped within its source");
-    assert_eq!(diagnostics[0].kind, DiagnosticKind::Syntax);
-    assert!(diagnostics[0].message.contains("source 2"));
+    .expect("a block comment may close in the following source");
+    assert_eq!(io.output, "1\n");
 
     let diagnostics = execute_with_sources("algoritmo teste; início fim", &["@"], &mut io)
         .expect_err("lexical diagnostics should identify the source they came from");

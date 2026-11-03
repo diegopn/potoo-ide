@@ -128,6 +128,15 @@ pub trait RuntimeIo {
     fn write(&mut self, text: &str);
     fn read_line(&mut self, prompt: &InputPrompt) -> Result<String, String>;
 
+    /// Reads input with a host-enforced deadline when the host can interrupt its input source.
+    fn read_line_with_timeout(
+        &mut self,
+        prompt: &InputPrompt,
+        _timeout: Duration,
+    ) -> Result<String, String> {
+        self.read_line(prompt)
+    }
+
     fn should_stop(&mut self) -> bool {
         false
     }

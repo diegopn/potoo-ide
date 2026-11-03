@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use crate::{
     ControlAction, DataType, Diagnostic, DiagnosticKind, ExecutionEvent, ExecutionOptions,
@@ -85,7 +86,7 @@ fn execute_program(
 }
 
 fn lex_sources(sources: &[&str]) -> Result<(Vec<Token>, Vec<SourceRange>), Vec<Diagnostic>> {
-    let mut tokens = Vec::new();
+    let mut combined = String::new();
     let mut ranges = Vec::with_capacity(sources.len());
     let mut base = 0_usize;
     for (index, source) in sources.iter().enumerate() {
@@ -95,32 +96,79 @@ fn lex_sources(sources: &[&str]) -> Result<(Vec<Token>, Vec<SourceRange>), Vec<D
             label: format!("source {}", index + 1),
         };
         ranges.push(range);
-        let mut source_tokens = match lex(source) {
-            Ok(tokens) => tokens,
-            Err(diagnostics) => {
-                return Err(diagnostics
-                    .into_iter()
-                    .map(|mut diagnostic| {
-                        diagnostic.span.start.byte_offset =
-                            diagnostic.span.start.byte_offset.saturating_add(base);
-                        diagnostic.span.end.byte_offset =
-                            diagnostic.span.end.byte_offset.saturating_add(base);
-                        label_source_diagnostic(diagnostic, &ranges)
-                    })
-                    .collect());
-            }
-        };
+        if index > 0 && source.starts_with('\u{feff}') {
+            combined.push_str("   ");
+            combined.push_str(&source['\u{feff}'.len_utf8()..]);
+        } else {
+            combined.push_str(source);
+        }
         if index + 1 < sources.len() {
-            source_tokens.pop();
+            combined.push('\n');
         }
-        for mut token in source_tokens {
-            token.span.start.byte_offset = token.span.start.byte_offset.saturating_add(base);
-            token.span.end.byte_offset = token.span.end.byte_offset.saturating_add(base);
-            tokens.push(token);
-        }
-        base = ranges[index].end.saturating_add(1);
+        base = combined.len();
     }
+
+    let mut tokens = lex(&combined).map_err(|diagnostics| {
+        diagnostics
+            .into_iter()
+            .map(|mut diagnostic| {
+                localize_diagnostic(&mut diagnostic, sources, &ranges);
+                label_source_diagnostic(diagnostic, &ranges)
+            })
+            .collect::<Vec<_>>()
+    })?;
+    for token in &mut tokens {
+        localize_span(&mut token.span, sources, &ranges);
+    }
+
     Ok((tokens, ranges))
+}
+
+fn localize_span(span: &mut SourceSpan, sources: &[&str], ranges: &[SourceRange]) {
+    localize_location(&mut span.start, sources, ranges);
+    localize_location(&mut span.end, sources, ranges);
+}
+
+fn localize_diagnostic(diagnostic: &mut Diagnostic, sources: &[&str], ranges: &[SourceRange]) {
+    localize_span(&mut diagnostic.span, sources, ranges);
+}
+
+fn localize_location(location: &mut SourceLocation, sources: &[&str], ranges: &[SourceRange]) {
+    let Some((source, range)) = sources
+        .iter()
+        .zip(ranges)
+        .find(|(_, range)| (range.start..=range.end).contains(&location.byte_offset))
+    else {
+        return;
+    };
+    let offset = location
+        .byte_offset
+        .saturating_sub(range.start)
+        .min(source.len());
+    let mut line = 1;
+    let mut column = 1;
+    let mut characters = source[..offset].chars().peekable();
+    if source.starts_with('\u{feff}') {
+        characters.next();
+    }
+    while let Some(character) = characters.next() {
+        match character {
+            '\r' => {
+                if characters.peek() == Some(&'\n') {
+                    characters.next();
+                }
+                line += 1;
+                column = 1;
+            }
+            '\n' => {
+                line += 1;
+                column = 1;
+            }
+            _ => column += 1,
+        }
+    }
+    location.line = line;
+    location.column = column;
 }
 
 fn label_source_diagnostic(mut diagnostic: Diagnostic, ranges: &[SourceRange]) -> Diagnostic {
@@ -527,8 +575,8 @@ impl<'a> Interpreter<'a> {
         }
         let first = values.remove(0).real().unwrap_or_default();
         let result = match name {
-            "absoluto" if first == 0.0 => first,
-            "absoluto" => first.abs(),
+            "absoluto" if first >= 0.0 => first,
+            "absoluto" => round_gpt_real(first.abs()),
             "potencia" => {
                 let exponent = values[0].real().unwrap_or_default();
                 if exponent == 0.0 {
@@ -536,11 +584,15 @@ impl<'a> Interpreter<'a> {
                 } else if exponent == 1.0 {
                     first
                 } else if exponent == -1.0 {
+                    if first == 0.0 {
+                        return Err(self.runtime_error("division by zero", span));
+                    }
                     round_gpt_real(1.0 / first)
                 } else {
                     let count = values[0].integer().unwrap_or_default() as i32;
                     let mut result = 1.0;
                     for _ in 0..count {
+                        self.tick(span)?;
                         result = round_gpt_real(result * first);
                     }
                     result
@@ -552,6 +604,7 @@ impl<'a> Interpreter<'a> {
                 let mut xn = 0.0;
                 let mut exact_root = None;
                 for i in 0..=n {
+                    self.tick(span)?;
                     let value = round_gpt_real(f64::from(i.wrapping_mul(i)) - first);
                     if value == 0.0 {
                         exact_root = Some(i);
@@ -567,6 +620,7 @@ impl<'a> Interpreter<'a> {
                 } else {
                     let mut iterations = 0;
                     while iterations < 100 && x != xn {
+                        self.tick(span)?;
                         iterations += 1;
                         x = xn;
                         let square = round_gpt_real(x * x);
@@ -786,16 +840,31 @@ impl<'a> Interpreter<'a> {
         }
         let data_type = expected.unwrap_or(DataType::Literal);
         let prompt = InputPrompt { data_type, source };
-        let input = self.io.read_line(&prompt).map_err(|message| {
-            self.runtime_error(
-                format!("input failed: {message}"),
-                SourceSpan {
-                    start: source,
-                    end: source,
-                },
+        let input = self
+            .io
+            .read_line_with_timeout(
+                &prompt,
+                Duration::from_millis(self.options.max_input_wait_millis),
             )
-        })?;
+            .map_err(|message| {
+                self.runtime_error(
+                    format!("input failed: {message}"),
+                    SourceSpan {
+                        start: source,
+                        end: source,
+                    },
+                )
+            })?;
         let input = input.trim_end_matches(['\r', '\n']);
+        let input = if input.len() > 1023 {
+            let mut end = 1023;
+            while !input.is_char_boundary(end) {
+                end -= 1;
+            }
+            &input[..end]
+        } else {
+            input
+        };
         let value = match data_type {
             DataType::Integer => Value::Integer(parse_integer_prefix(&input)),
             DataType::Real => Value::Real(parse_real_prefix(&input)),
@@ -824,15 +893,35 @@ impl<'a> Interpreter<'a> {
         match operator {
             UnaryOp::Positive => match value {
                 Value::Integer(value) => Ok(Value::Integer(i64::from(value as i32))),
+                Value::Real(value) => Ok(Value::Real(round_gpt_real(value))),
                 value => Ok(value),
             },
             UnaryOp::Negative => match value {
                 Value::Integer(value) => {
                     Ok(Value::Integer(i64::from((value as i32).wrapping_neg())))
                 }
-                Value::Real(value) => Ok(Value::Real(-value)),
-                Value::Character(value) => Ok(Value::CharacterByte((-(value as i64)) as i8)),
-                Value::CharacterByte(value) => Ok(Value::CharacterByte(value.wrapping_neg())),
+                Value::Real(value) => Ok(Value::Real(round_gpt_real(-value))),
+                Value::Character(value) => Ok(Value::DeclaredType {
+                    data_type: DataType::Character,
+                    value: Box::new(Value::Integer(-i64::from(value as u32))),
+                }),
+                Value::CharacterByte(value) => Ok(Value::DeclaredType {
+                    data_type: DataType::Character,
+                    value: Box::new(Value::Integer(i64::from(value).wrapping_neg())),
+                }),
+                Value::DeclaredType {
+                    data_type: DataType::Character,
+                    value,
+                } => {
+                    let value = value
+                        .integer()
+                        .ok_or_else(|| self.runtime_error("invalid unary minus operand", span))?
+                        as i32;
+                    Ok(Value::DeclaredType {
+                        data_type: DataType::Character,
+                        value: Box::new(Value::Integer(i64::from(value.wrapping_neg()))),
+                    })
+                }
                 Value::Logical(value) => Ok(Value::LogicalNumber(if value { -1 } else { 0 })),
                 Value::LogicalNumber(value) => Ok(Value::LogicalNumber(value.wrapping_neg())),
                 _ => Err(self.runtime_error("invalid unary minus operand", span)),

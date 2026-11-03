@@ -152,10 +152,9 @@ impl<'a> Lexer<'a> {
             if self.remaining().starts_with("//") {
                 self.advance();
                 self.advance();
-                while self
-                    .current()
-                    .is_some_and(|value| value != '\n' && value != '\r')
-                {
+                while self.current().is_some_and(|value| {
+                    value != '\n' && !(value == '\r' && self.peek(1) == Some('\n'))
+                }) {
                     self.advance();
                 }
                 continue;
@@ -366,14 +365,17 @@ impl<'a> Lexer<'a> {
         self.advance();
         let content_start = self.offset;
         let mut closed = false;
-        let mut non_bmp = false;
+        let mut unsupported_character = false;
         while let Some(character) = self.current() {
             if character == quote {
                 let content_end = self.offset;
                 self.advance();
                 closed = true;
-                if non_bmp {
-                    self.error(start, "non-BMP characters are not supported in literals");
+                if unsupported_character {
+                    self.error(
+                        start,
+                        "literal characters must be in the reference range U+0003..U+00FF",
+                    );
                 } else if quote == '\''
                     && character_count(&self.source[content_start..content_end]) > 1
                 {
@@ -393,15 +395,15 @@ impl<'a> Lexer<'a> {
                 }
                 break;
             }
-            if matches!(character, '\n' | '\r') {
+            if quote == '"' && matches!(character, '\n' | '\r') {
                 break;
             }
-            non_bmp |= u32::from(character) > u32::from('\u{FFFF}');
+            unsupported_character |= !(3..=0xFF).contains(&u32::from(character));
             if character == '\\' {
                 self.advance();
-                non_bmp |= self
+                unsupported_character |= self
                     .current()
-                    .is_some_and(|value| u32::from(value) > u32::from('\u{FFFF}'));
+                    .is_some_and(|value| !(3..=0xFF).contains(&u32::from(value)));
                 if self
                     .current()
                     .is_none_or(|value| matches!(value, '\n' | '\r'))

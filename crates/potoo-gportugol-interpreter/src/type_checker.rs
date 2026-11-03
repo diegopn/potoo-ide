@@ -190,6 +190,13 @@ impl<'a> Checker<'a> {
             }
             Statement::Return { value, span } => match (return_type, value) {
                 (Some(expected), Some(value)) => {
+                    if expected == DataType::Literal && is_untyped_leia(value) {
+                        return Err(self.error(
+                            DiagnosticKind::Type,
+                            "leia is incompatible with a literal return type",
+                            value.span,
+                        ));
+                    }
                     let expected_type = Type::Primitive(expected);
                     let actual = self.expression(value, locals, Some(&expected_type))?;
                     if !expected_type.compatible_with(&actual) {
@@ -549,6 +556,13 @@ impl<'a> Checker<'a> {
             ));
         }
         for (argument, parameter_type) in args.iter().zip(&signature.parameters) {
+            if parameter_type == &Type::Primitive(DataType::Literal) && is_untyped_leia(argument) {
+                return Err(self.error(
+                    DiagnosticKind::Type,
+                    format!("argument is incompatible with parameter of '{name}'"),
+                    argument.span,
+                ));
+            }
             let actual = self.expression(argument, locals, Some(parameter_type))?;
             if !parameter_type.compatible_with(&actual) {
                 return Err(self.error(

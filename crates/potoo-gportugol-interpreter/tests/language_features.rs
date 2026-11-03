@@ -151,7 +151,7 @@ fn literal_values_use_the_full_string_for_output_comparison_and_length() {
 
     assert_eq!(
         io.output,
-        "a\0bc|falso|verdadeiro|verdadeiro|verdadeiro|verdadeiro\n"
+        "a|falso|verdadeiro|verdadeiro|verdadeiro|verdadeiro\n"
     );
 }
 

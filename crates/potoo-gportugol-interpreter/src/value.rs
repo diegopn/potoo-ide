@@ -156,14 +156,17 @@ impl Value {
                 } => self,
                 value => {
                     let value = value.integer().ok_or_else(|| conversion_error(span))?;
-                    let character = u32::try_from(value)
-                        .ok()
-                        .and_then(char::from_u32)
-                        .ok_or_else(|| conversion_error(span))?;
-                    Self::Character(character)
+                    Self::DeclaredType {
+                        data_type: DataType::Character,
+                        value: Box::new(Self::Integer(value)),
+                    }
                 }
             },
-            DataType::Logical => Self::Logical(self.truthy()),
+            DataType::Logical => Self::Logical(
+                self.real()
+                    .is_some_and(|value| value == 0.0 && value.is_sign_negative())
+                    || self.truthy(),
+            ),
         };
         Ok(converted)
     }
@@ -176,7 +179,7 @@ impl Value {
             Self::CharacterByte(value) if *value < 0 => format!("\\x{:02x}", *value as u8),
             Self::CharacterByte(value) => char::from(*value as u8).to_string(),
             Self::Literal(value) if value.is_empty() => "(nulo)".to_owned(),
-            Self::Literal(value) => value.clone(),
+            Self::Literal(value) => value.split('\0').next().unwrap_or_default().to_owned(),
             Self::NullLiteral => "(nulo)".to_owned(),
             Self::Logical(true) => "verdadeiro".to_owned(),
             Self::Logical(false) => "falso".to_owned(),
@@ -198,7 +201,7 @@ impl Value {
                     if value.is_empty() {
                         "(nulo)".to_owned()
                     } else {
-                        value
+                        value.split('\0').next().unwrap_or_default().to_owned()
                     }
                 }
                 DataType::Logical => {

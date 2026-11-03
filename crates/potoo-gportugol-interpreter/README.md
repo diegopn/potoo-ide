@@ -49,7 +49,7 @@ The main APIs are:
 
 The host implements `RuntimeIo` to receive output, provide typed input, signal cancellation, and handle debugger events. This keeps terminal, desktop, or other host I/O outside the interpreter and lets the IDE run it on its existing execution worker.
 
-Default resource limits are 1,000,000 execution steps, 1 MiB of output, 1 MiB per string, 100,000 array elements, 32 nested function calls, 128 parser nesting levels, and 30 seconds waiting for input. Hosts can override these through `ExecutionOptions`.
+Default resource limits are 1,000,000 execution steps, 1 MiB of output, 1 MiB per string, 100,000 array elements, 32 nested function calls, 128 parser nesting levels, and a 30-second input deadline. The IDE host enforces the input deadline. Other `RuntimeIo` hosts must override `read_line_with_timeout` to enforce it; the default implementation preserves the host's existing blocking `read_line` behavior. Hosts can override the values through `ExecutionOptions`.
 
 ## Compatibility and platform status
 

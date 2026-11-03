@@ -3,7 +3,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{Cursor, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, SyncSender};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gtk::gio::prelude::*;
 use gtk::glib::{Regex, RegexCompileFlags, RegexMatchFlags};
@@ -915,12 +915,25 @@ impl WorkerIo {
     }
 
     fn send_input_prompt(&mut self, prompt: InputPrompt) -> Result<String, String> {
+        self.send_input_prompt_with_timeout(prompt, None)
+    }
+
+    fn send_input_prompt_with_timeout(
+        &mut self,
+        prompt: InputPrompt,
+        timeout: Option<Duration>,
+    ) -> Result<String, String> {
         self.flush_output();
         self.events
             .send(ExecutionEvent::InputRequested(prompt))
             .map_err(|_| "a janela da IDE foi fechada".to_owned())?;
+        let started = Instant::now();
         loop {
-            match self.input.recv_timeout(Duration::from_millis(40)) {
+            let poll_interval = Duration::from_millis(40);
+            let wait = timeout.map_or(poll_interval, |limit| {
+                limit.saturating_sub(started.elapsed()).min(poll_interval)
+            });
+            match self.input.recv_timeout(wait) {
                 Ok(input) => return Ok(input),
                 Err(RecvTimeoutError::Disconnected) => {
                     return Err("a entrada do programa foi cancelada".to_owned());
@@ -929,6 +942,9 @@ impl WorkerIo {
                     if self.poll_stop() {
                         self.stopped = true;
                         return Err(STOP_SENTINEL.to_owned());
+                    }
+                    if timeout.is_some_and(|limit| started.elapsed() >= limit) {
+                        return Err("tempo limite de entrada excedido".to_owned());
                     }
                 }
             }
@@ -1986,25 +2002,37 @@ impl potigol::RuntimeIo for WorkerIo {
     }
 }
 
+fn gportugol_input_prompt(prompt: &gportugol::InputPrompt) -> InputPrompt {
+    InputPrompt {
+        variable_name: None,
+        data_type: Some(
+            match prompt.data_type {
+                gportugol::DataType::Integer => "inteiro",
+                gportugol::DataType::Real => "real",
+                gportugol::DataType::Character => "caractere",
+                gportugol::DataType::Literal => "literal",
+                gportugol::DataType::Logical => "lógico",
+            }
+            .to_owned(),
+        ),
+    }
+}
+
 impl gportugol::RuntimeIo for WorkerIo {
     fn write(&mut self, text: &str) {
         self.write_limited(text);
     }
 
     fn read_line(&mut self, prompt: &gportugol::InputPrompt) -> Result<String, String> {
-        self.send_input_prompt(InputPrompt {
-            variable_name: None,
-            data_type: Some(
-                match prompt.data_type {
-                    gportugol::DataType::Integer => "inteiro",
-                    gportugol::DataType::Real => "real",
-                    gportugol::DataType::Character => "caractere",
-                    gportugol::DataType::Literal => "literal",
-                    gportugol::DataType::Logical => "lógico",
-                }
-                .to_owned(),
-            ),
-        })
+        self.send_input_prompt(gportugol_input_prompt(prompt))
+    }
+
+    fn read_line_with_timeout(
+        &mut self,
+        prompt: &gportugol::InputPrompt,
+        timeout: Duration,
+    ) -> Result<String, String> {
+        self.send_input_prompt_with_timeout(gportugol_input_prompt(prompt), Some(timeout))
     }
 
     fn should_stop(&mut self) -> bool {
