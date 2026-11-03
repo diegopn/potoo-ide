@@ -335,6 +335,11 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "variável" => "variable",
             "função" => "function",
             "procedimento" => "procedure",
+            "palavra-chave" => "keyword",
+            "biblioteca" => "library",
+            "membro" => "member",
+            "snippet" => "snippet",
+            "símbolo" => "symbol",
             "atribuição" => "assignment",
             "retorno" => "return",
             "programa" => "program",
@@ -935,6 +940,11 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "variável" => "variable",
             "função" => "función",
             "procedimento" => "procedimiento",
+            "palavra-chave" => "palabra clave",
+            "biblioteca" => "biblioteca",
+            "membro" => "miembro",
+            "snippet" => "fragmento",
+            "símbolo" => "símbolo",
             "atribuição" => "asignación",
             "retorno" => "retorno",
             "programa" => "programa",
@@ -1554,6 +1564,11 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Analisando a linha selecionada…",
     "função",
     "procedimento",
+    "palavra-chave",
+    "biblioteca",
+    "membro",
+    "snippet",
+    "símbolo",
     "atribuição",
     "retorno",
     "Problemas nesta linha",
@@ -3376,6 +3391,7 @@ pub struct MainUi {
     indent_width: Rc<Cell<u32>>,
     code_buffer: gtk::TextBuffer,
     code_view: gtk::TextView,
+    completion_popup: content_panel::CompletionPopup,
     syntax_tags: SyntaxTags,
     line_numbers: gtk::Label,
     line_numbers_separator: gtk::Separator,
@@ -4455,6 +4471,7 @@ impl SimpleComponent for MainWindow {
 
         let active_document = self.active_document();
         let active_language = active_document.map(|document| document.language);
+        ui.completion_popup.set_language(active_language);
         let game_preview_available = active_language == Some(Language::Potigol);
         ui.game_preview_button.set_visible(game_preview_available);
         let right_panel_section = if !game_preview_available
@@ -4610,6 +4627,7 @@ impl SimpleComponent for MainWindow {
         }
         let active_document_changed = ui.displayed_active_document_id != active_document_id;
         if active_document_changed {
+            ui.completion_popup.hide();
             ui.code_buffer.set_text(
                 active_document
                     .map(|document| document.contents.as_str())
@@ -5092,6 +5110,9 @@ impl SimpleComponent for MainWindow {
         if ui.displayed_run_active != execution_active
             || ui.displayed_run_language != self.ui_language
         {
+            if execution_active && !ui.displayed_run_active {
+                ui.completion_popup.hide();
+            }
             let (icon_name, label) = if execution_active && !self.debugging_active {
                 ("potoo-stop-symbolic", "Parar")
             } else {
@@ -5613,6 +5634,8 @@ fn build_window_content(
     code_view.set_gutter(gtk::TextWindowType::Left, Some(&line_number_gutter));
     code_view.add_css_class("potoo-code-editor");
     code_view.add_css_class(&format!("potoo-font-{}", preferences.font_size));
+    let completion_popup =
+        content_panel::CompletionPopup::new(&code_view, &code_buffer, ui_language_state.clone());
 
     let code_scroll = gtk::ScrolledWindow::builder()
         .hexpand(true)
@@ -6011,13 +6034,19 @@ fn build_window_content(
     }));
 
     let sender_for_source = sender.clone();
+    let completion_for_source = completion_popup.clone();
+    let code_view_for_source = code_view.clone();
     code_buffer.connect_changed(move |buffer| {
+        completion_for_source.refresh(&code_view_for_source, buffer, false);
         let contents = buffer.text(&buffer.start_iter(), &buffer.end_iter(), true);
         sender_for_source.input(MainWindowMsg::SourceChanged(contents.to_string()));
     });
 
     let sender_for_cursor = sender.clone();
+    let completion_for_cursor = completion_popup.clone();
+    let code_view_for_cursor = code_view.clone();
     code_buffer.connect_mark_set(move |buffer, _, _| {
+        completion_for_cursor.refresh(&code_view_for_cursor, buffer, false);
         let line = (buffer.iter_at_offset(buffer.cursor_position()).line() + 1) as usize;
         sender_for_cursor.input(MainWindowMsg::CursorMoved(line));
     });
@@ -6050,21 +6079,18 @@ fn build_window_content(
 
     let indent_width = Rc::new(Cell::new(preferences.indent_width));
     let indent_controller = gtk::EventControllerKey::new();
-    let buffer_for_indent = code_buffer.clone();
+    let completion_for_key = completion_popup.clone();
+    let code_view_for_key = code_view.clone();
+    let buffer_for_key = code_buffer.clone();
     let indent_width_for_key = indent_width.clone();
     indent_controller.connect_key_pressed(move |_, key, _, modifiers| {
-        if key == gtk::gdk::Key::Tab
-            && !modifiers.intersects(
-                gtk::gdk::ModifierType::CONTROL_MASK
-                    | gtk::gdk::ModifierType::ALT_MASK
-                    | gtk::gdk::ModifierType::META_MASK,
-            )
-        {
-            buffer_for_indent.insert_at_cursor(&" ".repeat(indent_width_for_key.get() as usize));
-            gtk::glib::Propagation::Stop
-        } else {
-            gtk::glib::Propagation::Proceed
-        }
+        completion_for_key.handle_key(
+            key,
+            modifiers,
+            &code_view_for_key,
+            &buffer_for_key,
+            indent_width_for_key.get(),
+        )
     });
     code_view.add_controller(indent_controller);
 
@@ -6095,6 +6121,7 @@ fn build_window_content(
         indent_width,
         code_buffer,
         code_view,
+        completion_popup,
         syntax_tags,
         line_numbers,
         line_numbers_separator,
