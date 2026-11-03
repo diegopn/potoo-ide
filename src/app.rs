@@ -6083,20 +6083,6 @@ fn build_window_content(
     });
     window.add_controller(key_controller);
 
-    let completion_shortcut = gtk::EventControllerKey::new();
-    let code_view_for_completion = code_view.clone();
-    completion_shortcut.connect_key_pressed(move |_, key, _, modifiers| {
-        let primary_modifier = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK)
-            || (cfg!(target_os = "macos") && modifiers.contains(gtk::gdk::ModifierType::META_MASK));
-        if key == gtk::gdk::Key::space && primary_modifier {
-            code_view_for_completion.emit_by_name::<()>("show-completion", &[]);
-            gtk::glib::Propagation::Stop
-        } else {
-            gtk::glib::Propagation::Proceed
-        }
-    });
-    code_view.add_controller(completion_shortcut);
-
     MainUi {
         window,
         content: content_root,

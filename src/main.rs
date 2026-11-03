@@ -299,6 +299,7 @@ fn main() {
         .build();
 
     application.connect_startup(|_| {
+        sourceview5::init();
         register_app_icons();
         let provider = gtk::CssProvider::new();
         provider.load_from_string(include_str!("../data/potoo.css"));
