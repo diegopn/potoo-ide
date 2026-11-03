@@ -16,6 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 gtk = { package = "gtk4", version = "=0.11.3", features = ["v4_20"] }
+sourceview5 = "=0.11.2"
 relm4 = { version = "=0.11.0", default-features = false }
 potoo-portugol-interpreter = { path = "crates/potoo-portugol-studio-interpreter" }
 potoo-gportugol-interpreter = { path = "crates/potoo-gportugol-interpreter" }

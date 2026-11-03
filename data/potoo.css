@@ -623,47 +623,20 @@ popover.potoo-sidebar-popover > arrow {
   border-color: var(--potoo-border);
 }
 
-popover.potoo-completion-popover {
-  background-color: transparent;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-}
-
-popover.potoo-completion-popover > contents {
-  background-color: var(--potoo-surface-bg);
-  border: 1px solid var(--potoo-border);
-  border-radius: 0;
-  padding: 0;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
-}
-
-listbox.potoo-completion-list {
-  padding: 4px;
-  background-color: var(--potoo-surface-bg);
-  color: var(--potoo-text);
-}
-
-listbox.potoo-completion-list row.potoo-completion-row {
-  min-height: 30px;
-  background-color: transparent;
-  color: var(--potoo-text);
-}
-
-listbox.potoo-completion-list row.potoo-completion-row:selected {
-  background-color: var(--potoo-accent-soft-bg);
-  color: var(--potoo-accent-text);
-}
-
 .potoo-completion-name {
   color: var(--potoo-text);
   font-family: "JetBrains Mono", "Cascadia Code", monospace;
   font-size: 12px;
+  padding: 4px 8px;
 }
 
 .potoo-completion-detail {
-  color: var(--potoo-text-muted);
+  background-color: var(--potoo-accent-soft-bg);
+  border-radius: 0;
+  color: var(--potoo-accent-text);
   font-size: 11px;
+  margin: 4px 8px;
+  padding: 2px 6px;
 }
 
 .potoo-sidebar-menu-item {

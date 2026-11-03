@@ -10,6 +10,7 @@ use crate::learning::{
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
+use sourceview5::prelude::*;
 use std::io::{self, Write};
 use std::{
     cell::{Cell, RefCell},
@@ -3388,10 +3389,9 @@ pub struct MainUi {
     status_language: gtk::Label,
     status_details: gtk::Label,
     status_position: gtk::Label,
-    indent_width: Rc<Cell<u32>>,
     code_buffer: gtk::TextBuffer,
-    code_view: gtk::TextView,
-    completion_popup: content_panel::CompletionPopup,
+    code_view: sourceview5::View,
+    completion_provider: content_panel::CompletionProvider,
     syntax_tags: SyntaxTags,
     line_numbers: gtk::Label,
     line_numbers_separator: gtk::Separator,
@@ -4471,7 +4471,8 @@ impl SimpleComponent for MainWindow {
 
         let active_document = self.active_document();
         let active_language = active_document.map(|document| document.language);
-        ui.completion_popup.set_language(active_language);
+        ui.completion_provider.set_language(active_language);
+        ui.completion_provider.set_ui_language(self.ui_language);
         let game_preview_available = active_language == Some(Language::Potigol);
         ui.game_preview_button.set_visible(game_preview_available);
         let right_panel_section = if !game_preview_available
@@ -4580,7 +4581,7 @@ impl SimpleComponent for MainWindow {
                     &hint.problems,
                     self.ui_language,
                     &ui.code_buffer,
-                    &ui.code_view,
+                    ui.code_view.upcast_ref(),
                 );
             } else {
                 ui.learning_line_title
@@ -4608,7 +4609,7 @@ impl SimpleComponent for MainWindow {
                     &[],
                     self.ui_language,
                     &ui.code_buffer,
-                    &ui.code_view,
+                    ui.code_view.upcast_ref(),
                 );
             }
             ui.displayed_learning_hint
@@ -4627,7 +4628,7 @@ impl SimpleComponent for MainWindow {
         }
         let active_document_changed = ui.displayed_active_document_id != active_document_id;
         if active_document_changed {
-            ui.completion_popup.hide();
+            ui.code_view.completion().hide();
             ui.code_buffer.set_text(
                 active_document
                     .map(|document| document.contents.as_str())
@@ -4653,7 +4654,8 @@ impl SimpleComponent for MainWindow {
         ui.default_new_language.set(self.new_file_language);
 
         if ui.displayed_indent_width != self.indent_width {
-            ui.indent_width.set(self.indent_width);
+            ui.code_view.set_indent_width(self.indent_width as i32);
+            ui.code_view.set_tab_width(self.indent_width);
             ui.settings
                 .indent_width_picker
                 .set_selected(if self.indent_width == 2 { 0 } else { 1 });
@@ -5046,7 +5048,7 @@ impl SimpleComponent for MainWindow {
                     &hint.problems,
                     self.ui_language,
                     &ui.code_buffer,
-                    &ui.code_view,
+                    ui.code_view.upcast_ref(),
                 );
             } else {
                 ui.debugger_learning
@@ -5063,7 +5065,7 @@ impl SimpleComponent for MainWindow {
                     &[],
                     self.ui_language,
                     &ui.code_buffer,
-                    &ui.code_view,
+                    ui.code_view.upcast_ref(),
                 );
             }
             ui.displayed_debugger_learning_hint
@@ -5111,7 +5113,7 @@ impl SimpleComponent for MainWindow {
             || ui.displayed_run_language != self.ui_language
         {
             if execution_active && !ui.displayed_run_active {
-                ui.completion_popup.hide();
+                ui.code_view.completion().hide();
             }
             let (icon_name, label) = if execution_active && !self.debugging_active {
                 ("potoo-stop-symbolic", "Parar")
@@ -5590,7 +5592,8 @@ fn build_window_content(
     let default_new_language = Rc::new(Cell::new(preferences.default_language));
     let project_root_for_new_items = Rc::new(RefCell::new(initial_project_root));
 
-    let code_buffer = gtk::TextBuffer::new(None::<&gtk::TextTagTable>);
+    let source_buffer = sourceview5::Buffer::new(None::<&gtk::TextTagTable>);
+    let code_buffer = source_buffer.clone().upcast::<gtk::TextBuffer>();
     code_buffer.set_text(Language::Portugol.sample());
     let syntax_tags = content_panel::make_syntax_tags(&code_buffer);
     content_panel::set_syntax_palette(&syntax_tags, initial_dark);
@@ -5618,24 +5621,33 @@ fn build_window_content(
     line_numbers_separator.set_visible(preferences.line_numbers_visible);
     line_number_gutter.append(&line_numbers_separator);
 
-    let code_view = gtk::TextView::builder()
-        .buffer(&code_buffer)
-        .monospace(true)
-        .wrap_mode(if preferences.word_wrap {
-            gtk::WrapMode::WordChar
-        } else {
-            gtk::WrapMode::None
-        })
-        .left_margin(12)
-        .right_margin(16)
-        .top_margin(14)
-        .bottom_margin(14)
-        .build();
+    let code_view = sourceview5::View::with_buffer(&source_buffer);
+    code_view.set_monospace(true);
+    code_view.set_wrap_mode(if preferences.word_wrap {
+        gtk::WrapMode::WordChar
+    } else {
+        gtk::WrapMode::None
+    });
+    code_view.set_left_margin(12);
+    code_view.set_right_margin(16);
+    code_view.set_top_margin(14);
+    code_view.set_bottom_margin(14);
+    code_view.set_auto_indent(true);
+    code_view.set_indent_width(preferences.indent_width as i32);
+    code_view.set_tab_width(preferences.indent_width);
+    code_view.set_insert_spaces_instead_of_tabs(true);
+    code_view.set_indent_on_tab(true);
     code_view.set_gutter(gtk::TextWindowType::Left, Some(&line_number_gutter));
     code_view.add_css_class("potoo-code-editor");
     code_view.add_css_class(&format!("potoo-font-{}", preferences.font_size));
-    let completion_popup =
-        content_panel::CompletionPopup::new(&code_view, &code_buffer, ui_language_state.clone());
+    let completion_provider = content_panel::CompletionProvider::new();
+    completion_provider.set_ui_language(ui_language);
+    let completion = code_view.completion();
+    completion.set_page_size(8);
+    completion.set_select_on_show(true);
+    completion.set_show_icons(false);
+    completion.set_remember_info_visibility(false);
+    completion.add_provider(&completion_provider);
 
     let code_scroll = gtk::ScrolledWindow::builder()
         .hexpand(true)
@@ -6034,19 +6046,13 @@ fn build_window_content(
     }));
 
     let sender_for_source = sender.clone();
-    let completion_for_source = completion_popup.clone();
-    let code_view_for_source = code_view.clone();
     code_buffer.connect_changed(move |buffer| {
-        completion_for_source.refresh(&code_view_for_source, buffer, false);
         let contents = buffer.text(&buffer.start_iter(), &buffer.end_iter(), true);
         sender_for_source.input(MainWindowMsg::SourceChanged(contents.to_string()));
     });
 
     let sender_for_cursor = sender.clone();
-    let completion_for_cursor = completion_popup.clone();
-    let code_view_for_cursor = code_view.clone();
     code_buffer.connect_mark_set(move |buffer, _, _| {
-        completion_for_cursor.refresh(&code_view_for_cursor, buffer, false);
         let line = (buffer.iter_at_offset(buffer.cursor_position()).line() + 1) as usize;
         sender_for_cursor.input(MainWindowMsg::CursorMoved(line));
     });
@@ -6077,22 +6083,19 @@ fn build_window_content(
     });
     window.add_controller(key_controller);
 
-    let indent_width = Rc::new(Cell::new(preferences.indent_width));
-    let indent_controller = gtk::EventControllerKey::new();
-    let completion_for_key = completion_popup.clone();
-    let code_view_for_key = code_view.clone();
-    let buffer_for_key = code_buffer.clone();
-    let indent_width_for_key = indent_width.clone();
-    indent_controller.connect_key_pressed(move |_, key, _, modifiers| {
-        completion_for_key.handle_key(
-            key,
-            modifiers,
-            &code_view_for_key,
-            &buffer_for_key,
-            indent_width_for_key.get(),
-        )
+    let completion_shortcut = gtk::EventControllerKey::new();
+    let code_view_for_completion = code_view.clone();
+    completion_shortcut.connect_key_pressed(move |_, key, _, modifiers| {
+        let primary_modifier = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK)
+            || (cfg!(target_os = "macos") && modifiers.contains(gtk::gdk::ModifierType::META_MASK));
+        if key == gtk::gdk::Key::space && primary_modifier {
+            code_view_for_completion.emit_by_name::<()>("show-completion", &[]);
+            gtk::glib::Propagation::Stop
+        } else {
+            gtk::glib::Propagation::Proceed
+        }
     });
-    code_view.add_controller(indent_controller);
+    code_view.add_controller(completion_shortcut);
 
     MainUi {
         window,
@@ -6118,10 +6121,9 @@ fn build_window_content(
         status_language,
         status_details,
         status_position,
-        indent_width,
         code_buffer,
         code_view,
-        completion_popup,
+        completion_provider,
         syntax_tags,
         line_numbers,
         line_numbers_separator,
