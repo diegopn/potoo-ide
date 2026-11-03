@@ -27,7 +27,6 @@ pub(crate) struct OutputPanelUi {
     pub(crate) problems_tab: gtk::Button,
     pub(crate) debugger_controls: gtk::Stack,
     pub(crate) debugger_start: gtk::Button,
-    pub(crate) debugger_continue: gtk::Button,
     pub(crate) debugger_step: gtk::Button,
     pub(crate) debugger_stop: gtk::Button,
     pub(crate) debugger_position: gtk::Label,
@@ -67,6 +66,9 @@ pub(crate) struct ToolPanelUi {
     pub(crate) stack: gtk::Stack,
     pub(crate) learning_button: gtk::Button,
     pub(crate) debugger_button: gtk::Button,
+    pub(crate) game_preview_button: gtk::Button,
+    pub(crate) game_preview_stack: gtk::Stack,
+    pub(crate) game_preview_area: gtk::DrawingArea,
 }
 
 pub(crate) fn rebuild_editor_tabs(
@@ -291,6 +293,42 @@ pub(crate) fn build_tool_panel(
     stack.set_transition_duration(120);
     stack.add_named(&learning, Some("learning"));
     stack.add_named(&debugger, Some("debugger"));
+    let preview_panel = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    preview_panel.add_css_class("potoo-game-preview-panel");
+    preview_panel.set_vexpand(true);
+    preview_panel.set_size_request(306, -1);
+    let preview_title = gtk::Label::new(Some(tr(language, "Prévia do jogo")));
+    preview_title.set_xalign(0.0);
+    preview_title.add_css_class("potoo-learning-title");
+    preview_title.set_margin_start(18);
+    preview_title.set_margin_end(18);
+    preview_title.set_margin_top(18);
+    let game_preview_stack = gtk::Stack::new();
+    game_preview_stack.set_vexpand(true);
+    let preview_empty = gtk::Label::new(Some(tr(
+        language,
+        "Execute um programa Potigol Jerimum para ver o jogo aqui.",
+    )));
+    preview_empty.set_wrap(true);
+    preview_empty.set_halign(gtk::Align::Center);
+    preview_empty.set_valign(gtk::Align::Center);
+    preview_empty.set_margin_start(18);
+    preview_empty.set_margin_end(18);
+    preview_empty.set_margin_top(18);
+    preview_empty.set_margin_bottom(18);
+    preview_empty.add_css_class("potoo-game-preview-empty");
+    let game_preview_area = gtk::DrawingArea::new();
+    game_preview_area.set_size_request(240, 150);
+    game_preview_area.set_halign(gtk::Align::Center);
+    game_preview_area.set_valign(gtk::Align::Start);
+    game_preview_area.set_focusable(true);
+    game_preview_area.add_css_class("potoo-game-preview-area");
+    game_preview_stack.add_named(&preview_empty, Some("idle"));
+    game_preview_stack.add_named(&game_preview_area, Some("canvas"));
+    game_preview_stack.set_visible_child_name("idle");
+    preview_panel.append(&preview_title);
+    preview_panel.append(&game_preview_stack);
+    stack.add_named(&preview_panel, Some("game-preview"));
     stack.set_visible_child_name("learning");
 
     let revealer = gtk::Revealer::new();
@@ -319,13 +357,25 @@ pub(crate) fn build_tool_panel(
     debugger_button.set_child(Some(&icon("debugger")));
     debugger_button.set_tooltip_text(Some(tr(language, "Abrir depurador")));
     debugger_button.add_css_class("potoo-tool-rail-button");
-    let sender_for_debugger = sender;
+    let sender_for_debugger = sender.clone();
     debugger_button.connect_clicked(move |_| {
         sender_for_debugger.input(MainWindowMsg::SelectRightPanel(RightPanelSection::Debugger));
     });
 
+    let game_preview_button = gtk::Button::new();
+    game_preview_button.set_child(Some(&icon("game-preview")));
+    game_preview_button.set_tooltip_text(Some(tr(language, "Abrir prévia do jogo")));
+    game_preview_button.add_css_class("potoo-tool-rail-button");
+    let sender_for_game_preview = sender;
+    game_preview_button.connect_clicked(move |_| {
+        sender_for_game_preview.input(MainWindowMsg::SelectRightPanel(
+            RightPanelSection::GamePreview,
+        ));
+    });
+
     rail.append(&learning_button);
     rail.append(&debugger_button);
+    rail.append(&game_preview_button);
     panel.append(&rail);
 
     ToolPanelUi {
@@ -334,6 +384,9 @@ pub(crate) fn build_tool_panel(
         stack,
         learning_button,
         debugger_button,
+        game_preview_button,
+        game_preview_stack,
+        game_preview_area,
     }
 }
 
@@ -840,11 +893,6 @@ pub(crate) fn build_output_panel(
     controls.set_halign(gtk::Align::Fill);
     controls.set_hexpand(true);
     controls.set_homogeneous(true);
-    let debugger_continue = gtk::Button::new();
-    debugger_continue.set_child(Some(&icon("play")));
-    debugger_continue.set_tooltip_text(Some(tr(language, "Continuar")));
-    debugger_continue
-        .update_property(&[gtk::accessible::Property::Label(tr(language, "Continuar"))]);
     let debugger_step = gtk::Button::new();
     debugger_step.set_child(Some(&icon("step")));
     debugger_step.set_tooltip_text(Some(tr(language, "Avançar um passo")));
@@ -866,19 +914,14 @@ pub(crate) fn build_output_panel(
     debugger_stop.add_css_class("potoo-debugger-stop");
     debugger_stop.set_hexpand(true);
     debugger_stop.set_visible(false);
-    for button in [&debugger_continue, &debugger_step] {
-        button.add_css_class("potoo-debugger-action");
-        button.set_hexpand(true);
-    }
-    controls.append(&debugger_continue);
+    debugger_step.add_css_class("potoo-debugger-action");
+    debugger_step.add_css_class("potoo-debugger-step");
+    debugger_step.set_hexpand(true);
     controls.append(&debugger_step);
     let sender_for_start = sender.clone();
     connect_debugger_start(&debugger_start, &debugger_controls, move || {
         sender_for_start.input(MainWindowMsg::StartDebug);
     });
-    let sender_for_continue = sender.clone();
-    debugger_continue
-        .connect_clicked(move |_| sender_for_continue.input(MainWindowMsg::ContinueDebug));
     let sender_for_step = sender.clone();
     debugger_step.connect_clicked(move |_| sender_for_step.input(MainWindowMsg::StepDebug));
     debugger_stop.connect_clicked(move |_| sender.input(MainWindowMsg::StopDebug));
@@ -952,7 +995,6 @@ pub(crate) fn build_output_panel(
         problems_tab,
         debugger_controls,
         debugger_start,
-        debugger_continue,
         debugger_step,
         debugger_stop,
         debugger_position,

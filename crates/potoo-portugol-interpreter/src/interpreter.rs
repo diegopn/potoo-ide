@@ -640,11 +640,11 @@ impl<'a> Interpreter<'a> {
                 if *dimension == 0 {
                     *dimension = items.len();
                 }
-                if items.len() > *dimension {
+                if items.len() != *dimension {
                     return Err(runtime_error(
                         expression,
                         format!(
-                            "o vetor tem espaço para {} valor(es), mas recebeu {}",
+                            "o vetor foi declarado com {} valor(es), mas recebeu {}",
                             *dimension,
                             items.len()
                         ),
@@ -672,11 +672,11 @@ impl<'a> Interpreter<'a> {
             ));
         };
         let length = dimensions[0];
-        if items.len() > length {
+        if items.len() != length {
             return Err(runtime_error(
                 initializer,
                 format!(
-                    "o vetor tem espaço para {length} valor(es), mas recebeu {}",
+                    "o vetor foi declarado com {length} valor(es), mas recebeu {}",
                     items.len()
                 ),
             ));
@@ -855,6 +855,17 @@ impl<'a> Interpreter<'a> {
                     }
                     self.io.clear_output();
                     return Ok(Value::Null);
+                }
+                if name == "sorteia" {
+                    let mut values = Vec::with_capacity(arguments.len());
+                    for argument in arguments {
+                        values.push(self.evaluate(argument)?);
+                    }
+                    return self
+                        .call_util_builtin("sorteia", &values, expression)?
+                        .ok_or_else(|| {
+                            runtime_error(expression, "função 'sorteia' não encontrada")
+                        });
                 }
                 if self.functions.contains_key(&name) {
                     return self.call_function(
@@ -3459,7 +3470,10 @@ fn call_types_builtin(
         "cadeia_e_real" => Value::Logical(is_real_text(&text_argument(0)?)),
         "cadeia_e_logico" => {
             let text = text_argument(0)?;
-            Value::Logical(text.starts_with("verdadeiro") || text.ends_with("falso"))
+            Value::Logical(
+                text.starts_with("verdadeiro")
+                    || strip_final_line_terminator(&text).ends_with("falso"),
+            )
         }
         "cadeia_e_caracter" => Value::Logical(text_argument(0)?.encode_utf16().count() == 1),
         "cadeia_para_caracter" => {
@@ -3567,6 +3581,7 @@ fn integer_to_radix_string(value: i32, radix: u32) -> String {
 }
 
 fn is_integer_text(text: &str, radix: u32) -> bool {
+    let text = strip_final_line_terminator(text);
     let digits = match radix {
         2 => text
             .strip_prefix("0b")
@@ -3589,6 +3604,7 @@ fn is_integer_text(text: &str, radix: u32) -> bool {
 }
 
 fn is_real_text(text: &str) -> bool {
+    let text = strip_final_line_terminator(text);
     let unsigned = text.strip_prefix('-').unwrap_or(text);
     let Some((whole, fraction)) = unsigned.split_once('.') else {
         return false;
@@ -3597,6 +3613,24 @@ fn is_real_text(text: &str) -> bool {
         && !fraction.is_empty()
         && whole.bytes().all(|byte| byte.is_ascii_digit())
         && fraction.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn strip_final_line_terminator(text: &str) -> &str {
+    if let Some(text) = text.strip_suffix("\r\n") {
+        text
+    } else {
+        match text.chars().next_back() {
+            Some(character)
+                if matches!(
+                    character,
+                    '\n' | '\r' | '\u{0085}' | '\u{2028}' | '\u{2029}'
+                ) =>
+            {
+                &text[..text.len() - character.len_utf8()]
+            }
+            _ => text,
+        }
+    }
 }
 
 fn parse_radix_integer(text: &str, radix: u32) -> Result<i64, ()> {

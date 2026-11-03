@@ -725,6 +725,7 @@ pub(crate) enum HostRequest {
     MousePosition,
     MouseSetCursorVisible(bool),
     GraphicsWindowIsOpen,
+    JerimumPreviewStart,
     Graphics {
         function: String,
         arguments: Vec<portugol::HostValue>,
@@ -1873,12 +1874,17 @@ impl potigol::RuntimeIo for WorkerIo {
             potigol::JerimumRequest::Graphics {
                 function,
                 arguments,
-            } => self
-                .request_host(HostRequest::Graphics {
-                    function,
-                    arguments: arguments.into_iter().map(to_host).collect(),
-                })
-                .map(from_host),
+            } => {
+                let request = if function == "iniciar_modo_grafico" {
+                    HostRequest::JerimumPreviewStart
+                } else {
+                    HostRequest::Graphics {
+                        function,
+                        arguments: arguments.into_iter().map(to_host).collect(),
+                    }
+                };
+                self.request_host(request).map(from_host)
+            }
             potigol::JerimumRequest::Audio {
                 function,
                 arguments,

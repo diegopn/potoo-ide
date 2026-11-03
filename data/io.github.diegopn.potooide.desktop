@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=Potoo IDE
-Comment=Programação em pseudolinguagens
+Comment=Programação em linguagens/pseudolinguagens
 Exec=potoo-ide
 Icon=io.github.diegopn.potooide
 Terminal=false

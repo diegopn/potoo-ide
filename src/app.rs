@@ -238,8 +238,11 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Criar um projeto Portugol, VisuAlg, Potigol ou G-Portugol" => {
                 "Create a Portugol, VisuAlg, Potigol, or G-Portugol project"
             }
-            "Selecione a pseudolinguagem do projeto" => "Select the project's pseudolanguage",
-            "Pseudolinguagem" => "Pseudolanguage",
+            "Selecione a linguagem/pseudolinguagem do projeto" => {
+                "Select the project's language/pseudolanguage"
+            }
+            "Linguagem/pseudolinguagem" => "Language/pseudolanguage",
+            "Depuração encerrada com erro" => "Debugging ended with an error",
             "Variante do Portugol" => "Portugol variant",
             "Variante do Potigol" => "Potigol variant",
             "Esta análise do Potigol é heurística e pode não reconhecer todos os casos da linguagem." => {
@@ -306,6 +309,12 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Recolher Aprenda enquanto programa" => "Collapse Learn as you code",
             "Abrir depurador" => "Open debugger",
             "Recolher depurador" => "Collapse debugger",
+            "Abrir prévia do jogo" => "Open game preview",
+            "Recolher prévia do jogo" => "Hide game preview",
+            "Prévia do jogo" => "Game preview",
+            "Execute um programa Potigol Jerimum para ver o jogo aqui." => {
+                "Run a Potigol Jerimum program to see the game here."
+            }
             "Analisando a linha selecionada…" => "Analyzing selected line…",
             "Linha 1 · programa" => "Line 1 · program",
             "Selecione uma linha para ver uma explicação contextual do programa." => {
@@ -822,8 +831,11 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Criar um projeto Portugol, VisuAlg, Potigol ou G-Portugol" => {
                 "Crear un proyecto Portugol, VisuAlg, Potigol o G-Portugol"
             }
-            "Selecione a pseudolinguagem do projeto" => "Selecciona el pseudolenguaje del proyecto",
-            "Pseudolinguagem" => "Pseudolenguaje",
+            "Selecione a linguagem/pseudolinguagem do projeto" => {
+                "Selecciona el lenguaje/pseudolenguaje del proyecto"
+            }
+            "Linguagem/pseudolinguagem" => "Lenguaje/pseudolenguaje",
+            "Depuração encerrada com erro" => "La depuración terminó con un error",
             "Variante do Portugol" => "Variante de Portugol",
             "Variante do Potigol" => "Variante de Potigol",
             "Esta análise do Potigol é heurística e pode não reconhecer todos os casos da linguagem." => {
@@ -896,6 +908,12 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Recolher Aprenda enquanto programa" => "Contraer Aprende mientras programas",
             "Abrir depurador" => "Abrir depurador",
             "Recolher depurador" => "Contraer depurador",
+            "Abrir prévia do jogo" => "Abrir vista previa del juego",
+            "Recolher prévia do jogo" => "Ocultar vista previa del juego",
+            "Prévia do jogo" => "Vista previa del juego",
+            "Execute um programa Potigol Jerimum para ver o jogo aqui." => {
+                "Ejecuta un programa de Potigol Jerimum para ver el juego aquí."
+            }
             "Analisando a linha selecionada…" => "Analizando la línea seleccionada…",
             "Linha 1 · programa" => "Línea 1 · programa",
             "Selecione uma linha para ver uma explicação contextual do programa." => {
@@ -1461,8 +1479,9 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Novo projeto",
     "Criar projeto",
     "Criar um projeto Portugol, VisuAlg, Potigol ou G-Portugol",
-    "Selecione a pseudolinguagem do projeto",
-    "Pseudolinguagem",
+    "Selecione a linguagem/pseudolinguagem do projeto",
+    "Linguagem/pseudolinguagem",
+    "Depuração encerrada com erro",
     "Variante do Portugol",
     "Variante do Potigol",
     "Portugol 2.0",
@@ -1525,6 +1544,10 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Recolher Aprenda enquanto programa",
     "Abrir depurador",
     "Recolher depurador",
+    "Abrir prévia do jogo",
+    "Recolher prévia do jogo",
+    "Prévia do jogo",
+    "Execute um programa Potigol Jerimum para ver o jogo aqui.",
     "Analisando a linha selecionada…",
     "função",
     "procedimento",
@@ -1777,6 +1800,7 @@ struct SessionSnapshot {
 pub(crate) enum RightPanelSection {
     Learning,
     Debugger,
+    GamePreview,
 }
 
 #[derive(Debug)]
@@ -1800,7 +1824,7 @@ pub(crate) enum MainWindowMsg {
         result: Result<String, String>,
     },
     CreateProject(PathBuf, String, ProjectTemplate),
-    CreateFile(String, Language, PathBuf),
+    CreateFile(String, ProjectTemplate, PathBuf),
     CreateFolder(String, PathBuf),
     RenameProjectItem(PathBuf),
     RenameProjectItemConfirmed(PathBuf, String),
@@ -1827,7 +1851,6 @@ pub(crate) enum MainWindowMsg {
     CloseSettings,
     Run,
     StartDebug,
-    ContinueDebug,
     StepDebug,
     StopDebug,
     ExecutionEvent(u64, ExecutionEvent),
@@ -2052,6 +2075,8 @@ pub(crate) struct MainWindow {
     output_text: String,
     output_status: String,
     problem_text: String,
+    debugger_error: bool,
+    game_preview_active: bool,
     next_execution_id: u64,
     active_execution_id: Option<u64>,
     debugging_active: bool,
@@ -2595,6 +2620,7 @@ impl MainWindow {
         self.input_requested = false;
         self.input_prompt = None;
         self.debugger_snapshot = None;
+        self.debugger_error = false;
         self.debugger_learning_hint = None;
         self.debugging_active = debugging;
         self.execution_line = None;
@@ -2999,7 +3025,7 @@ impl MainWindow {
     fn create_project_file(
         &mut self,
         name: String,
-        language: Language,
+        template: ProjectTemplate,
         relative_folder: PathBuf,
         sender: ComponentSender<Self>,
     ) {
@@ -3016,16 +3042,28 @@ impl MainWindow {
                 return;
             }
         };
-        let (path, language) = match new_source_path(&folder, &name, language, self.ui_language) {
-            Ok(source) => source,
-            Err(error) => {
-                self.output_status = error;
-                return;
-            }
+        let (path, language) =
+            match new_source_path(&folder, &name, template.language(), self.ui_language) {
+                Ok(source) => source,
+                Err(error) => {
+                    self.output_status = error;
+                    return;
+                }
+            };
+        let contents = if language == Language::Potigol {
+            template.new_file_sample()
+        } else {
+            ""
         };
 
         match OpenOptions::new().write(true).create_new(true).open(&path) {
-            Ok(_) => {
+            Ok(mut file) => {
+                if let Err(error) = file.write_all(contents.as_bytes()) {
+                    let _ = fs::remove_file(&path);
+                    self.output_status =
+                        format!("{}: {error}", self.text("Não foi possível criar o arquivo"));
+                    return;
+                }
                 let name = path
                     .file_name()
                     .map(|name| name.to_string_lossy().into_owned())
@@ -3034,8 +3072,8 @@ impl MainWindow {
                     Some(path.clone()),
                     name,
                     language,
-                    String::new(),
-                    String::new(),
+                    contents.to_owned(),
+                    contents.to_owned(),
                 );
                 self.new_file_language = language;
                 self.refresh_project_scan(root, sender);
@@ -3347,7 +3385,6 @@ pub struct MainUi {
     output_status: gtk::Label,
     debugger_start: gtk::Button,
     debugger_controls: gtk::Stack,
-    debugger_continue: gtk::Button,
     debugger_step: gtk::Button,
     debugger_stop: gtk::Button,
     debugger_position: gtk::Label,
@@ -3357,6 +3394,9 @@ pub struct MainUi {
     right_panel_stack: gtk::Stack,
     learning_tool_button: gtk::Button,
     debugger_tool_button: gtk::Button,
+    game_preview_button: gtk::Button,
+    game_preview_stack: gtk::Stack,
+    game_preview_area: gtk::DrawingArea,
     learning_spinner: gtk::Spinner,
     learning_analysis_stack: gtk::Stack,
     learning_line_title: gtk::Label,
@@ -3395,6 +3435,7 @@ pub struct MainUi {
     displayed_input_requested: bool,
     displayed_output_status: String,
     displayed_debugger_snapshot: Option<DebuggerSnapshot>,
+    displayed_debugger_error: bool,
     displayed_execution_line: Option<usize>,
     displayed_debugger_learning_hint: Option<LearningHint>,
     displayed_debugger_analysis_state: &'static str,
@@ -3402,6 +3443,7 @@ pub struct MainUi {
     displayed_learning_loading: bool,
     displayed_right_panel_section: Option<RightPanelSection>,
     displayed_right_panel_collapsed: bool,
+    displayed_game_preview_active: bool,
 }
 
 impl MainWindow {
@@ -3457,6 +3499,14 @@ impl MainWindow {
                             Ok(Some(potoo_portugol_interpreter::HostValue::Logical(
                                 self.graphics_host.is_open(),
                             )))
+                        }
+                        execution::HostRequest::JerimumPreviewStart => {
+                            self.graphics_host.start_jerimum_preview().map(|value| {
+                                self.right_panel_section = RightPanelSection::GamePreview;
+                                self.right_panel_collapsed = false;
+                                self.game_preview_active = true;
+                                Some(value)
+                            })
                         }
                         execution::HostRequest::Audio {
                             function,
@@ -3522,7 +3572,9 @@ impl MainWindow {
                     self.cancel_file_selection(execution_id);
                     self.audio_host.stop_all();
                     self.graphics_host.finish();
+                    self.game_preview_active = false;
                     let finished_document_id = self.execution_document_id;
+                    let debugger_run = self.debugger_document_id == finished_document_id;
                     let source_matches_execution = finished_document_id
                         .and_then(|id| self.documents.iter().find(|document| document.id == id))
                         .is_some_and(|document| {
@@ -3552,7 +3604,9 @@ impl MainWindow {
                             };
                         }
                         Err(diagnostics) => {
-                            self.problem_text = format_diagnostics(&diagnostics);
+                            let diagnostic_text = format_diagnostics(&diagnostics);
+                            self.problem_text.clone_from(&diagnostic_text);
+                            self.debugger_error = debugger_run;
                             self.output_status =
                                 self.text("O programa terminou com um erro.").to_string();
                             if source_matches_execution {
@@ -3578,6 +3632,7 @@ impl MainWindow {
             self.cancel_file_selection(execution_id);
             self.audio_host.stop_all();
             self.graphics_host.finish();
+            self.game_preview_active = false;
             self.active_execution_id = None;
             self.debugging_active = false;
             self.execution_document_id = None;
@@ -3619,7 +3674,7 @@ impl SimpleComponent for MainWindow {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         root.set_title(Some("Potoo IDE"));
-        root.set_default_size(980, 720);
+        root.set_default_size(980, 640);
         root.add_css_class("potoo-window");
         let preferences = load_preferences();
         let saved_session = load_session();
@@ -3769,6 +3824,7 @@ impl SimpleComponent for MainWindow {
                 tr(preferences.ui_language, "Pronto para executar").to_string()
             },
             problem_text: tr(preferences.ui_language, "Nenhum problema detectado").to_string(),
+            game_preview_active: false,
             next_execution_id: 1,
             active_execution_id: None,
             debugging_active: false,
@@ -3783,6 +3839,7 @@ impl SimpleComponent for MainWindow {
             input_requested: false,
             input_prompt: None,
             debugger_snapshot: None,
+            debugger_error: false,
             debugger_learning_hint: None,
             execution_diagnostics: Vec::new(),
             execution_diagnostics_document_id: None,
@@ -3811,6 +3868,9 @@ impl SimpleComponent for MainWindow {
             preferences,
             initial_dark,
         );
+        model
+            .graphics_host
+            .set_jerimum_preview_area(widgets.game_preview_area.clone());
         root.set_child(Some(&widgets.content));
         if let Some(project_root) = model.project_root.clone() {
             model.schedule_project_scan(project_root, false, sender.clone());
@@ -4196,15 +4256,6 @@ impl SimpleComponent for MainWindow {
                     self.start_execution(sender.clone(), true);
                 }
             }
-            MainWindowMsg::ContinueDebug => {
-                if let Some(control) = &self.execution_control {
-                    if control.send(ControlAction::Continue).is_ok() {
-                        self.output_status = self.text("Executando o programa…").to_string();
-                    }
-                }
-                self.debugging_active = false;
-                self.debugger_snapshot = None;
-            }
             MainWindowMsg::StepDebug => {
                 self.send_execution_control(ControlAction::Step);
                 self.debugger_snapshot = None;
@@ -4393,21 +4444,31 @@ impl SimpleComponent for MainWindow {
             ui.right_panel_stack.set_visible_child_name(match section {
                 RightPanelSection::Learning => "learning",
                 RightPanelSection::Debugger => "debugger",
+                RightPanelSection::GamePreview => "game-preview",
             });
             ui.right_panel_revealer.set_reveal_child(!collapsed);
 
             let learning_selected = section == RightPanelSection::Learning;
-            if learning_selected {
-                ui.learning_tool_button
-                    .add_css_class("potoo-tool-rail-button-selected");
-                ui.debugger_tool_button
-                    .remove_css_class("potoo-tool-rail-button-selected");
-            } else {
-                ui.learning_tool_button
-                    .remove_css_class("potoo-tool-rail-button-selected");
-                ui.debugger_tool_button
-                    .add_css_class("potoo-tool-rail-button-selected");
-            }
+            let debugger_selected = section == RightPanelSection::Debugger;
+            let game_preview_selected = section == RightPanelSection::GamePreview;
+            ui.learning_tool_button
+                .set_css_classes(if learning_selected {
+                    &["potoo-tool-rail-button", "potoo-tool-rail-button-selected"]
+                } else {
+                    &["potoo-tool-rail-button"]
+                });
+            ui.debugger_tool_button
+                .set_css_classes(if debugger_selected {
+                    &["potoo-tool-rail-button", "potoo-tool-rail-button-selected"]
+                } else {
+                    &["potoo-tool-rail-button"]
+                });
+            ui.game_preview_button
+                .set_css_classes(if game_preview_selected {
+                    &["potoo-tool-rail-button", "potoo-tool-rail-button-selected"]
+                } else {
+                    &["potoo-tool-rail-button"]
+                });
             ui.learning_tool_button.set_tooltip_text(Some(self.text(
                 if learning_selected && !collapsed {
                     "Recolher Aprenda enquanto programa"
@@ -4422,9 +4483,29 @@ impl SimpleComponent for MainWindow {
                     "Abrir depurador"
                 },
             )));
+            ui.game_preview_button.set_tooltip_text(Some(self.text(
+                if game_preview_selected && !collapsed {
+                    "Recolher prévia do jogo"
+                } else {
+                    "Abrir prévia do jogo"
+                },
+            )));
+            if game_preview_selected && !collapsed {
+                ui.game_preview_area.grab_focus();
+            }
 
             ui.displayed_right_panel_section = Some(section);
             ui.displayed_right_panel_collapsed = collapsed;
+        }
+
+        if ui.displayed_game_preview_active != self.game_preview_active {
+            ui.game_preview_stack
+                .set_visible_child_name(if self.game_preview_active {
+                    "canvas"
+                } else {
+                    "idle"
+                });
+            ui.displayed_game_preview_active = self.game_preview_active;
         }
 
         let active_document = self.active_document();
@@ -4812,11 +4893,6 @@ impl SimpleComponent for MainWindow {
         )));
         ui.debugger_start
             .set_sensitive(self.active_execution_id.is_none());
-        ui.debugger_continue.set_sensitive(
-            self.debugging_active
-                && self.active_execution_id.is_some()
-                && self.debugger_snapshot.is_some(),
-        );
         ui.debugger_step.set_sensitive(
             self.debugging_active
                 && self.active_execution_id.is_some()
@@ -4825,7 +4901,12 @@ impl SimpleComponent for MainWindow {
         ui.debugger_stop.set_visible(self.debugging_active);
         ui.debugger_stop
             .set_sensitive(self.debugging_active && self.active_execution_id.is_some());
-        if ui.displayed_debugger_snapshot != self.debugger_snapshot {
+        let debugger_error = self.debugger_error
+            && self.active_document_id.is_some()
+            && self.execution_diagnostics_document_id == self.active_document_id;
+        if ui.displayed_debugger_snapshot != self.debugger_snapshot
+            || ui.displayed_debugger_error != debugger_error
+        {
             if let Some(snapshot) = &self.debugger_snapshot {
                 let reason = match snapshot.pause_reason {
                     Some(execution::DebugPauseReason::Step) => self.text("passo a passo"),
@@ -4856,6 +4937,10 @@ impl SimpleComponent for MainWindow {
                 {
                     ui.code_buffer.place_cursor(&iter);
                 }
+            } else if debugger_error {
+                ui.debugger_position
+                    .set_text(self.text("Depuração encerrada com erro"));
+                ui.debugger_variables.set_text(&self.problem_text);
             } else {
                 ui.debugger_position
                     .set_text(self.text("Aguardando depuração"));
@@ -4867,6 +4952,7 @@ impl SimpleComponent for MainWindow {
             }
             ui.displayed_debugger_snapshot
                 .clone_from(&self.debugger_snapshot);
+            ui.displayed_debugger_error = debugger_error;
         }
         let current_debugger_hint = self
             .debugger_learning_hint
@@ -4972,6 +5058,11 @@ impl SimpleComponent for MainWindow {
             } else {
                 ("potoo-play-symbolic", "Executar")
             };
+            if execution_active && !self.debugging_active {
+                ui.run_button.add_css_class("potoo-stop-button");
+            } else {
+                ui.run_button.remove_css_class("potoo-stop-button");
+            }
             ui.run_icon.set_icon_name(Some(icon_name));
             ui.run_label.set_text(self.text(label));
             ui.run_button.set_tooltip_text(Some(self.text(
@@ -5537,7 +5628,6 @@ fn build_window_content(
     let problems_tab = output_ui.problems_tab;
     let debugger_controls = output_ui.debugger_controls;
     let debugger_start = output_ui.debugger_start;
-    let debugger_continue = output_ui.debugger_continue;
     let debugger_step = output_ui.debugger_step;
     let debugger_stop = output_ui.debugger_stop;
     let debugger_position = output_ui.debugger_position;
@@ -5978,7 +6068,6 @@ fn build_window_content(
         output_status,
         debugger_start,
         debugger_controls,
-        debugger_continue,
         debugger_step,
         debugger_stop,
         debugger_position,
@@ -5988,6 +6077,9 @@ fn build_window_content(
         right_panel_stack: tools_ui.stack,
         learning_tool_button: tools_ui.learning_button,
         debugger_tool_button: tools_ui.debugger_button,
+        game_preview_button: tools_ui.game_preview_button,
+        game_preview_stack: tools_ui.game_preview_stack,
+        game_preview_area: tools_ui.game_preview_area,
         learning_spinner: learning_ui.spinner,
         learning_analysis_stack: learning_ui.analysis_stack,
         learning_line_title: learning_ui.line_title,
@@ -6027,6 +6119,7 @@ fn build_window_content(
         displayed_input_requested: false,
         displayed_output_status: tr(ui_language, "Pronto para executar").to_string(),
         displayed_debugger_snapshot: None,
+        displayed_debugger_error: false,
         displayed_execution_line: None,
         displayed_debugger_learning_hint: None,
         displayed_debugger_analysis_state: "idle",
@@ -6034,6 +6127,7 @@ fn build_window_content(
         displayed_learning_loading: false,
         displayed_right_panel_section: None,
         displayed_right_panel_collapsed: true,
+        displayed_game_preview_active: false,
     }
 }
 
@@ -6772,7 +6866,7 @@ fn show_new_project_dialog(
     language_field.set_visible(show_language_selector);
     let language_label = gtk::Label::new(Some(tr(
         ui_language,
-        "Selecione a pseudolinguagem do projeto",
+        "Selecione a linguagem/pseudolinguagem do projeto",
     )));
     language_label.set_xalign(0.0);
     language_label.add_css_class("potoo-project-field-label");
@@ -7284,7 +7378,7 @@ fn show_new_file_dialog(
     let language_field = gtk::Box::new(gtk::Orientation::Vertical, 6);
     language_field.add_css_class("potoo-dialog-field");
     language_field.set_margin_bottom(16);
-    let language_label = gtk::Label::new(Some(tr(ui_language, "Pseudolinguagem")));
+    let language_label = gtk::Label::new(Some(tr(ui_language, "Linguagem/pseudolinguagem")));
     language_label.set_xalign(0.0);
     language_label.add_css_class("potoo-project-field-label");
     let language_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -7445,7 +7539,7 @@ fn show_new_file_dialog(
             .unwrap_or_default();
         sender.input(MainWindowMsg::CreateFile(
             name_for_create.text().to_string(),
-            selected_template_for_create.get().language(),
+            selected_template_for_create.get(),
             relative_folder,
         ));
         dialog_for_create.close();

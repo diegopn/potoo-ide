@@ -10,11 +10,39 @@ enum ValueType {
     Unknown,
 }
 
+#[derive(Clone, Copy)]
+enum BuiltinArgument {
+    Any,
+    Integer,
+    Real,
+    Logical,
+    Character,
+    String,
+    Array(Option<Type>, usize),
+    ArrayReference(Option<Type>, usize),
+}
+
+impl BuiltinArgument {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Any => "valor",
+            Self::Integer => "inteiro",
+            Self::Real => "número",
+            Self::Logical => "lógico",
+            Self::Character => "caractere",
+            Self::String => "cadeia",
+            Self::Array(_, 1) | Self::ArrayReference(_, 1) => "vetor",
+            Self::Array(_, _) | Self::ArrayReference(_, _) => "matriz",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 struct VariableInfo {
     ty: Type,
     dimensions: usize,
     is_constant: bool,
+    constant_integer: Option<i64>,
     initialized: bool,
 }
 
@@ -74,11 +102,30 @@ impl<'a> Analyzer<'a> {
             "Tipos",
             "Util",
         ];
+        let mut library_symbols = HashSet::new();
         for library in &self.program.libraries {
             if !supported_libraries.contains(&library.name.as_str()) {
                 return Err(vec![self.error_at(
                     DiagnosticKind::Type,
                     format!("biblioteca '{}' não encontrada", library.name),
+                    1,
+                    1,
+                )]);
+            }
+            if !library_symbols.insert(library.name.as_str()) {
+                return Err(vec![self.error_at(
+                    DiagnosticKind::Type,
+                    format!("biblioteca '{}' incluída mais de uma vez", library.name),
+                    1,
+                    1,
+                )]);
+            }
+            if let Some(alias) = &library.alias
+                && (!library_symbols.insert(alias.as_str()) || alias == &library.name)
+            {
+                return Err(vec![self.error_at(
+                    DiagnosticKind::Type,
+                    format!("apelido de biblioteca '{alias}' já utilizado"),
                     1,
                     1,
                 )]);
@@ -104,8 +151,26 @@ impl<'a> Analyzer<'a> {
     }
 
     fn check_function_signatures(&self) -> Result<(), Vec<Diagnostic>> {
-        for functions in self.functions.values() {
-            for (index, function) in functions.iter().enumerate() {
+        for (name, functions) in &self.functions {
+            if is_reserved_function(name) {
+                let function = functions[0];
+                return Err(vec![self.error_at(
+                    DiagnosticKind::Type,
+                    format!("a função '{name}' é reservada para a linguagem"),
+                    function.line,
+                    function.column,
+                )]);
+            }
+            if functions.len() > 1 {
+                let function = functions[1];
+                return Err(vec![self.error_at(
+                    DiagnosticKind::Type,
+                    format!("função '{name}' declarada mais de uma vez"),
+                    function.line,
+                    function.column,
+                )]);
+            }
+            for function in functions {
                 let mut parameters = HashSet::new();
                 for parameter in &function.parameters {
                     if parameter.ty == Type::Void {
@@ -133,25 +198,6 @@ impl<'a> Analyzer<'a> {
                         )]);
                     }
                 }
-                if functions[index + 1..].iter().any(|other| {
-                    function.parameters.len() == other.parameters.len()
-                        && function
-                            .parameters
-                            .iter()
-                            .zip(&other.parameters)
-                            .all(|(left, right)| {
-                                left.ty == right.ty
-                                    && left.dimensions == right.dimensions
-                                    && left.by_reference == right.by_reference
-                            })
-                }) {
-                    return Err(vec![self.error_at(
-                        DiagnosticKind::Type,
-                        format!("assinatura duplicada para a função '{}'", function.name),
-                        function.line,
-                        function.column,
-                    )]);
-                }
             }
         }
         Ok(())
@@ -170,6 +216,7 @@ impl<'a> Analyzer<'a> {
                     ty: parameter.ty,
                     dimensions: parameter.dimensions,
                     is_constant: false,
+                    constant_integer: None,
                     initialized: true,
                 },
             );
@@ -226,6 +273,23 @@ impl<'a> Analyzer<'a> {
                             statement.column,
                         )]);
                     }
+                    if is_reserved_function(&variable.name) {
+                        return Err(vec![self.error_at(
+                            DiagnosticKind::Type,
+                            format!("o nome '{}' é reservado para a linguagem", variable.name),
+                            statement.line,
+                            statement.column,
+                        )]);
+                    }
+                    if self.scopes.len() == 1 && self.functions.contains_key(variable.name.as_str())
+                    {
+                        return Err(vec![self.error_at(
+                            DiagnosticKind::Type,
+                            format!("'{}' já foi declarado como função", variable.name),
+                            statement.line,
+                            statement.column,
+                        )]);
+                    }
                     if variable.dimensions.len() > 2 {
                         return Err(vec![self.error_at(
                             DiagnosticKind::Type,
@@ -234,6 +298,7 @@ impl<'a> Analyzer<'a> {
                             statement.column,
                         )]);
                     }
+                    let mut declared_sizes = Vec::with_capacity(variable.dimensions.len());
                     for dimension in &variable.dimensions {
                         let Some(dimension) = dimension else {
                             if variable.initializer.is_none() {
@@ -244,13 +309,20 @@ impl<'a> Analyzer<'a> {
                                     statement.column,
                                 )]);
                             }
+                            declared_sizes.push(None);
                             continue;
                         };
                         let size_type = self.expression(dimension)?;
                         self.expect_scalar(size_type, Type::Integer, dimension)?;
-                        if variable.initializer.is_none()
-                            && constant_integer(dimension).is_some_and(|size| size <= 0)
-                        {
+                        let Some(size) = self.constant_integer(dimension) else {
+                            return Err(vec![self.error_at(
+                                DiagnosticKind::Type,
+                                "o tamanho de vetor deve ser uma constante inteira",
+                                dimension.line,
+                                dimension.column,
+                            )]);
+                        };
+                        if size <= 0 {
                             return Err(vec![self.error_at(
                                 DiagnosticKind::Type,
                                 "o tamanho de vetor deve ser positivo",
@@ -258,6 +330,7 @@ impl<'a> Analyzer<'a> {
                                 dimension.column,
                             )]);
                         }
+                        declared_sizes.push(usize::try_from(size).ok());
                     }
                     if variable.is_constant && variable.initializer.is_none() {
                         return Err(vec![self.error_at(
@@ -270,12 +343,39 @@ impl<'a> Analyzer<'a> {
                             statement.column,
                         )]);
                     }
+                    if variable.is_constant
+                        && variable.dimensions.is_empty()
+                        && variable
+                            .initializer
+                            .as_ref()
+                            .is_some_and(|initializer| !is_constant_literal(initializer))
+                    {
+                        return Err(vec![self.error_at(
+                            DiagnosticKind::Type,
+                            format!(
+                                "a constante '{}' deve ser inicializada com um literal",
+                                variable.name
+                            ),
+                            statement.line,
+                            statement.column,
+                        )]);
+                    }
+                    let constant_integer = variable
+                        .is_constant
+                        .then(|| {
+                            variable
+                                .initializer
+                                .as_ref()
+                                .and_then(constant_literal_integer)
+                        })
+                        .flatten();
                     self.scopes.last_mut().expect("active scope").insert(
                         variable.name.clone(),
                         VariableInfo {
                             ty: variable.ty,
                             dimensions: variable.dimensions.len(),
                             is_constant: variable.is_constant,
+                            constant_integer,
                             initialized: !variable.dimensions.is_empty(),
                         },
                     );
@@ -287,6 +387,16 @@ impl<'a> Analyzer<'a> {
                             actual,
                             initializer,
                         )?;
+                        if !variable.dimensions.is_empty()
+                            && !array_initializer_matches_dimensions(initializer, &declared_sizes)
+                        {
+                            return Err(vec![self.error_at(
+                                DiagnosticKind::Type,
+                                "a quantidade de valores não corresponde ao tamanho do vetor",
+                                initializer.line,
+                                initializer.column,
+                            )]);
+                        }
                         self.mark_initialized(&variable.name);
                     }
                 }
@@ -366,10 +476,13 @@ impl<'a> Analyzer<'a> {
                 default_position,
             } => {
                 let switch_type = self.expression(expression)?;
-                if matches!(switch_type, ValueType::Void | ValueType::Array(_, _)) {
+                if !matches!(
+                    switch_type,
+                    ValueType::Scalar(Type::Integer | Type::Character)
+                ) {
                     return Err(vec![self.error_at(
                         DiagnosticKind::Type,
-                        "a expressão de 'escolha' precisa produzir um valor escalar",
+                        "a expressão de 'escolha' precisa ser inteira ou caractere",
                         expression.line,
                         expression.column,
                     )]);
@@ -379,7 +492,14 @@ impl<'a> Analyzer<'a> {
                 let mut case_returns = true;
                 for case in cases {
                     let case_type = self.expression(&case.value)?;
-                    self.expect_compatible(switch_type, case_type, &case.value)?;
+                    if switch_type != case_type {
+                        return Err(vec![self.error_at(
+                            DiagnosticKind::Type,
+                            "o valor de 'caso' deve ter o mesmo tipo da expressão de 'escolha'",
+                            case.value.line,
+                            case.value.column,
+                        )]);
+                    }
                     self.scopes = before.clone();
                     case_returns &= self.sequence(&case.body)?;
                 }
@@ -475,7 +595,14 @@ impl<'a> Analyzer<'a> {
                 let first_type = self.expression(first)?;
                 for value in values.iter().skip(1) {
                     let actual = self.expression(value)?;
-                    self.expect_compatible(first_type, actual, value)?;
+                    if first_type != actual {
+                        return Err(vec![self.error_at(
+                            DiagnosticKind::Type,
+                            "todos os valores do vetor devem ter o mesmo tipo",
+                            value.line,
+                            value.column,
+                        )]);
+                    }
                 }
                 Ok(match first_type {
                     ValueType::Scalar(ty) => ValueType::Array(ty, 1),
@@ -656,8 +783,23 @@ impl<'a> Analyzer<'a> {
         expression: &Expression,
     ) -> Result<ValueType, Vec<Diagnostic>> {
         if name == "escreva" || name == "escreva_linha" {
+            if name == "escreva" && arguments.is_empty() {
+                return Err(vec![self.error_at(
+                    DiagnosticKind::Type,
+                    "'escreva' precisa receber ao menos um argumento",
+                    expression.line,
+                    expression.column,
+                )]);
+            }
             for argument in arguments {
-                self.expression(argument)?;
+                if self.expression(argument)? == ValueType::Void {
+                    return Err(vec![self.error_at(
+                        DiagnosticKind::Type,
+                        format!("'{name}' não pode receber uma expressão vazia"),
+                        argument.line,
+                        argument.column,
+                    )]);
+                }
             }
             return Ok(ValueType::Void);
         }
@@ -689,6 +831,15 @@ impl<'a> Analyzer<'a> {
             return Ok(ValueType::Void);
         }
 
+        if name == "sorteia" {
+            self.check_arity(name, arguments, 2, expression)?;
+            for argument in arguments {
+                let actual = self.expression(argument)?;
+                self.expect_scalar(actual, Type::Integer, argument)?;
+            }
+            return Ok(ValueType::Scalar(Type::Integer));
+        }
+
         if let Some((module, function)) = name.rsplit_once('.') {
             let Some(library) = self.libraries.get(module).cloned() else {
                 return Err(vec![self.error_at(
@@ -714,8 +865,28 @@ impl<'a> Analyzer<'a> {
                     expression,
                 )?;
             }
-            for argument in arguments {
-                self.expression(argument)?;
+            let types = builtin_argument_types(&library, function);
+            for (index, argument) in arguments.iter().enumerate() {
+                if let Some(expected) = types.and_then(|types| types.get(index)) {
+                    if matches!(expected, BuiltinArgument::ArrayReference(_, _)) {
+                        let (actual, constant) = self.target(argument)?;
+                        if constant {
+                            return Err(vec![self.error_at(
+                                DiagnosticKind::Type,
+                                "não é possível passar uma constante por referência",
+                                argument.line,
+                                argument.column,
+                            )]);
+                        }
+                        self.expect_builtin_argument(*expected, actual, argument)?;
+                        self.mark_target_initialized(argument);
+                    } else {
+                        let actual = self.expression(argument)?;
+                        self.expect_builtin_argument(*expected, actual, argument)?;
+                    }
+                } else {
+                    self.expression(argument)?;
+                }
             }
             return Ok(result);
         }
@@ -883,7 +1054,15 @@ impl<'a> Analyzer<'a> {
                 }
             }
             Op::Equal | Op::NotEqual => {
-                self.expect_compatible(left, right, expression)?;
+                let compatible = matches!(left, ValueType::Scalar(_)) && left == right
+                    || is_numeric(left) && is_numeric(right)
+                    || left == ValueType::Unknown
+                        && !matches!(right, ValueType::Array(_, _) | ValueType::Void)
+                    || right == ValueType::Unknown
+                        && !matches!(left, ValueType::Array(_, _) | ValueType::Void);
+                if !compatible {
+                    return Err(invalid());
+                }
                 Ok(ValueType::Scalar(Type::Logical))
             }
             Op::Less | Op::LessEqual | Op::Greater | Op::GreaterEqual => {
@@ -1046,6 +1225,79 @@ impl<'a> Analyzer<'a> {
         }
     }
 
+    fn expect_builtin_argument(
+        &self,
+        expected: BuiltinArgument,
+        actual: ValueType,
+        expression: &Expression,
+    ) -> Result<(), Vec<Diagnostic>> {
+        let compatible = match expected {
+            BuiltinArgument::Integer => actual == ValueType::Scalar(Type::Integer),
+            BuiltinArgument::Real => is_numeric(actual),
+            BuiltinArgument::Logical => actual == ValueType::Scalar(Type::Logical),
+            BuiltinArgument::Character => actual == ValueType::Scalar(Type::Character),
+            BuiltinArgument::String => actual == ValueType::Scalar(Type::String),
+            BuiltinArgument::Array(expected_type, dimensions)
+            | BuiltinArgument::ArrayReference(expected_type, dimensions) => {
+                matches!(actual, ValueType::Array(actual_type, actual_dimensions)
+                    if actual_dimensions == dimensions
+                        && expected_type.map_or(true, |expected_type| actual_type == expected_type))
+            }
+            BuiltinArgument::Any => actual != ValueType::Void,
+        };
+        if compatible || actual == ValueType::Unknown {
+            Ok(())
+        } else {
+            Err(vec![self.error_at(
+                DiagnosticKind::Type,
+                format!(
+                    "tipo incompatível para argumento: esperado {}, recebido {}",
+                    expected.label(),
+                    type_label(actual)
+                ),
+                expression.line,
+                expression.column,
+            )])
+        }
+    }
+
+    fn constant_integer(&self, expression: &Expression) -> Option<i64> {
+        match &expression.kind {
+            ExpressionKind::Integer(value) => Some(*value),
+            ExpressionKind::Variable(name) => self
+                .lookup(name)
+                .filter(|variable| variable.is_constant)
+                .and_then(|variable| variable.constant_integer),
+            ExpressionKind::Unary {
+                operator: UnaryOperator::Negate,
+                operand,
+            } => self.constant_integer(operand)?.checked_neg(),
+            ExpressionKind::Binary {
+                left,
+                operator,
+                right,
+            } => {
+                let left = i32::try_from(self.constant_integer(left)?).ok()?;
+                let right = i32::try_from(self.constant_integer(right)?).ok()?;
+                let value = match operator {
+                    BinaryOperator::Add => left.wrapping_add(right),
+                    BinaryOperator::Subtract => left.wrapping_sub(right),
+                    BinaryOperator::Multiply => left.wrapping_mul(right),
+                    BinaryOperator::Divide => left.checked_div(right)?,
+                    BinaryOperator::Remainder => left.checked_rem(right)?,
+                    BinaryOperator::BitAnd => left & right,
+                    BinaryOperator::BitOr => left | right,
+                    BinaryOperator::BitXor => left ^ right,
+                    BinaryOperator::ShiftLeft => left.wrapping_shl(right as u32),
+                    BinaryOperator::ShiftRight => left.wrapping_shr(right as u32),
+                    _ => return None,
+                };
+                Some(i64::from(value))
+            }
+            _ => None,
+        }
+    }
+
     fn check_arity(
         &self,
         name: &str,
@@ -1168,13 +1420,322 @@ fn callable_name(expression: &Expression) -> Option<String> {
     }
 }
 
-fn constant_integer(expression: &Expression) -> Option<i64> {
+fn is_reserved_function(name: &str) -> bool {
+    matches!(
+        name,
+        "leia" | "escreva" | "limpa" | "sorteia" | "escreva_linha"
+    )
+}
+
+fn is_constant_literal(expression: &Expression) -> bool {
+    match &expression.kind {
+        ExpressionKind::Integer(_)
+        | ExpressionKind::Real(_)
+        | ExpressionKind::Logical(_)
+        | ExpressionKind::Character(_)
+        | ExpressionKind::String(_) => true,
+        ExpressionKind::Unary {
+            operator: UnaryOperator::Positive | UnaryOperator::Negate,
+            operand,
+        } => matches!(
+            &operand.kind,
+            ExpressionKind::Integer(_) | ExpressionKind::Real(_)
+        ),
+        _ => false,
+    }
+}
+
+fn constant_literal_integer(expression: &Expression) -> Option<i64> {
     match &expression.kind {
         ExpressionKind::Integer(value) => Some(*value),
         ExpressionKind::Unary {
             operator: UnaryOperator::Negate,
             operand,
-        } => constant_integer(operand)?.checked_neg(),
+        } => constant_literal_integer(operand)?.checked_neg(),
+        ExpressionKind::Unary {
+            operator: UnaryOperator::Positive,
+            operand,
+        } => constant_literal_integer(operand),
+        _ => None,
+    }
+}
+
+fn array_initializer_shape(expression: &Expression) -> Option<Vec<usize>> {
+    let ExpressionKind::ArrayLiteral(items) = &expression.kind else {
+        return None;
+    };
+    let first_shape = items.first().and_then(array_initializer_shape);
+    if items
+        .iter()
+        .skip(1)
+        .any(|item| array_initializer_shape(item) != first_shape)
+    {
+        return None;
+    }
+    let mut shape = vec![items.len()];
+    if let Some(first_shape) = first_shape {
+        shape.extend(first_shape);
+    }
+    Some(shape)
+}
+
+fn array_initializer_matches_dimensions(
+    initializer: &Expression,
+    declared_sizes: &[Option<usize>],
+) -> bool {
+    let Some(shape) = array_initializer_shape(initializer) else {
+        return false;
+    };
+    shape.len() == declared_sizes.len()
+        && declared_sizes
+            .iter()
+            .zip(shape)
+            .all(|(declared, actual)| declared.map_or(true, |declared| declared == actual))
+}
+
+fn builtin_argument_types(library: &str, function: &str) -> Option<&'static [BuiltinArgument]> {
+    use BuiltinArgument as Arg;
+    use Type as Ty;
+
+    match library {
+        "Matematica" => Some(match function {
+            "arredondar" => &[Arg::Real, Arg::Integer],
+            "potencia" | "raiz" | "logaritmo" | "maior_numero" | "menor_numero" => {
+                &[Arg::Real, Arg::Real]
+            }
+            "seno" | "cosseno" | "tangente" | "valor_absoluto" => &[Arg::Real],
+            _ => return None,
+        }),
+        "Texto" => Some(match function {
+            "numero_caracteres" | "caixa_alta" | "caixa_baixa" => &[Arg::String],
+            "posicao_texto" => &[Arg::String, Arg::String, Arg::Integer],
+            "substituir" => &[Arg::String, Arg::String, Arg::String],
+            "preencher_a_esquerda" => &[Arg::Character, Arg::Integer, Arg::String],
+            "extrair_subtexto" => &[Arg::String, Arg::Integer, Arg::Integer],
+            "obter_caracter" => &[Arg::String, Arg::Integer],
+            _ => return None,
+        }),
+        "Tipos" => Some(match function {
+            "cadeia_e_real"
+            | "cadeia_e_logico"
+            | "cadeia_e_caracter"
+            | "cadeia_para_caracter"
+            | "cadeia_para_real"
+            | "cadeia_para_logico" => &[Arg::String],
+            "cadeia_e_inteiro" | "cadeia_para_inteiro" => &[Arg::String, Arg::Integer],
+            "inteiro_e_caracter"
+            | "inteiro_para_caracter"
+            | "inteiro_para_logico"
+            | "inteiro_para_real" => &[Arg::Integer],
+            "inteiro_para_cadeia" => &[Arg::Integer, Arg::Integer],
+            "caracter_e_inteiro"
+            | "caracter_e_logico"
+            | "caracter_para_cadeia"
+            | "caracter_para_inteiro"
+            | "caracter_para_logico" => &[Arg::Character],
+            "logico_para_cadeia" | "logico_para_inteiro" | "logico_para_caracter" => {
+                &[Arg::Logical]
+            }
+            "real_para_cadeia" | "real_para_inteiro" => &[Arg::Real],
+            _ => return None,
+        }),
+        "Util" => Some(match function {
+            "numero_elementos" => &[Arg::Array(None, 1)],
+            "numero_linhas" | "numero_colunas" => &[Arg::Array(None, 2)],
+            "sorteia" => &[Arg::Integer, Arg::Integer],
+            "aguarde" => &[Arg::Integer],
+            "tempo_decorrido" | "obter_diretorio_usuario" => &[],
+            _ => return None,
+        }),
+        "Calendario" => Some(match function {
+            "dia_mes_atual" | "dia_semana_atual" | "mes_atual" | "ano_atual" | "minuto_atual"
+            | "segundo_atual" | "milisegundo_atual" => &[],
+            "hora_atual" => &[Arg::Logical],
+            "dia_semana_completo" | "dia_semana_curto" | "dia_semana_abreviado" => {
+                &[Arg::Integer, Arg::Logical, Arg::Logical]
+            }
+            _ => return None,
+        }),
+        "Arquivos" => Some(match function {
+            "abrir_arquivo" => &[Arg::String, Arg::Integer],
+            "escrever_linha" => &[Arg::String, Arg::Integer],
+            "fechar_arquivo" | "fim_arquivo" | "ler_linha" => &[Arg::Integer],
+            "substituir_texto" => &[Arg::String, Arg::String, Arg::String, Arg::Logical],
+            "arquivo_existe" | "apagar_arquivo" | "criar_pasta" => &[Arg::String],
+            "selecionar_arquivo" => &[Arg::Array(Some(Ty::String), 1), Arg::Logical],
+            "listar_pastas" | "listar_arquivos" => {
+                &[Arg::String, Arg::ArrayReference(Some(Ty::String), 1)]
+            }
+            "listar_arquivos_por_tipo" => &[
+                Arg::String,
+                Arg::ArrayReference(Some(Ty::String), 1),
+                Arg::Array(Some(Ty::String), 1),
+            ],
+            _ => return None,
+        }),
+        "Objetos" => Some(match function {
+            "criar_objeto" | "liberar" => &[],
+            "criar_objeto_via_json" | "criar_objeto_via_xml" => &[Arg::String],
+            "liberar_objeto" | "obter_json" => &[Arg::Integer],
+            "atribuir_propriedade" => &[Arg::Integer, Arg::String, Arg::Any],
+            "obter_propriedade_tipo_inteiro"
+            | "obter_propriedade_tipo_real"
+            | "obter_propriedade_tipo_logico"
+            | "obter_propriedade_tipo_caracter"
+            | "obter_propriedade_tipo_cadeia"
+            | "obter_propriedade_tipo_objeto"
+            | "obter_tamanho_vetor_propriedade"
+            | "contem_propriedade"
+            | "tipo_propriedade" => &[Arg::Integer, Arg::String],
+            "obter_propriedade_tipo_objeto_em_vetor"
+            | "obter_propriedade_tipo_caracter_em_vetor"
+            | "obter_propriedade_tipo_logico_em_vetor"
+            | "obter_propriedade_tipo_real_em_vetor"
+            | "obter_propriedade_tipo_inteiro_em_vetor"
+            | "obter_propriedade_tipo_cadeia_em_vetor" => {
+                &[Arg::Integer, Arg::String, Arg::Integer]
+            }
+            _ => return None,
+        }),
+        "Internet" => Some(match function {
+            "definir_tempo_limite" => &[Arg::Integer],
+            "obter_texto" | "endereco_disponivel" => &[Arg::String],
+            "baixar_imagem" => &[Arg::String, Arg::String],
+            _ => return None,
+        }),
+        "ServicosWeb" => Some(match function {
+            "obter_dados" | "excluir_dados" | "abrir_conexao" | "adicionar_parametros" => {
+                &[Arg::String]
+            }
+            "publicar_dados" | "atualizar_dados" | "adicionar_cabecalho" => {
+                &[Arg::String, Arg::String]
+            }
+            "fazer_requisicao" => &[Arg::Integer],
+            _ => return None,
+        }),
+        "Mouse" => Some(match function {
+            "botao_pressionado" => &[Arg::Integer],
+            "algum_botao_pressionado"
+            | "ler_botao"
+            | "posicao_x"
+            | "posicao_y"
+            | "ocultar_cursor"
+            | "exibir_cursor" => &[],
+            _ => return None,
+        }),
+        "Teclado" => Some(match function {
+            "tecla_pressionada" | "caracter_tecla" => &[Arg::Integer],
+            "alguma_tecla_pressionada" | "ler_tecla" => &[],
+            _ => return None,
+        }),
+        "Sons" => Some(match function {
+            "carregar_som" => &[Arg::String],
+            "liberar_som"
+            | "pausar_som"
+            | "interromper_som"
+            | "definir_volume"
+            | "obter_tamanho_musica"
+            | "obter_posicao_atual_musica"
+            | "obter_volume_reproducao" => &[Arg::Integer],
+            "reproduzir_som" => &[Arg::Integer, Arg::Logical],
+            "obter_volume" => &[],
+            "definir_posicao_atual_musica" | "definir_volume_reproducao" => {
+                &[Arg::Integer, Arg::Integer]
+            }
+            _ => return None,
+        }),
+        "Graficos" => Some(match function {
+            "iniciar_modo_grafico" => &[Arg::Logical],
+            "definir_dimensoes_janela" => &[Arg::Integer, Arg::Integer],
+            "definir_titulo_janela" => &[Arg::String],
+            "renderizar_imagem" => &[Arg::Integer, Arg::Integer],
+            "carregar_imagem"
+            | "carregar_fonte"
+            | "definir_fonte_texto"
+            | "largura_texto"
+            | "altura_texto" => &[Arg::String],
+            "definir_icone_janela" | "definir_cor" | "definir_rotacao" => &[Arg::Integer],
+            "definir_tamanho_texto" | "definir_opacidade" => &[Arg::Real],
+            "definir_estilo_texto" => &[Arg::Logical, Arg::Logical, Arg::Logical],
+            "desenhar_texto" => &[Arg::Integer, Arg::Integer, Arg::String],
+            "desenhar_poligono" => &[Arg::Array(Some(Ty::Integer), 2), Arg::Logical],
+            "desenhar_retangulo" => &[
+                Arg::Integer,
+                Arg::Integer,
+                Arg::Integer,
+                Arg::Integer,
+                Arg::Logical,
+                Arg::Logical,
+            ],
+            "desenhar_elipse" => &[
+                Arg::Integer,
+                Arg::Integer,
+                Arg::Integer,
+                Arg::Integer,
+                Arg::Logical,
+            ],
+            "desenhar_ponto" => &[Arg::Integer, Arg::Integer],
+            "desenhar_linha" => &[Arg::Integer, Arg::Integer, Arg::Integer, Arg::Integer],
+            "transformar_imagem" => &[
+                Arg::Integer,
+                Arg::Logical,
+                Arg::Logical,
+                Arg::Integer,
+                Arg::Integer,
+            ],
+            "redimensionar_imagem" => &[Arg::Integer, Arg::Integer, Arg::Integer, Arg::Logical],
+            "obter_cor_pixel" => &[Arg::Integer, Arg::Integer, Arg::Integer],
+            "obter_RGB" => &[Arg::Integer, Arg::Integer],
+            "transformar_porcao_imagem" => &[
+                Arg::Integer,
+                Arg::Integer,
+                Arg::Integer,
+                Arg::Integer,
+                Arg::Integer,
+                Arg::Logical,
+                Arg::Logical,
+                Arg::Integer,
+                Arg::Integer,
+            ],
+            "desenhar_imagem" | "desenhar_quadro_atual_gif" => {
+                &[Arg::Integer, Arg::Integer, Arg::Integer]
+            }
+            "salvar_imagem" => &[Arg::Integer, Arg::String],
+            "desenhar_porcao_imagem" => &[
+                Arg::Integer,
+                Arg::Integer,
+                Arg::Integer,
+                Arg::Integer,
+                Arg::Integer,
+                Arg::Integer,
+                Arg::Integer,
+            ],
+            "obter_intervalo_gif"
+            | "obter_numero_quadros_gif"
+            | "obter_numero_quadro_atual_gif"
+            | "liberar_imagem"
+            | "proximo_frame_gif"
+            | "largura_imagem"
+            | "altura_imagem" => &[Arg::Integer],
+            "obter_quadro_gif" | "definir_quadro_gif" => &[Arg::Integer, Arg::Integer],
+            "definir_gradiente" => &[Arg::Integer, Arg::Integer, Arg::Integer],
+            "criar_cor" => &[Arg::Integer, Arg::Integer, Arg::Integer],
+            "largura_janela"
+            | "altura_janela"
+            | "largura_tela"
+            | "altura_tela"
+            | "fechar_janela"
+            | "minimizar_janela"
+            | "restaurar_janela"
+            | "ocultar_borda_janela"
+            | "exibir_borda_janela"
+            | "encerrar_modo_grafico"
+            | "limpar"
+            | "renderizar"
+            | "entrar_modo_tela_cheia"
+            | "sair_modo_tela_cheia" => &[],
+            _ => return None,
+        }),
         _ => None,
     }
 }
@@ -1226,7 +1787,8 @@ fn builtin_signature(library: &str, function: &str) -> Option<(Option<usize>, Va
                 | "caracter_e_inteiro"
                 | "caracter_e_logico"
                 | "caracter_para_logico" => (1, Type::Logical),
-                "cadeia_e_inteiro" | "cadeia_para_inteiro" | "inteiro_para_cadeia" => (
+                "cadeia_e_inteiro" => (2, Type::Logical),
+                "cadeia_para_inteiro" | "inteiro_para_cadeia" => (
                     2,
                     if name == "inteiro_para_cadeia" {
                         Type::String

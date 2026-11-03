@@ -540,7 +540,7 @@ impl Parser {
 
     fn expression_inner(&mut self, minimum_precedence: u8) -> Result<Expression, Vec<Diagnostic>> {
         self.skip_newlines();
-        let mut left = self.prefix()?;
+        let (mut left, mut left_was_parenthesized) = self.prefix()?;
         let mut left_height = expression_height(&left);
         loop {
             if self.check(&TokenKind::LeftParen) && 25 >= minimum_precedence {
@@ -574,6 +574,7 @@ impl Parser {
                         arguments,
                     },
                 };
+                left_was_parenthesized = false;
                 continue;
             }
             if self.check(&TokenKind::LeftBracket) && 25 >= minimum_precedence {
@@ -593,6 +594,7 @@ impl Parser {
                         index: Box::new(index),
                     },
                 };
+                left_was_parenthesized = false;
                 continue;
             }
             if self.check(&TokenKind::Dot) && 25 >= minimum_precedence {
@@ -611,13 +613,14 @@ impl Parser {
                         name,
                     },
                 };
+                left_was_parenthesized = false;
                 continue;
             }
             if self.check(&TokenKind::PlusPlus) || self.check(&TokenKind::MinusMinus) {
                 if 25 < minimum_precedence {
                     break;
                 }
-                if !is_increment_target(&left) {
+                if left_was_parenthesized || !is_increment_target(&left) {
                     return Err(self.error("incremento exige uma variável ou elemento de vetor"));
                 }
                 let operator = if self.matches(&TokenKind::PlusPlus) {
@@ -660,6 +663,7 @@ impl Parser {
                 line,
                 column,
             };
+            left_was_parenthesized = false;
         }
         Ok(left)
     }
@@ -672,7 +676,7 @@ impl Parser {
         }
     }
 
-    fn prefix(&mut self) -> Result<Expression, Vec<Diagnostic>> {
+    fn prefix(&mut self) -> Result<(Expression, bool), Vec<Diagnostic>> {
         let token = self.advance().clone();
         let expression = match token.kind {
             TokenKind::Integer(value) => ExpressionKind::Integer(value),
@@ -689,32 +693,44 @@ impl Parser {
                 ExpressionKind::Variable(value)
             }
             TokenKind::PlusPlus => {
+                if self.check(&TokenKind::LeftParen) {
+                    return Err(self.error("incremento exige uma variável ou elemento de vetor"));
+                }
                 let target = self.expression(25)?;
                 if !is_increment_target(&target) {
                     return Err(self.error("incremento exige uma variável ou elemento de vetor"));
                 }
-                return Ok(Expression {
-                    kind: ExpressionKind::Prefix {
-                        target: Box::new(target),
-                        operator: PostfixOperator::Increment,
+                return Ok((
+                    Expression {
+                        kind: ExpressionKind::Prefix {
+                            target: Box::new(target),
+                            operator: PostfixOperator::Increment,
+                        },
+                        line: token.line,
+                        column: token.column,
                     },
-                    line: token.line,
-                    column: token.column,
-                });
+                    false,
+                ));
             }
             TokenKind::MinusMinus => {
+                if self.check(&TokenKind::LeftParen) {
+                    return Err(self.error("decremento exige uma variável ou elemento de vetor"));
+                }
                 let target = self.expression(25)?;
                 if !is_increment_target(&target) {
                     return Err(self.error("decremento exige uma variável ou elemento de vetor"));
                 }
-                return Ok(Expression {
-                    kind: ExpressionKind::Prefix {
-                        target: Box::new(target),
-                        operator: PostfixOperator::Decrement,
+                return Ok((
+                    Expression {
+                        kind: ExpressionKind::Prefix {
+                            target: Box::new(target),
+                            operator: PostfixOperator::Decrement,
+                        },
+                        line: token.line,
+                        column: token.column,
                     },
-                    line: token.line,
-                    column: token.column,
-                });
+                    false,
+                ));
             }
             TokenKind::Plus => ExpressionKind::Unary {
                 operator: UnaryOperator::Positive,
@@ -733,15 +749,18 @@ impl Parser {
                 let inner = self.expression(0)?;
                 self.skip_newlines();
                 self.consume(TokenKind::RightParen, "esperado ')' após a expressão")?;
-                return Ok(inner);
+                return Ok((inner, true));
             }
             _ => return Err(self.error_at(&token, "esperada uma expressão")),
         };
-        Ok(Expression {
-            kind: expression,
-            line: token.line,
-            column: token.column,
-        })
+        Ok((
+            Expression {
+                kind: expression,
+                line: token.line,
+                column: token.column,
+            },
+            false,
+        ))
     }
 
     fn binary_operator(&self) -> Option<(u8, Operator)> {

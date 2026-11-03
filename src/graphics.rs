@@ -60,6 +60,7 @@ struct GraphicsState {
     cursor_visible: bool,
     pending_key_reads: Vec<HostReply>,
     pending_button_reads: Vec<HostReply>,
+    preview_active: bool,
 }
 
 impl Default for GraphicsState {
@@ -92,6 +93,7 @@ impl Default for GraphicsState {
             cursor_visible: true,
             pending_key_reads: Vec::new(),
             pending_button_reads: Vec::new(),
+            preview_active: false,
         }
     }
 }
@@ -99,6 +101,7 @@ impl Default for GraphicsState {
 pub(crate) struct GraphicsHost {
     parent: gtk::ApplicationWindow,
     state: Rc<RefCell<GraphicsState>>,
+    preview_area: Option<gtk::DrawingArea>,
     on_close: Rc<dyn Fn()>,
 }
 
@@ -107,8 +110,35 @@ impl GraphicsHost {
         Self {
             parent,
             state: Rc::new(RefCell::new(GraphicsState::default())),
+            preview_area: None,
             on_close: Rc::new(on_close),
         }
+    }
+
+    pub(crate) fn set_jerimum_preview_area(&mut self, area: gtk::DrawingArea) {
+        area.set_focusable(true);
+        let state_for_draw = self.state.clone();
+        area.set_draw_func(move |_, context, width, height| {
+            let state = state_for_draw.borrow();
+            draw_graphics_surface(context, state.presented_surface.as_ref(), width, height);
+        });
+        let parent: gtk::Window = self.parent.clone().upcast();
+        install_input_controllers(&area, &parent, self.state.clone(), false);
+        self.preview_area = Some(area);
+    }
+
+    pub(crate) fn start_jerimum_preview(&mut self) -> Result<HostValue, String> {
+        let area = self
+            .preview_area
+            .clone()
+            .ok_or_else(|| "a prévia do jogo não está disponível".to_owned())?;
+        self.ensure_surface()?;
+        let mut state = self.state.borrow_mut();
+        state.preview_active = true;
+        state.area = Some(area.clone());
+        area.queue_draw();
+        area.grab_focus();
+        Ok(HostValue::Null)
     }
 
     pub(crate) fn handle_input_request(
@@ -128,12 +158,7 @@ impl GraphicsHost {
                 | HostRequest::MousePosition
                 | HostRequest::MouseSetCursorVisible(_)
         );
-        if is_mouse_or_keyboard
-            && !state
-                .window
-                .as_ref()
-                .is_some_and(gtk::prelude::WidgetExt::is_visible)
-        {
+        if is_mouse_or_keyboard && !graphics_is_open(&state) {
             return Err("inicie o modo gráfico antes de usar teclado ou mouse".to_owned());
         }
         let value = match request {
@@ -173,6 +198,7 @@ impl GraphicsHost {
                 HostValue::Null
             }
             HostRequest::GraphicsWindowIsOpen
+            | HostRequest::JerimumPreviewStart
             | HostRequest::Graphics { .. }
             | HostRequest::Audio { .. } => {
                 return Err("requisição incompatível com o serviço de entrada".to_owned());
@@ -182,11 +208,7 @@ impl GraphicsHost {
     }
 
     pub(crate) fn is_open(&self) -> bool {
-        self.state
-            .borrow()
-            .window
-            .as_ref()
-            .is_some_and(gtk::prelude::WidgetExt::is_visible)
+        graphics_is_open(&self.state.borrow())
     }
 
     pub(crate) fn finish(&mut self) {
@@ -199,7 +221,11 @@ impl GraphicsHost {
         }
         let window = state.window.take();
         *state = GraphicsState::default();
+        let area = self.preview_area.clone();
         drop(state);
+        if let Some(area) = area {
+            area.queue_draw();
+        }
         if let Some(window) = window {
             window.close();
         }
@@ -211,14 +237,7 @@ impl GraphicsHost {
         function: &str,
         arguments: &[HostValue],
     ) -> Result<HostValue, String> {
-        if requires_initialized_graphics(function)
-            && !self
-                .state
-                .borrow()
-                .window
-                .as_ref()
-                .is_some_and(gtk::prelude::WidgetExt::is_visible)
-        {
+        if requires_initialized_graphics(function) && !graphics_is_open(&self.state.borrow()) {
             return Err("inicie o modo gráfico antes de usar esta função".to_owned());
         }
         match function {
@@ -254,10 +273,14 @@ impl GraphicsHost {
                 return Ok(HostValue::Null);
             }
             "encerrar_modo_grafico" => {
-                let window = self.state.borrow().window.clone();
+                let mut state = self.state.borrow_mut();
+                let window = state.window.clone();
+                state.preview_active = false;
+                drop(state);
                 if let Some(window) = window {
                     window.set_visible(false);
                 }
+                self.queue_draw();
                 return Ok(HostValue::Null);
             }
             "definir_dimensoes_janela" => {
@@ -569,7 +592,9 @@ impl GraphicsHost {
     fn resize(&self, width: i32, height: i32) -> Result<(), String> {
         resize_graphics_state(&mut self.state.borrow_mut(), width, height)?;
         let state = self.state.borrow();
-        if let Some(area) = &state.area {
+        if !state.preview_active
+            && let Some(area) = &state.area
+        {
             area.set_content_width(width);
             area.set_content_height(height);
         }
@@ -971,14 +996,9 @@ impl GraphicsHost {
         area.set_content_width(width);
         area.set_content_height(height);
         area.set_focusable(true);
-        area.set_draw_func(move |_, context, _, _| {
+        area.set_draw_func(move |_, context, width, height| {
             let state = state_for_draw.borrow();
-            context.set_source_rgb(0.0, 0.0, 0.0);
-            let _ = context.paint();
-            if let Some(surface) = &state.presented_surface {
-                let _ = context.set_source_surface(surface, 0.0, 0.0);
-                let _ = context.paint();
-            }
+            draw_graphics_surface(context, state.presented_surface.as_ref(), width, height);
         });
         let state_for_resize = self.state.clone();
         area.connect_resize(move |_, width, height| {
@@ -1003,7 +1023,7 @@ impl GraphicsHost {
             .child(&area)
             .build();
 
-        install_input_controllers(&area, &window, self.state.clone());
+        install_input_controllers(&area, &window, self.state.clone(), true);
         let state_for_close = self.state.clone();
         let on_close = self.on_close.clone();
         window.connect_close_request(move |window| {
@@ -1160,6 +1180,7 @@ fn install_input_controllers(
     area: &gtk::DrawingArea,
     window: &gtk::Window,
     state: Rc<RefCell<GraphicsState>>,
+    focus_on_window_active: bool,
 ) {
     let keys = gtk::EventControllerKey::new();
     let key_state = state.clone();
@@ -1188,31 +1209,39 @@ fn install_input_controllers(
 
     let pointer = gtk::EventControllerMotion::new();
     let motion_state = state.clone();
+    let area_for_motion = area.clone();
     pointer.connect_motion(move |_, x, y| {
+        let (x, y) = graphics_pointer_position(&motion_state.borrow(), &area_for_motion, x, y);
         let mut state = motion_state.borrow_mut();
-        state.mouse_x = x.round() as i64;
-        state.mouse_y = y.round() as i64;
+        state.mouse_x = x;
+        state.mouse_y = y;
     });
     area.add_controller(pointer);
 
     let click = gtk::GestureClick::new();
     click.set_button(0);
     let press_state = state.clone();
+    let area_for_press = area.clone();
     click.connect_pressed(move |gesture, _, x, y| {
+        area_for_press.grab_focus();
         if let Some(button) = portugol_mouse_button(gesture.current_button()) {
+            let (x, y) = graphics_pointer_position(&press_state.borrow(), &area_for_press, x, y);
             let mut state = press_state.borrow_mut();
             state.pressed_buttons.insert(button);
-            state.mouse_x = x.round() as i64;
-            state.mouse_y = y.round() as i64;
+            state.mouse_x = x;
+            state.mouse_y = y;
         }
     });
     let release_state = state.clone();
+    let area_for_release = area.clone();
     click.connect_released(move |gesture, _, x, y| {
         if let Some(button) = portugol_mouse_button(gesture.current_button()) {
+            let (x, y) =
+                graphics_pointer_position(&release_state.borrow(), &area_for_release, x, y);
             let mut state = release_state.borrow_mut();
             state.pressed_buttons.remove(&button);
-            state.mouse_x = x.round() as i64;
-            state.mouse_y = y.round() as i64;
+            state.mouse_x = x;
+            state.mouse_y = y;
             let reads = std::mem::take(&mut state.pending_button_reads);
             drop(state);
             for response in reads {
@@ -1237,12 +1266,65 @@ fn install_input_controllers(
     });
     area.add_controller(focus);
 
-    let area_for_window = area.clone();
-    window.connect_is_active_notify(move |window| {
-        if window.is_active() {
-            area_for_window.grab_focus();
-        }
-    });
+    if focus_on_window_active {
+        let area_for_window = area.clone();
+        window.connect_is_active_notify(move |window| {
+            if window.is_active() {
+                area_for_window.grab_focus();
+            }
+        });
+    }
+}
+
+fn graphics_pointer_position(
+    state: &GraphicsState,
+    area: &gtk::DrawingArea,
+    x: f64,
+    y: f64,
+) -> (i64, i64) {
+    if state.preview_active {
+        let width = f64::from(area.width().max(1));
+        let height = f64::from(area.height().max(1));
+        let scale = (width / f64::from(state.width)).min(height / f64::from(state.height));
+        let left = (width - f64::from(state.width) * scale) / 2.0;
+        let top = (height - f64::from(state.height) * scale) / 2.0;
+        (
+            ((x - left) / scale).round() as i64,
+            ((y - top) / scale).round() as i64,
+        )
+    } else {
+        (x.round() as i64, y.round() as i64)
+    }
+}
+
+fn draw_graphics_surface(
+    context: &gtk::cairo::Context,
+    surface: Option<&gtk::cairo::ImageSurface>,
+    width: i32,
+    height: i32,
+) {
+    context.set_source_rgb(0.0, 0.0, 0.0);
+    let _ = context.paint();
+    let Some(surface) = surface else {
+        return;
+    };
+    if width <= 0 || height <= 0 {
+        return;
+    }
+    let image_width = f64::from(surface.width());
+    let image_height = f64::from(surface.height());
+    let scale = (f64::from(width) / image_width).min(f64::from(height) / image_height);
+    if !scale.is_finite() || scale <= 0.0 {
+        return;
+    }
+    let left = (f64::from(width) - image_width * scale) / 2.0;
+    let top = (f64::from(height) - image_height * scale) / 2.0;
+    let _ = context.save();
+    context.translate(left, top);
+    context.scale(scale, scale);
+    let _ = context.set_source_surface(surface, 0.0, 0.0);
+    let _ = context.paint();
+    let _ = context.restore();
 }
 
 fn portugol_mouse_button(button: u32) -> Option<i64> {
@@ -1423,6 +1505,14 @@ fn check_pixel_count(width: i32, height: i32) -> Result<(), String> {
         return Err("a imagem excede o limite de 32 milhões de pixels".to_owned());
     }
     Ok(())
+}
+
+fn graphics_is_open(state: &GraphicsState) -> bool {
+    state.preview_active
+        || state
+            .window
+            .as_ref()
+            .is_some_and(gtk::prelude::WidgetExt::is_visible)
 }
 
 fn requires_initialized_graphics(function: &str) -> bool {

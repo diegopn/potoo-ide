@@ -312,6 +312,9 @@ impl Scanner {
 
     fn character_literal(&mut self) -> Result<(), Vec<Diagnostic>> {
         let character = match self.peek() {
+            Some('\\') if self.peek_next() == Some('\'') && self.peek_third() != Some('\'') => {
+                self.advance()
+            }
             Some('\\') => {
                 self.advance();
                 self.escape_character()?
@@ -444,6 +447,10 @@ impl Scanner {
 
     fn peek_next(&self) -> Option<char> {
         self.chars.get(self.current + 1).copied()
+    }
+
+    fn peek_third(&self) -> Option<char> {
+        self.chars.get(self.current + 2).copied()
     }
 
     fn matches(&mut self, expected: char) -> bool {

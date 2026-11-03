@@ -13,6 +13,7 @@ window.potoo-window {
   --potoo-text-muted: #535f57;
   --potoo-accent: #08784f;
   --potoo-accent-hover: #076642;
+  --potoo-accent-deep: #07583d;
   --potoo-accent-soft-bg: #e2f1e8;
   --potoo-accent-text: #096744;
   --potoo-learning-problem-bg: #fff3f1;
@@ -1047,6 +1048,30 @@ button.potoo-debugger-action {
   min-width: 36px;
 }
 
+button.potoo-debugger-step,
+button.potoo-debugger-step:hover,
+button.potoo-debugger-step:focus-visible {
+  background-color: var(--potoo-accent-deep);
+  color: #ffffff;
+}
+
+button.potoo-debugger-step:hover,
+button.potoo-debugger-step:focus-visible {
+  background-color: var(--potoo-accent-hover);
+}
+
+button.potoo-debugger-stop,
+button.potoo-debugger-stop:hover,
+button.potoo-debugger-stop:focus-visible {
+  background-color: var(--potoo-learning-problem-bg);
+  border: 1px solid var(--potoo-learning-problem-border);
+  color: var(--potoo-learning-problem-text);
+}
+
+button.potoo-debugger-stop:disabled {
+  color: var(--potoo-text-muted);
+}
+
 .potoo-debugger-position {
   color: var(--potoo-text);
   font-weight: 650;
@@ -1102,6 +1127,22 @@ textview.potoo-output-placeholder-text {
 .potoo-learning-panel {
   min-width: 306px;
   background-color: var(--potoo-window-bg);
+}
+
+.potoo-game-preview-panel {
+  min-width: 306px;
+  background-color: var(--potoo-window-bg);
+  color: var(--potoo-text-secondary);
+}
+
+.potoo-game-preview-area {
+  margin: 0 18px 18px;
+  background-color: var(--potoo-panel-deep-bg);
+}
+
+.potoo-game-preview-empty {
+  color: var(--potoo-text-muted);
+  font-size: 13px;
 }
 
 .potoo-tool-rail {
@@ -1761,6 +1802,20 @@ window.potoo-window.potoo-dark .potoo-run-button {
   color: var(--potoo-text);
 }
 
+window.potoo-window.potoo-dark button.potoo-debugger-step,
+window.potoo-window.potoo-dark button.potoo-debugger-step:hover,
+window.potoo-window.potoo-dark button.potoo-debugger-step:focus-visible {
+  background-color: #ffffff;
+  border-color: #ffffff;
+  color: var(--potoo-accent-deep);
+}
+
+window.potoo-window.potoo-dark button.potoo-debugger-step:hover,
+window.potoo-window.potoo-dark button.potoo-debugger-step:focus-visible {
+  background-color: #e8efeb;
+  border-color: #e8efeb;
+}
+
 window.potoo-window.potoo-dark .potoo-run-button:hover {
   background-color: var(--potoo-accent-hover);
   border-color: var(--potoo-accent-hover);
@@ -1953,4 +2008,12 @@ window.potoo-window.potoo-dark switch.potoo-settings-switch:checked {
 
 window.potoo-window.potoo-dark switch.potoo-settings-switch slider {
   background-color: var(--potoo-switch-knob);
+}
+
+window.potoo-window button.potoo-run-button.potoo-stop-button,
+window.potoo-window button.potoo-run-button.potoo-stop-button:hover,
+window.potoo-window button.potoo-run-button.potoo-stop-button:focus-visible {
+  background-color: var(--potoo-learning-problem-bg);
+  border-color: var(--potoo-learning-problem-border);
+  color: var(--potoo-learning-problem-text);
 }

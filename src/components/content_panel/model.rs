@@ -4,6 +4,28 @@ const PORTUGOL_SAMPLE: &str = "programa {\n  funcao inicio() {\n    inteiro idad
 
 const VISUALG_SAMPLE: &str = "algoritmo \"votacao\"\nvar\n  idade: inteiro\ninicio\n  escreva(\"Qual é sua idade? \")\n  leia(idade)\n  se idade >= 18 entao\n    escreval(\"Pode votar.\")\n  senao\n    escreval(\"Ainda não pode votar.\")\n  fimse\nfimalgoritmo";
 const POTIGOL_SAMPLE: &str = "escreva \"Olá, Potigol!\"";
+const POTIGOL_JERIMUM_GAME_SAMPLE: &str = r#"use "jerimum"
+
+# Mova o quadrado verde com as teclas A e D.
+var jogador_x := 144
+
+atualize(): Nada
+  jogador_x := se teclado.TECLA_D e jogador_x < 280 então jogador_x + 4 senão jogador_x fim
+  jogador_x := se teclado.TECLA_A e jogador_x > 0 então jogador_x - 4 senão jogador_x fim
+fim
+
+desenhe_personagem(g: Graphics2D): Nada
+  g.setColor(Cor.VERDE.color)
+  g.fillRect(jogador_x, 120, 32, 32)
+  g.setColor(Cor.PRETO.color)
+  g.drawString("A/D: mover", 8, 20)
+fim
+
+desenhe(): Nada
+  Desenho.incluir(1, desenhe_personagem)
+fim
+
+jogo.iniciar("Mova o quadrado", 320, 200, atualize, desenhe, 60)"#;
 const GPORTUGOL_SAMPLE: &str = "algoritmo exemplo;\ninício\n  imprima(\"Olá, G-Portugol!\");\nfim";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -202,10 +224,15 @@ impl ProjectTemplate {
 
     pub(crate) fn sample(self) -> &'static str {
         match self {
-            Self::PotigolJerimum => {
-                "# Projeto Potigol Jerimum (Jogos 2D)\nescreva \"Olá, Potigol!\""
-            }
+            Self::PotigolJerimum => POTIGOL_JERIMUM_GAME_SAMPLE,
             _ => self.language().sample(),
+        }
+    }
+
+    pub(crate) fn new_file_sample(self) -> &'static str {
+        match self {
+            Self::PotigolJerimum => POTIGOL_JERIMUM_GAME_SAMPLE,
+            _ => "",
         }
     }
 }
