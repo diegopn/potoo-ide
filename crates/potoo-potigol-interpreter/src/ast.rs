@@ -169,6 +169,7 @@ pub enum ExprKind {
     Text(Vec<StringPart>),
     Logical(bool),
     Identifier(String),
+    This,
     Placeholder,
     Tuple(Vec<Expr>),
     List(Vec<Expr>),

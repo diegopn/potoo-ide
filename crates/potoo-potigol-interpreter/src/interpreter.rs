@@ -3,6 +3,8 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::rc::Rc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use fancy_regex::RegexBuilder;
+
 use crate::ast::{
     Block, Expr, ExprKind, ForGenerator, ForSource, FunctionBody, FunctionDecl, MatchCase, NodeId,
     Parameter, Pattern, PatternKind, Program, Stmt, StmtKind, StringPart, TypeDecl,
@@ -1145,6 +1147,7 @@ impl<'a> Interpreter<'a> {
                 Ok(Value::Text(text))
             }
             ExprKind::Identifier(name) => self.identifier_value(name, expression.span),
+            ExprKind::This => self.identifier_value("\0isto", expression.span),
             ExprKind::Placeholder => {
                 let Some(values) = self.placeholder_values.last() else {
                     return Err(vec![self.error(
@@ -1658,6 +1661,9 @@ impl<'a> Interpreter<'a> {
                     let value = self.read_scalar(data_type, span)?;
                     self.reserve_value_payload(&value, span)?;
                     values.push(value);
+                }
+                if count > 0 {
+                    self.pending_input_tokens.clear();
                 }
                 values
             }
@@ -2410,9 +2416,9 @@ impl<'a> Interpreter<'a> {
                 Ok(Value::Text(result))
             }
             "divida" => self.call_text_member(text, name, Vec::new(), span),
-            "pegue" | "descarte" | "junte" | "posição" | "posicao" | "contém" | "contem"
-            | "selecione" | "ache" | "find" | "injete" | "pegue_enquanto" | "descarte_enquanto"
-            | "remova" | "insira" | "mapeie" | "map" | "divida_quando" => {
+            "get" | "pegue" | "descarte" | "junte" | "posição" | "posicao" | "contém"
+            | "contem" | "selecione" | "ache" | "find" | "injete" | "pegue_enquanto"
+            | "descarte_enquanto" | "remova" | "insira" | "mapeie" | "map" | "divida_quando" => {
                 Ok(Value::Function(Rc::new(Callable::Member {
                     receiver: Value::Text(text.to_owned()),
                     name: name.to_owned(),
@@ -2432,10 +2438,20 @@ impl<'a> Interpreter<'a> {
     ) -> RuntimeResult<Value> {
         match name {
             "inteiro" => match &value {
-                Value::BigInteger(value) => value
-                    .parse::<i32>()
-                    .map(Value::Integer)
-                    .map_err(|_| vec![self.error("BigInt não cabe em Inteiro", span)]),
+                Value::BigInteger(value) => {
+                    let negative = value.starts_with('-');
+                    let digits = value.strip_prefix('-').unwrap_or(value);
+                    let integer = digits.bytes().fold(0_i32, |integer, digit| {
+                        integer
+                            .wrapping_mul(10)
+                            .wrapping_add(i32::from(digit - b'0'))
+                    });
+                    Ok(Value::Integer(if negative {
+                        integer.wrapping_neg()
+                    } else {
+                        integer
+                    }))
+                }
                 _ => numeric_f64(&value)
                     .map(|number| Value::Integer(number as i32))
                     .ok_or_else(|| vec![self.error("conversão para Inteiro inválida", span)]),
@@ -2825,13 +2841,27 @@ impl<'a> Interpreter<'a> {
                         ]);
                     }
                 };
-                let pattern = separator.unwrap_or("\\s+");
-                let pieces = split_text_regex(text, pattern)
+                let normalized = separator
+                    .is_none()
+                    .then(|| normalize_default_text_split(text));
+                let input = normalized.as_deref().unwrap_or(text);
+                let pattern = separator.unwrap_or(" ");
+                let pieces = split_text_regex(input, pattern)
                     .ok_or_else(|| vec![self.error("expressão regular inválida", span)])?;
                 let count = pieces.len();
                 self.reserve_elements(count, span)?;
                 self.reserve_collection_bytes(text.len(), span)?;
                 Ok(Value::List(pieces.into_iter().map(Value::Text).collect()))
+            }
+            "get" => {
+                if arguments.len() != 1 {
+                    return Err(vec![self.error("get recebe um índice", span)]);
+                }
+                let index = self.expect_integer(&arguments[0], span)?;
+                let characters = utf16_units(text);
+                let index = normalize_index(index, characters.len())
+                    .ok_or_else(|| vec![self.error("índice fora dos limites", span)])?;
+                Ok(Value::Character(characters[index]))
             }
             "pegue" | "descarte" => {
                 if arguments.len() != 1 {
@@ -2853,6 +2883,7 @@ impl<'a> Interpreter<'a> {
             }
             "junte" => {
                 let (prefix, separator, suffix) = match arguments.as_slice() {
+                    [] => ("", "", ""),
                     [Value::Text(separator)] => ("", separator.as_str(), ""),
                     [
                         Value::Text(prefix),
@@ -3008,6 +3039,24 @@ impl<'a> Interpreter<'a> {
                 }
             }
             "injete" => {
+                if let [Value::Function(reducer)] = arguments.as_slice() {
+                    let mut characters = utf16_units(text).into_iter();
+                    let Some(first) = characters.next() else {
+                        return Err(vec![
+                            self.error("injete sem acumulador exige Texto não vazio", span),
+                        ]);
+                    };
+                    let mut accumulator = Value::Character(first);
+                    for character in characters {
+                        self.consume_step(span)?;
+                        accumulator = self.apply(
+                            Value::Function(reducer.clone()),
+                            vec![accumulator, Value::Character(character)],
+                            span,
+                        )?;
+                    }
+                    return Ok(accumulator);
+                }
                 if arguments.len() == 1 {
                     return Ok(Value::Function(Rc::new(Callable::Partial {
                         callable: Rc::new(Callable::Member {
@@ -3037,9 +3086,13 @@ impl<'a> Interpreter<'a> {
                 }
                 let mut characters = utf16_units(text);
                 let index = self.expect_integer(&arguments[0], span)?;
-                let index = normalize_index(index, characters.len())
-                    .ok_or_else(|| vec![self.error("posição fora dos limites", span)])?;
-                characters.remove(index);
+                if let Some(index) = index
+                    .checked_sub(1)
+                    .and_then(|index| usize::try_from(index).ok())
+                    .filter(|index| *index < characters.len())
+                {
+                    characters.remove(index);
+                }
                 let result = text_from_utf16(&characters);
                 self.check_string_size(result.len(), span)?;
                 Ok(Value::Text(result))
@@ -3050,10 +3103,9 @@ impl<'a> Interpreter<'a> {
                 }
                 let position = self.expect_integer(&arguments[0], span)?;
                 let mut characters = utf16_units(text);
-                if position <= 0 || position as usize > characters.len() + 1 {
-                    return Err(vec![self.error("posição de inserção inválida", span)]);
-                }
-                let insert_at = position as usize - 1;
+                let insert_at = usize::try_from(position.wrapping_sub(1))
+                    .unwrap_or(0)
+                    .min(characters.len());
                 let insertion = match &arguments[1] {
                     Value::Character(character) => vec![*character],
                     Value::Text(text) => utf16_units(text),
@@ -3156,13 +3208,12 @@ impl<'a> Interpreter<'a> {
                     return Err(vec![self.error("get recebe um índice", span)]);
                 }
                 let index = self.expect_integer(&arguments[0], span)?;
-                let selected = usize::try_from(index)
-                    .ok()
-                    .and_then(|index| values.into_iter().nth(index));
-                if selected.is_some() {
-                    self.reserve_collection_bytes(std::mem::size_of::<Value>(), span)?;
-                }
-                Ok(Value::Option(selected.map(Box::new)))
+                let index = normalize_index(index, values.len())
+                    .ok_or_else(|| vec![self.error("índice fora dos limites", span)])?;
+                values
+                    .into_iter()
+                    .nth(index)
+                    .ok_or_else(|| vec![self.error("índice fora dos limites", span)])
             }
             "zip" => {
                 if arguments.len() != 1 {
@@ -3195,16 +3246,36 @@ impl<'a> Interpreter<'a> {
                 self.collection_value_like(&receiver, zipped)
             }
             "reduza" | "reduce" => {
-                if arguments.len() != 1 || !matches!(arguments[0], Value::Function(_)) {
-                    return Err(vec![self.error("reduza recebe uma função", span)]);
+                if arguments.len() == 1 && !matches!(arguments[0], Value::Function(_)) {
+                    return Ok(Value::Function(Rc::new(Callable::Partial {
+                        callable: Rc::new(Callable::Member {
+                            receiver,
+                            name: name.to_owned(),
+                        }),
+                        arguments,
+                    })));
                 }
-                let Some(first) = values.first() else {
-                    return Err(vec![self.error("reduza não aceita lista vazia", span)]);
+                let (mut accumulator, reducer, remaining) = match arguments.as_slice() {
+                    [Value::Function(reducer)] => {
+                        let Some(first) = values.first() else {
+                            return Err(vec![self.error("reduza não aceita lista vazia", span)]);
+                        };
+                        (
+                            self.copy_value(first, span)?,
+                            Value::Function(reducer.clone()),
+                            values.into_iter().skip(1).collect::<Vec<_>>(),
+                        )
+                    }
+                    [initial, Value::Function(reducer)] => (
+                        self.copy_value(initial, span)?,
+                        Value::Function(reducer.clone()),
+                        values,
+                    ),
+                    _ => return Err(vec![self.error("reduza recebe acumulador e função", span)]),
                 };
-                let mut accumulator = self.copy_value(first, span)?;
-                for value in values.into_iter().skip(1) {
-                    accumulator =
-                        self.apply(arguments[0].clone(), vec![accumulator, value], span)?;
+                for value in remaining {
+                    self.consume_step(span)?;
+                    accumulator = self.apply(reducer.clone(), vec![accumulator, value], span)?;
                 }
                 Ok(accumulator)
             }
@@ -3242,6 +3313,7 @@ impl<'a> Interpreter<'a> {
                     _ => return Err(vec![self.error("injete recebe acumulador e função", span)]),
                 };
                 for value in remaining {
+                    self.consume_step(span)?;
                     accumulator = self.apply(reducer.clone(), vec![accumulator, value], span)?;
                 }
                 Ok(accumulator)
@@ -3274,10 +3346,14 @@ impl<'a> Interpreter<'a> {
                     return Err(vec![self.error("remova recebe uma posição", span)]);
                 }
                 let index = self.expect_integer(&arguments[0], span)?;
-                let index = normalize_index(index, values.len())
-                    .ok_or_else(|| vec![self.error("índice fora dos limites", span)])?;
                 let mut result = values;
-                result.remove(index);
+                if let Some(index) = index
+                    .checked_sub(1)
+                    .and_then(|index| usize::try_from(index).ok())
+                    .filter(|index| *index < result.len())
+                {
+                    result.remove(index);
+                }
                 self.collection_value_like(&receiver, result)
             }
             "insira" | "atualize" => {
@@ -3288,13 +3364,13 @@ impl<'a> Interpreter<'a> {
                 }
                 let index = self.expect_integer(&arguments[0], span)?;
                 if name == "insira" {
-                    if index <= 0 || index as usize > values.len() + 1 {
-                        return Err(vec![self.error("posição de inserção inválida", span)]);
-                    }
                     self.reserve_elements(1, span)?;
                     self.reserve_cloned_value_payload(&arguments[1], 1, span)?;
                     let mut result = values;
-                    result.insert(index as usize - 1, arguments[1].clone());
+                    let insert_at = usize::try_from(index.wrapping_sub(1))
+                        .unwrap_or(0)
+                        .min(result.len());
+                    result.insert(insert_at, arguments[1].clone());
                     return self.collection_value_like(&receiver, result);
                 }
                 let index = usize::try_from(index)
@@ -3607,22 +3683,33 @@ impl<'a> Interpreter<'a> {
                 Value::List(_) | Value::MutableList(_) => match name.as_str() {
                     "mapeie" | "selecione" | "pegue_enquanto" | "descarte_enquanto" | "posição"
                     | "posicao" | "contém" | "contem" | "remova" | "divida_quando" => Some(1),
+                    "get" | "pegue" | "descarte" => Some(1),
                     "insira" | "atualize" => Some(2),
+                    "reduza" | "reduce" => {
+                        Some(if matches!(arguments.first(), Some(Value::Function(_))) {
+                            1
+                        } else {
+                            2
+                        })
+                    }
                     "injete" => Some(if matches!(arguments.first(), Some(Value::Function(_))) {
                         1
                     } else {
                         2
                     }),
                     "ordene" | "junte" => Some(arguments.len()),
-                    "pegue" | "descarte" => Some(1),
                     _ => None,
                 },
                 Value::Text(_) => match name.as_str() {
                     "divida" => Some(arguments.len().min(1)),
-                    "pegue" | "descarte" | "posição" | "posicao" | "contém" | "contem"
+                    "get" | "pegue" | "descarte" | "posição" | "posicao" | "contém" | "contem"
                     | "selecione" | "pegue_enquanto" | "descarte_enquanto" | "remova" => Some(1),
                     "mapeie" | "map" | "divida_quando" => Some(1),
-                    "injete" => Some(2),
+                    "injete" => Some(if matches!(arguments.first(), Some(Value::Function(_))) {
+                        1
+                    } else {
+                        2
+                    }),
                     "insira" => Some(2),
                     "junte" => Some(arguments.len()),
                     _ => None,
@@ -3855,6 +3942,13 @@ impl<'a> Interpreter<'a> {
             let call_environment = Environment::child(environment.clone());
             let setup = (|| {
                 if let (Some(owner), Some(Value::Object(object))) = (owner, receiver.as_ref()) {
+                    Environment::define(
+                        &call_environment,
+                        "\0isto",
+                        Value::Object(object.clone()),
+                        false,
+                    )
+                    .map_err(|message| vec![self.error(message, span)])?;
                     let Some(class) = self.type_info.classes.get(owner).cloned() else {
                         return Err(vec![self.error("tipo da função não foi encontrado", span)]);
                     };
@@ -5218,6 +5312,13 @@ impl<'a> Interpreter<'a> {
             if let Some(draw) = &draw {
                 self.apply(draw.clone(), Vec::new(), span)?;
             }
+            if self.stepping {
+                self.jerimum_graphics("definir_cor", vec![JerimumValue::Integer(black)], span)?;
+                self.jerimum_graphics("limpar", Vec::new(), span)?;
+                self.flush_jerimum_drawings(span)?;
+                self.jerimum_graphics("renderizar", Vec::new(), span)?;
+                break;
+            }
             self.io
                 .wait(frame_duration)
                 .map_err(|message| vec![self.error(message, span)])?;
@@ -5718,15 +5819,16 @@ fn runtime_type_name(value: &Value) -> String {
     match value {
         Value::Integer(_) => "Inteiro".to_owned(),
         Value::Real(_) => "Real".to_owned(),
-        Value::BigInteger(_) => "BigInt".to_owned(),
+        Value::BigInteger(_) => "InteiroGrande".to_owned(),
         Value::Text(_) => "Texto".to_owned(),
-        Value::Character(_) => "Caractere".to_owned(),
-        Value::Logical(_) => "Lógico".to_owned(),
-        Value::Nothing => "Nada".to_owned(),
+        Value::Character(_) => "Character".to_owned(),
+        Value::Logical(_) => "Logico".to_owned(),
+        Value::Nothing => "BoxedUnit".to_owned(),
         Value::Tuple(_) => "Tupla".to_owned(),
         Value::List(_) => "Lista".to_owned(),
         Value::MutableList(_) => "Vetor".to_owned(),
-        Value::Option(_) => "Option".to_owned(),
+        Value::Option(Some(_)) => "Some".to_owned(),
+        Value::Option(None) => "None".to_owned(),
         Value::Function(_) => "Função".to_owned(),
         Value::TypeName(name) => name.clone(),
         Value::Object(object) => object.borrow().class_name.clone(),
@@ -5904,6 +6006,16 @@ fn compare_values(left: &Value, right: &Value) -> Option<std::cmp::Ordering> {
         (Value::BigInteger(left), Value::Integer(right)) => {
             Some(bigint::compare(left, &right.to_string()))
         }
+        (Value::BigInteger(left), Value::Character(right)) => {
+            Some(bigint::compare(left, &i32::from(*right).to_string()))
+        }
+        (Value::Character(left), Value::BigInteger(right)) => {
+            Some(bigint::compare(&i32::from(*left).to_string(), right))
+        }
+        (Value::BigInteger(left), Value::Real(right)) => compare_big_integer_real(left, *right),
+        (Value::Real(left), Value::BigInteger(right)) => {
+            compare_big_integer_real(right, *left).map(std::cmp::Ordering::reverse)
+        }
         (Value::Character(left), Value::Character(right)) => Some(left.cmp(right)),
         (Value::Text(left), Value::Text(right)) => {
             Some(left.encode_utf16().cmp(right.encode_utf16()))
@@ -5918,6 +6030,35 @@ fn compare_values(left: &Value, right: &Value) -> Option<std::cmp::Ordering> {
         (Value::MutableList(left), Value::List(right)) => compare_slices(&left.borrow(), right),
         _ => None,
     }
+}
+
+fn compare_big_integer_real(integer: &str, real: f64) -> Option<std::cmp::Ordering> {
+    if real.is_nan() {
+        return None;
+    }
+    if real.is_infinite() {
+        return Some(if real.is_sign_positive() {
+            std::cmp::Ordering::Less
+        } else {
+            std::cmp::Ordering::Greater
+        });
+    }
+    let truncated = real.trunc();
+    let truncated = if truncated == 0.0 {
+        "0".to_owned()
+    } else {
+        format!("{truncated:.0}")
+    };
+    let order = bigint::compare(integer, &truncated);
+    Some(if order.is_eq() && real.fract() != 0.0 {
+        if real.is_sign_positive() {
+            std::cmp::Ordering::Less
+        } else {
+            std::cmp::Ordering::Greater
+        }
+    } else {
+        order
+    })
 }
 
 fn compare_slices(left: &[Value], right: &[Value]) -> Option<std::cmp::Ordering> {
@@ -5952,93 +6093,47 @@ fn nested_list_counts(sizes: &[usize]) -> Option<(usize, usize)> {
         })
 }
 
+fn normalize_default_text_split(text: &str) -> String {
+    let mut normalized = String::with_capacity(text.len());
+    let mut in_separator = false;
+    for character in text.chars() {
+        if matches!(character, ' ' | '\n') {
+            if !in_separator {
+                normalized.push(' ');
+                in_separator = true;
+            }
+        } else {
+            normalized.push(character);
+            in_separator = false;
+        }
+    }
+    normalized
+}
+
 fn split_text_regex(text: &str, pattern: &str) -> Option<Vec<String>> {
     if text.is_empty() {
         return Some(vec![String::new()]);
     }
-    if pattern.is_empty() {
-        return Some(
-            text.chars()
-                .map(|character| character.to_string())
-                .collect(),
-        );
-    }
-    let (atom, repeated) = pattern
-        .strip_suffix('+')
-        .map_or((pattern, false), |atom| (atom, true));
-    let has_regex_syntax = atom.chars().any(|character| {
-        matches!(
-            character,
-            '[' | ']' | '\\' | '.' | '^' | '$' | '|' | '?' | '*' | '+' | '(' | ')'
-        )
-    });
-    if !has_regex_syntax {
-        let mut pieces = text.split(atom).map(str::to_owned).collect::<Vec<_>>();
-        while pieces.last().is_some_and(String::is_empty) {
-            pieces.pop();
-        }
-        return Some(pieces);
-    }
-    // shortcut: split covers literal separators, character classes, \d/\s/\w, dot, and +; add full Pattern syntax if programs use groups, alternation, or lookarounds.
-    let matches = |character: char| {
-        if atom == "." {
-            return Some(!matches!(character, '\n' | '\r'));
-        }
-        if let Some(class) = atom
-            .strip_prefix('[')
-            .and_then(|atom| atom.strip_suffix(']'))
-        {
-            let (negated, class) = class
-                .strip_prefix('^')
-                .map_or((false, class), |class| (true, class));
-            let chars = class.chars().collect::<Vec<_>>();
-            let mut index = 0;
-            let mut found = false;
-            while index < chars.len() {
-                if index + 2 < chars.len() && chars[index + 1] == '-' {
-                    found |= chars[index] <= character && character <= chars[index + 2];
-                    index += 3;
-                } else {
-                    found |= chars[index] == character;
-                    index += 1;
-                }
-            }
-            return Some(if negated { !found } else { found });
-        }
-        match atom {
-            "\\d" => Some(character.is_ascii_digit()),
-            "\\s" => Some(character.is_whitespace()),
-            "\\w" => Some(character.is_ascii_alphanumeric() || character == '_'),
-            _ if atom.starts_with('\\') && atom.chars().count() == 2 => {
-                Some(atom.chars().nth(1) == Some(character))
-            }
-            _ if atom.chars().count() == 1 => Some(atom.chars().next() == Some(character)),
-            _ => None,
-        }
-    };
-    if !matches(atom.chars().next()?)? {
-        matches('\0')?;
-    }
-    let characters = text.chars().collect::<Vec<_>>();
+    let mut builder = RegexBuilder::new(pattern);
+    // shortcut: backtracking is capped at one million steps; raise only with an equivalent execution budget.
+    builder.backtrack_limit(1_000_000);
+    let regex = builder.build().ok()?;
     let mut pieces = Vec::new();
     let mut field_start = 0;
-    let mut index = 0;
-    while index < characters.len() {
-        if matches(characters[index])? {
-            let start = index;
-            index += 1;
-            if repeated {
-                while index < characters.len() && matches(characters[index])? {
-                    index += 1;
-                }
-            }
-            pieces.push(characters[field_start..start].iter().collect());
-            field_start = index;
-        } else {
-            index += 1;
+    let mut found_match = false;
+    for result in regex.find_iter(text) {
+        let separator = result.ok()?;
+        if separator.start() == 0 && separator.end() == 0 && !found_match {
+            continue;
         }
+        pieces.push(text[field_start..separator.start()].to_owned());
+        field_start = separator.end();
+        found_match = true;
     }
-    pieces.push(characters[field_start..].iter().collect());
+    if !found_match {
+        return Some(vec![text.to_owned()]);
+    }
+    pieces.push(text[field_start..].to_owned());
     while pieces.last().is_some_and(String::is_empty) {
         pieces.pop();
     }
@@ -6105,7 +6200,10 @@ fn format_value(value: &Value, format: &str, maximum_bytes: usize) -> Result<Opt
                 None => number.to_string(),
             }
         }
-        's' => value.display(),
+        's' => match value {
+            Value::Logical(value) => value.to_string(),
+            _ => value.display(),
+        },
         _ => return Ok(None),
     };
     let padding = width.saturating_sub(raw.chars().count());

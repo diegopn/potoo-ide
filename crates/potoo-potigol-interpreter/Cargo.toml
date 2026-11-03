@@ -13,3 +13,6 @@ rust-version = "1.93"
 [lib]
 name = "potoo_potigol_interpreter"
 path = "src/lib.rs"
+
+[dependencies]
+fancy-regex = "=0.16.2"

@@ -117,6 +117,7 @@ impl Environment {
                     environment
                         .values
                         .iter()
+                        .filter(|(name, _)| !name.starts_with('\0'))
                         .map(|(name, binding)| {
                             clone_value(&binding.value).map(|value| (name.clone(), value))
                         })

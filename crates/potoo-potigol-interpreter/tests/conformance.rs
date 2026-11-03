@@ -111,7 +111,12 @@ fn integer_literals_arithmetic_and_input_match_scala_int32() {
 
     assert!(run("escreva 2147483648", &[]).is_err());
     assert!(run("x = leia_inteiro", &["2147483648"]).is_err());
-    assert!(run("escreva BigInt(\"2147483648\").inteiro", &[]).is_err());
+    assert_eq!(
+        run("escreva BigInt(\"2147483648\").inteiro", &[])
+            .unwrap()
+            .output,
+        "-2147483648\n"
+    );
 }
 
 #[test]
@@ -484,7 +489,7 @@ escreva raiz(8, 3)
 
     assert_eq!(
         io.output,
-        "[2, 1]\nverdadeiro\nverdadeiro\nSome(2)\nSome(2)\nNone\nSome(a)\n3\n[1, 2]\n[1, 2]\n[[0, 0], [0, 0]]\nVetor\n2.0\n"
+        "[2, 1]\nverdadeiro\nverdadeiro\nSome(2)\n1\nNone\nSome(a)\n3\n[1, 2]\n[1, 2]\n[[0, 0], [0, 0]]\nVetor\n2.0\n"
     );
 }
 

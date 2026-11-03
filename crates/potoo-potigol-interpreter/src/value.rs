@@ -218,8 +218,51 @@ fn format_real(value: f64) -> String {
     }
 }
 
+fn numeric_eq(left: &Value, right: &Value) -> Option<bool> {
+    use Value::*;
+
+    Some(match (left, right) {
+        (Integer(left), Real(right)) => f64::from(*left) == *right,
+        (Real(left), Integer(right)) => *left == f64::from(*right),
+        (Character(left), Integer(right)) => i32::from(*left) == *right,
+        (Integer(left), Character(right)) => *left == i32::from(*right),
+        (Character(left), Real(right)) => f64::from(*left) == *right,
+        (Real(left), Character(right)) => *left == f64::from(*right),
+        (BigInteger(left), Integer(right)) => {
+            crate::bigint::compare(left, &right.to_string()).is_eq()
+        }
+        (Integer(left), BigInteger(right)) => {
+            crate::bigint::compare(&left.to_string(), right).is_eq()
+        }
+        (BigInteger(left), Character(right)) => {
+            crate::bigint::compare(left, &i32::from(*right).to_string()).is_eq()
+        }
+        (Character(left), BigInteger(right)) => {
+            crate::bigint::compare(&i32::from(*left).to_string(), right).is_eq()
+        }
+        (BigInteger(left), Real(right)) => bigint_real_eq(left, *right),
+        (Real(left), BigInteger(right)) => bigint_real_eq(right, *left),
+        _ => return None,
+    })
+}
+
+fn bigint_real_eq(integer: &str, real: f64) -> bool {
+    if !real.is_finite() || real.fract() != 0.0 {
+        return false;
+    }
+    let real = if real == 0.0 {
+        "0".to_owned()
+    } else {
+        format!("{real:.0}")
+    };
+    crate::bigint::compare(integer, &real).is_eq()
+}
+
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
+        if let Some(equal) = numeric_eq(self, other) {
+            return equal;
+        }
         match (self, other) {
             (Self::Integer(left), Self::Integer(right)) => left == right,
             (Self::Real(left), Self::Real(right)) => left == right,

@@ -32,6 +32,13 @@ impl ImageAsset {
     }
 }
 
+fn empty_image_asset() -> Result<ImageAsset, String> {
+    let pixbuf = gtk::gdk_pixbuf::Pixbuf::new(gtk::gdk_pixbuf::Colorspace::Rgb, true, 8, 200, 200)
+        .ok_or_else(|| "não foi possível criar a imagem vazia".to_owned())?;
+    pixbuf.fill(0);
+    Ok(ImageAsset::still(pixbuf))
+}
+
 struct GraphicsState {
     window: Option<gtk::Window>,
     area: Option<gtk::DrawingArea>,
@@ -694,8 +701,14 @@ impl GraphicsHost {
                 Ok(HostValue::Integer(handle))
             }
             "carregar_imagem" => {
-                let path = safe_project_file(root, &string_argument(arguments, 0)?)?;
-                let image = load_image_asset(&path)?;
+                let path = safe_project_image_file(root, &string_argument(arguments, 0)?)?;
+                let image = match path {
+                    Some(path) => match load_image_asset(&path) {
+                        Ok(image) => image,
+                        Err(_) => empty_image_asset()?,
+                    },
+                    None => empty_image_asset()?,
+                };
                 Ok(HostValue::Integer(self.insert_image(image)?))
             }
             "proximo_frame_gif" => {
@@ -1799,6 +1812,19 @@ fn rounded_rectangle(
 }
 
 fn safe_project_file(root: Option<&Path>, relative: &str) -> Result<PathBuf, String> {
+    safe_project_path(root, relative, false)?
+        .ok_or_else(|| "arquivo do projeto indisponível".to_owned())
+}
+
+fn safe_project_image_file(root: Option<&Path>, relative: &str) -> Result<Option<PathBuf>, String> {
+    safe_project_path(root, relative, true)
+}
+
+fn safe_project_path(
+    root: Option<&Path>,
+    relative: &str,
+    allow_missing_file: bool,
+) -> Result<Option<PathBuf>, String> {
     let root = root.ok_or_else(|| "abra um projeto para carregar recursos gráficos".to_owned())?;
     let root = std::fs::canonicalize(root)
         .map_err(|error| format!("pasta do projeto indisponível: {error}"))?;
@@ -1813,12 +1839,51 @@ fn safe_project_file(root: Option<&Path>, relative: &str) -> Result<PathBuf, Str
     {
         return Err("o caminho deve permanecer dentro do projeto".to_owned());
     }
-    let path = std::fs::canonicalize(root.join(relative_path))
-        .map_err(|error| format!("arquivo do projeto indisponível: {error}"))?;
-    if !path.starts_with(root) || !path.is_file() {
-        return Err("o caminho deve apontar para um arquivo do projeto".to_owned());
+    let candidate = root.join(relative_path);
+    match std::fs::canonicalize(&candidate) {
+        Ok(path) if path.starts_with(&root) && path.is_file() => Ok(Some(path)),
+        Ok(_) => Err("o caminho deve apontar para um arquivo do projeto".to_owned()),
+        Err(error) if allow_missing_file && error.kind() == std::io::ErrorKind::NotFound => {
+            match std::fs::symlink_metadata(&candidate) {
+                Ok(metadata) => {
+                    if metadata.file_type().is_symlink() {
+                        return Err("o caminho deve apontar para um arquivo do projeto".to_owned());
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(format!("arquivo do projeto indisponível: {error}")),
+            }
+            if candidate.file_name().is_none() {
+                return Err("o caminho deve apontar para um arquivo do projeto".to_owned());
+            }
+            let mut parent = candidate.parent().unwrap_or(&root);
+            loop {
+                match std::fs::symlink_metadata(parent) {
+                    Ok(metadata) if metadata.is_dir() || metadata.file_type().is_symlink() => {
+                        let parent = std::fs::canonicalize(parent)
+                            .map_err(|error| format!("arquivo do projeto indisponível: {error}"))?;
+                        return if parent.starts_with(&root) && parent.is_dir() {
+                            Ok(None)
+                        } else {
+                            Err("o caminho deve apontar para um arquivo do projeto".to_owned())
+                        };
+                    }
+                    Ok(_) => {
+                        return Err("o caminho deve apontar para um arquivo do projeto".to_owned());
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        parent = parent
+                            .parent()
+                            .ok_or_else(|| "arquivo do projeto indisponível".to_owned())?;
+                    }
+                    Err(error) => {
+                        return Err(format!("arquivo do projeto indisponível: {error}"));
+                    }
+                }
+            }
+        }
+        Err(error) => Err(format!("arquivo do projeto indisponível: {error}")),
     }
-    Ok(path)
 }
 
 fn safe_project_output(root: Option<&Path>, relative: &str) -> Result<PathBuf, String> {

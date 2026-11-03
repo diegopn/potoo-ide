@@ -103,13 +103,18 @@ impl Parser {
         }
         if self.at_keyword("use") {
             let start = self.advance().span.start;
+            self.skip_newlines();
             let token = self.advance().clone();
             let TokenKind::String(path) = token.kind else {
                 return Err(vec![
                     self.error_at("esperava o caminho entre aspas", token.span),
                 ]);
             };
-            return Ok(self.stmt(start, token.span.end, StmtKind::Import(path)));
+            return Ok(self.stmt(
+                start,
+                token.span.end,
+                StmtKind::Import(decode_string_escapes(&path)),
+            ));
         }
         if self.at_keyword("faça") || self.at_keyword("faca") {
             return self.parse_standalone_block();
@@ -120,24 +125,12 @@ impl Parser {
         if self.at_keyword("escreva") || self.at_keyword("imprima") {
             let token = self.advance().clone();
             let newline = matches!(&token.kind, TokenKind::Identifier(word) if word == "escreva");
-            let value = self.parse_expression_list()?;
+            let value = self.parse_expression(0)?;
             return Ok(self.stmt(
                 token.span.start,
                 value.span.end,
                 StmtKind::Output { newline, value },
             ));
-        }
-        if self.at_keyword("retorne") {
-            let start = self.advance().span.start;
-            let value = if self.at_statement_end() {
-                None
-            } else {
-                Some(self.parse_expression(0)?)
-            };
-            let end = value
-                .as_ref()
-                .map_or(self.previous().span.end, |value| value.span.end);
-            return Ok(self.stmt(start, end, StmtKind::Return(value)));
         }
         if self.at_keyword("enquanto") {
             return self.parse_while_statement();
@@ -152,9 +145,27 @@ impl Parser {
             return self.parse_immutable_binding();
         }
 
-        let expression = self.parse_expression_list()?;
+        let (expression, target_count) = self.parse_expression_sequence()?;
         if self.consume_operator(":=").is_some() {
-            let value = self.parse_expression_list()?;
+            let targets = match (&expression.kind, target_count) {
+                (ExprKind::Tuple(targets), count) if count > 1 => targets.as_slice(),
+                (_, 1) => std::slice::from_ref(&expression),
+                _ => &[],
+            };
+            if targets.is_empty()
+                || !targets
+                    .iter()
+                    .all(|target| is_assignment_target(&target.kind))
+            {
+                return Err(vec![
+                    self.error_at("alvo de atribuição inválido", expression.span),
+                ]);
+            }
+            let value = if target_count > 1 {
+                self.parse_expression_sequence()?.0
+            } else {
+                self.parse_expression(0)?
+            };
             let span_start = expression.span.start;
             let span_end = value.span.end;
             return Ok(self.stmt(
@@ -166,20 +177,30 @@ impl Parser {
                 },
             ));
         }
+        if target_count > 1 {
+            return Err(vec![self.error_at(
+                "expressão não pode conter uma lista de valores sem parênteses",
+                expression.span,
+            )]);
+        }
         let span = expression.span;
         Ok(self.stmt(span.start, span.end, StmtKind::Expression(expression)))
     }
 
     fn parse_mutable_binding(&mut self) -> Result<Stmt, Vec<Diagnostic>> {
         let start = self.advance().span.start;
-        let mut pattern = self.parse_pattern()?;
+        let (mut pattern, names) = self.parse_binding_names()?;
         let annotation = self.parse_binding_annotation(&mut pattern)?;
         if self.consume_operator(":=").is_none() && self.consume_operator("=").is_none() {
             return Err(vec![
                 self.error_here("esperava ':=' ou '=' após a variável"),
             ]);
         }
-        let value = self.parse_expression_list()?;
+        let value = if names > 1 {
+            self.parse_expression_sequence()?.0
+        } else {
+            self.parse_expression(0)?
+        };
         let end = value.span.end;
         Ok(self.stmt(
             start,
@@ -197,12 +218,16 @@ impl Parser {
         let start = self
             .consume_keyword("val")
             .map_or(self.current().span.start, |token| token.span.start);
-        let mut pattern = self.parse_pattern()?;
+        let (mut pattern, names) = self.parse_binding_names()?;
         let annotation = self.parse_binding_annotation(&mut pattern)?;
         if self.consume_operator("=").is_none() {
             return Err(vec![self.error_here("esperava '=' na declaração de valor")]);
         }
-        let value = self.parse_expression_list()?;
+        let value = if names > 1 {
+            self.parse_expression_sequence()?.0
+        } else {
+            self.parse_expression(0)?
+        };
         let end = value.span.end;
         Ok(self.stmt(
             start,
@@ -216,10 +241,50 @@ impl Parser {
         ))
     }
 
+    fn parse_binding_names(&mut self) -> Result<(Pattern, usize), Vec<Diagnostic>> {
+        let mut patterns = Vec::new();
+        loop {
+            let token = self.expect_identifier()?;
+            let name = self.identifier_value(&token)?;
+            if name == "_" {
+                return Err(vec![
+                    self.error_at("esperava um nome para a declaração", token.span),
+                ]);
+            }
+            patterns.push(Pattern {
+                id: self.id(),
+                span: token.span,
+                annotation: None,
+                kind: PatternKind::Binding(name),
+            });
+            if self.consume_symbol(',').is_none() {
+                break;
+            }
+        }
+        let count = patterns.len();
+        if count == 1 {
+            return Ok((patterns.remove(0), count));
+        }
+        let span = SourceSpan {
+            start: patterns[0].span.start,
+            end: patterns[count - 1].span.end,
+        };
+        Ok((
+            Pattern {
+                id: self.id(),
+                span,
+                annotation: None,
+                kind: PatternKind::Tuple(patterns),
+            },
+            count,
+        ))
+    }
+
     fn parse_binding_annotation(
         &mut self,
         pattern: &mut Pattern,
     ) -> Result<Option<TypeExpr>, Vec<Diagnostic>> {
+        self.skip_newlines();
         let Some(annotation) = pattern.annotation.take() else {
             return if self.consume_symbol(':').is_some() {
                 Ok(Some(self.parse_type_expression()?))
@@ -255,19 +320,9 @@ impl Parser {
         let body = if self.consume_operator("=").is_some() {
             FunctionBody::Expression(Box::new(self.parse_expression(0)?))
         } else {
-            self.skip_newlines();
-            let body_start = self.current().span.start;
-            let statements = self.parse_block_until(&["fim"])?;
-            let end = self.current().span.start;
+            let block = self.parse_function_body_block()?;
             self.expect_keyword("fim")?;
-            FunctionBody::Block(Block {
-                id: self.id(),
-                statements,
-                span: SourceSpan {
-                    start: body_start,
-                    end,
-                },
-            })
+            FunctionBody::Block(block)
         };
         let end = match &body {
             FunctionBody::Expression(expression) => expression.span.end,
@@ -282,11 +337,47 @@ impl Parser {
         Ok(self.stmt(start, end, StmtKind::Function(function)))
     }
 
+    fn parse_function_body_block(&mut self) -> Result<Block, Vec<Diagnostic>> {
+        self.skip_newlines();
+        let start = self.current().span.start;
+        let mut statements = Vec::new();
+        loop {
+            self.skip_separators();
+            if self.is_eof() || self.at_keyword("fim") {
+                break;
+            }
+            if self.at_keyword("retorne") {
+                let return_start = self.advance().span.start;
+                self.skip_newlines();
+                if self.is_eof() || self.at_keyword("fim") || self.at_symbol(';') {
+                    return Err(vec![self.error_here("'retorne' exige uma expressão")]);
+                }
+                let value = self.parse_expression(0)?;
+                let end = value.span.end;
+                statements.push(self.stmt(return_start, end, StmtKind::Return(Some(value))));
+                self.skip_separators();
+                if !self.at_keyword("fim") {
+                    return Err(vec![
+                        self.error_here("'retorne' deve ser a última expressão da função"),
+                    ]);
+                }
+                break;
+            }
+            statements.push(self.parse_statement()?);
+        }
+        let end = self.current().span.start;
+        Ok(Block {
+            id: self.id(),
+            statements,
+            span: SourceSpan { start, end },
+        })
+    }
+
     fn parse_function_signature(&mut self) -> Result<FunctionDecl, Vec<Diagnostic>> {
         let name_token = self.expect_identifier()?;
         let name = self.identifier_value(&name_token)?;
         self.expect_symbol('(')?;
-        let parameters = self.parse_parameters(')')?;
+        let parameters = self.parse_parameters(')', true)?;
         self.skip_newlines();
         self.expect_symbol(')')?;
         self.skip_newlines();
@@ -317,10 +408,14 @@ impl Parser {
 
     fn parse_type_declaration(&mut self) -> Result<Stmt, Vec<Diagnostic>> {
         let start = self.advance().span.start;
+        self.skip_newlines();
         let abstract_type = self.consume_keyword("abstrato").is_some();
         let name_token = self.expect_identifier()?;
         let name = self.identifier_value(&name_token)?;
         if self.consume_operator("=").is_some() {
+            if abstract_type {
+                return Err(vec![self.error_here("alias de tipo não pode ser abstrato")]);
+            }
             let target = self.parse_type_expression()?;
             let end = target.span.end;
             return Ok(self.stmt(start, end, StmtKind::TypeAlias { name, target }));
@@ -350,25 +445,12 @@ impl Parser {
                 self.skip_newlines();
                 let body = if self.consume_operator("=").is_some() {
                     FunctionBody::Expression(Box::new(self.parse_expression(0)?))
-                // shortcut: indentation separates abstract signatures from method bodies, upgrade when grammar context removes the column convention.
-                } else if abstract_type
-                    && self.current().span.start.column <= method.span.start.column
-                {
+                } else if abstract_type && self.starts_type_member() {
                     FunctionBody::Abstract
                 } else {
-                    self.skip_newlines();
-                    let body_start = self.current().span.start;
-                    let statements = self.parse_block_until(&["fim"])?;
-                    let body_end = self.current().span.start;
+                    let block = self.parse_function_body_block()?;
                     self.expect_keyword("fim")?;
-                    FunctionBody::Block(Block {
-                        id: self.id(),
-                        statements,
-                        span: SourceSpan {
-                            start: body_start,
-                            end: body_end,
-                        },
-                    })
+                    FunctionBody::Block(block)
                 };
                 method.span.end = match &body {
                     FunctionBody::Expression(expression) => expression.span.end,
@@ -489,6 +571,7 @@ impl Parser {
 
     fn parse_while_construct(&mut self, start: SourceLocation) -> Result<Expr, Vec<Diagnostic>> {
         let condition = self.parse_expression(0)?;
+        self.skip_newlines();
         if self.consume_keyword("faça").is_none() && self.consume_keyword("faca").is_none() {
             return Err(vec![self.error_here("esperava 'faça' após a condição")]);
         }
@@ -598,14 +681,18 @@ impl Parser {
     ) -> Result<Vec<ForGenerator>, Vec<Diagnostic>> {
         let mut generators = Vec::new();
         loop {
+            self.skip_newlines();
             let start = self.current().span.start;
             let pattern = self.parse_pattern()?;
+            self.skip_newlines();
             let source = if self.consume_keyword("de").is_some() {
                 let range_start = self.parse_expression(0)?;
+                self.skip_newlines();
                 if self.consume_keyword("até").is_none() && self.consume_keyword("ate").is_none() {
                     return Err(vec![self.error_here("esperava 'até' no gerador do laço")]);
                 }
                 let end = self.parse_expression(0)?;
+                self.skip_newlines();
                 let step = if self.consume_keyword("passo").is_some() {
                     Some(self.parse_expression(0)?)
                 } else {
@@ -623,25 +710,17 @@ impl Parser {
                     self.error_here("esperava 'de' ou 'em' no gerador do laço"),
                 ]);
             };
-            let condition = if self.consume_keyword("se").is_some() {
-                Some(self.parse_expression(0)?)
-            } else {
-                None
-            };
             let end = match &source {
                 ForSource::Range { step, end, .. } => {
                     step.as_ref().map_or(end.span.end, |step| step.span.end)
                 }
                 ForSource::Iterable(iterable) => iterable.span.end,
             };
-            let end = condition
-                .as_ref()
-                .map_or(end, |condition| condition.span.end);
             generators.push(ForGenerator {
                 id: self.id(),
                 pattern,
                 source,
-                condition,
+                condition: None,
                 span: SourceSpan { start, end },
             });
             if self.consume_symbol(',').is_none() {
@@ -652,6 +731,15 @@ impl Parser {
                 return Err(vec![self.error_here("gerador incompleto após ','")]);
             }
         }
+        self.skip_newlines();
+        if self.consume_keyword("se").is_some() {
+            let condition = self.parse_expression(0)?;
+            let Some(generator) = generators.last_mut() else {
+                return Err(vec![self.error_here("filtro sem gerador")]);
+            };
+            generator.span.end = condition.span.end;
+            generator.condition = Some(condition);
+        }
         Ok(generators)
     }
 
@@ -660,21 +748,29 @@ impl Parser {
     }
 
     fn parse_expression_list(&mut self) -> Result<Expr, Vec<Diagnostic>> {
+        Ok(self.parse_expression_sequence()?.0)
+    }
+
+    fn parse_expression_sequence(&mut self) -> Result<(Expr, usize), Vec<Diagnostic>> {
         let first = self.parse_expression(0)?;
-        if self.consume_symbol(',').is_none() {
-            return Ok(first);
-        }
         let start = first.span.start;
         let mut elements = vec![first];
         loop {
             self.skip_newlines();
-            elements.push(self.parse_expression(0)?);
             if self.consume_symbol(',').is_none() {
                 break;
             }
+            self.skip_newlines();
+            elements.push(self.parse_expression(0)?);
         }
+        let count = elements.len();
         let end = elements.last().map_or(start, |element| element.span.end);
-        Ok(self.expr(SourceSpan { start, end }, ExprKind::Tuple(elements)))
+        let expression = if count == 1 {
+            elements.remove(0)
+        } else {
+            self.expr(SourceSpan { start, end }, ExprKind::Tuple(elements))
+        };
+        Ok((expression, count))
     }
 
     fn parse_expression_inner(&mut self, minimum_precedence: u8) -> Result<Expr, Vec<Diagnostic>> {
@@ -784,6 +880,9 @@ impl Parser {
             TokenKind::Identifier(word) if word == "falso" => {
                 Ok(self.expr(token.span, ExprKind::Logical(false)))
             }
+            TokenKind::Identifier(word) if word == "isto" => {
+                Ok(self.expr(token.span, ExprKind::This))
+            }
             TokenKind::Identifier(word) if word == "_" => {
                 Ok(self.expr(token.span, ExprKind::Placeholder))
             }
@@ -869,11 +968,12 @@ impl Parser {
 
     fn parse_parenthesized(&mut self, start: SourceLocation) -> Result<Expr, Vec<Diagnostic>> {
         if self.at_symbol(')') {
-            let end = self.advance().span.end;
-            return Ok(self.expr(SourceSpan { start, end }, ExprKind::Tuple(Vec::new())));
+            return Err(vec![
+                self.error_here("tupla precisa de ao menos dois elementos"),
+            ]);
         }
         if self.looks_like_lambda_parameters() {
-            let parameters = self.parse_parameters(')')?;
+            let parameters = self.parse_parameters(')', false)?;
             self.expect_symbol(')')?;
             self.skip_newlines();
             self.expect_operator("=>")?;
@@ -902,6 +1002,11 @@ impl Parser {
             if self.consume_symbol(',').is_none() {
                 break;
             }
+        }
+        if elements.len() < 2 {
+            return Err(vec![
+                self.error_here("tupla precisa de ao menos dois elementos"),
+            ]);
         }
         let end = self.expect_symbol(')')?.span.end;
         Ok(self.expr(SourceSpan { start, end }, ExprKind::Tuple(elements)))
@@ -951,15 +1056,7 @@ impl Parser {
             )));
         }
         if self.consume_symbol('[').is_some() {
-            let mut indices = Vec::new();
-            loop {
-                indices.push(self.parse_expression(0)?);
-                self.skip_newlines();
-                if self.consume_symbol(',').is_none() {
-                    break;
-                }
-                self.skip_newlines();
-            }
+            let index = self.parse_expression(0)?;
             let end = self.expect_symbol(']')?.span.end;
             return Ok(Some(self.expr(
                 SourceSpan {
@@ -968,7 +1065,7 @@ impl Parser {
                 },
                 ExprKind::Index {
                     receiver: Box::new(expression.clone()),
-                    indices,
+                    indices: vec![index],
                 },
             )));
         }
@@ -1086,6 +1183,7 @@ impl Parser {
         while self.consume_keyword("caso").is_some() {
             let case_start = self.previous().span.start;
             let pattern = self.parse_pattern()?;
+            self.skip_newlines();
             let guard = if self.consume_keyword("se").is_some() {
                 Some(self.parse_expression(1)?)
             } else {
@@ -1211,6 +1309,7 @@ impl Parser {
     }
 
     fn parse_pattern_inner(&mut self) -> Result<Pattern, Vec<Diagnostic>> {
+        self.skip_newlines();
         let mut pattern = self.parse_cons_pattern()?;
         if self.consume_symbol(',').is_some() {
             let mut elements = vec![pattern];
@@ -1243,6 +1342,7 @@ impl Parser {
     }
 
     fn parse_cons_pattern_inner(&mut self) -> Result<Pattern, Vec<Diagnostic>> {
+        self.skip_newlines();
         let mut pattern = self.parse_atomic_pattern()?;
         if self.consume_operator("::").is_some() {
             let tail = self.parse_cons_pattern()?;
@@ -1274,7 +1374,7 @@ impl Parser {
             },
             TokenKind::Real(value) => PatternKind::Real(value),
             TokenKind::Character(value) => PatternKind::Character(value),
-            TokenKind::String(value) => PatternKind::Text(value),
+            TokenKind::String(value) => PatternKind::Text(decode_string_escapes(&value)),
             TokenKind::Identifier(name) if name == "_" => PatternKind::Wildcard,
             TokenKind::Identifier(name) if name == "verdadeiro" => PatternKind::Logical(true),
             TokenKind::Identifier(name) if name == "falso" => PatternKind::Logical(false),
@@ -1365,7 +1465,7 @@ impl Parser {
 
     fn parse_type_expression_inner(&mut self) -> Result<TypeExpr, Vec<Diagnostic>> {
         let mut left = self.parse_atomic_type()?;
-        if self.consume_operator("=>").is_some() || self.consume_operator("->").is_some() {
+        if self.consume_operator("=>").is_some() {
             let result = self.parse_type_expression()?;
             let parameters = match left.kind {
                 TypeExprKind::Tuple(elements) => elements,
@@ -1391,13 +1491,16 @@ impl Parser {
     fn parse_atomic_type(&mut self) -> Result<TypeExpr, Vec<Diagnostic>> {
         if self.consume_symbol('(').is_some() {
             let start = self.previous().span.start;
-            let mut elements = Vec::new();
-            if !self.at_symbol(')') {
-                loop {
-                    elements.push(self.parse_type_expression()?);
-                    if self.consume_symbol(',').is_none() {
-                        break;
-                    }
+            let mut elements = vec![self.parse_type_expression()?];
+            if self.consume_symbol(',').is_none() {
+                return Err(vec![
+                    self.error_here("tupla de tipos precisa de ao menos dois elementos"),
+                ]);
+            }
+            loop {
+                elements.push(self.parse_type_expression()?);
+                if self.consume_symbol(',').is_none() {
+                    break;
                 }
             }
             let end = self.expect_symbol(')')?.span.end;
@@ -1411,12 +1514,7 @@ impl Parser {
         let name = self.identifier_value(&name_token)?;
         let mut arguments = Vec::new();
         if self.consume_symbol('[').is_some() {
-            loop {
-                arguments.push(self.parse_type_expression()?);
-                if self.consume_symbol(',').is_none() {
-                    break;
-                }
-            }
+            arguments.push(self.parse_type_expression()?);
             let end = self.expect_symbol(']')?.span.end;
             return Ok(TypeExpr {
                 id: self.id(),
@@ -1434,9 +1532,14 @@ impl Parser {
         })
     }
 
-    fn parse_parameters(&mut self, closing: char) -> Result<Vec<Parameter>, Vec<Diagnostic>> {
+    fn parse_parameters(
+        &mut self,
+        closing: char,
+        require_annotations: bool,
+    ) -> Result<Vec<Parameter>, Vec<Diagnostic>> {
         let mut parameters = Vec::new();
         let mut pending = Vec::<(String, SourceSpan, bool)>::new();
+        self.skip_newlines();
         if self.at_symbol(closing) {
             return Ok(parameters);
         }
@@ -1449,6 +1552,7 @@ impl Parser {
             let token = self.expect_identifier()?;
             let name = self.identifier_value(&token)?;
             pending.push((name, token.span, mutable));
+            self.skip_newlines();
             if self.consume_symbol(':').is_some() {
                 let annotation = self.parse_type_expression()?;
                 for (name, span, mutable) in pending.drain(..) {
@@ -1470,6 +1574,9 @@ impl Parser {
             }
             self.skip_newlines();
         }
+        if require_annotations && !pending.is_empty() {
+            return Err(vec![self.error_here("parâmetro de função precisa de tipo")]);
+        }
         parameters.extend(pending.into_iter().map(|(name, span, mutable)| Parameter {
             id: self.id(),
             name,
@@ -1490,6 +1597,11 @@ impl Parser {
         let mut text = String::new();
         let mut index = 0usize;
         while index < chars.len() {
+            if chars[index] == '\\' {
+                text.push(chars[index + 1]);
+                index += 2;
+                continue;
+            }
             if chars[index] != '{' {
                 text.push(chars[index]);
                 index += 1;
@@ -1505,7 +1617,10 @@ impl Parser {
             while index < chars.len() && depth > 0 {
                 let character = chars[index];
                 if let Some(delimiter) = quote {
-                    if character == delimiter {
+                    if character == '\\' {
+                        index += 2;
+                        continue;
+                    } else if character == delimiter {
                         quote = None;
                     }
                 } else {
@@ -1578,7 +1693,7 @@ impl Parser {
                 "::" => (operator.as_str(), 7, true),
                 "+" | "-" => (operator.as_str(), 5, false),
                 "*" | "/" => (operator.as_str(), 6, false),
-                "^" => (operator.as_str(), 7, true),
+                "^" => (operator.as_str(), 8, true),
                 _ => return None,
             },
             TokenKind::Identifier(word) => match word.as_str() {
@@ -1711,6 +1826,85 @@ impl Parser {
         false
     }
 
+    fn starts_type_member(&self) -> bool {
+        let mut index = self.index;
+        while matches!(
+            self.tokens.get(index).map(|token| &token.kind),
+            Some(TokenKind::Newline)
+        ) {
+            index += 1;
+        }
+        if self.token_at(
+            index,
+            |kind| matches!(kind, TokenKind::Identifier(word) if word == "fim"),
+        ) {
+            return true;
+        }
+        if self.token_at(index, |kind| {
+            matches!(kind, TokenKind::Identifier(word) if matches!(word.as_str(), "def" | "val" | "var"))
+        }) {
+            index += 1;
+        }
+        if !self.token_at(index, |kind| matches!(kind, TokenKind::Identifier(_))) {
+            return false;
+        }
+        index += 1;
+        loop {
+            while matches!(
+                self.tokens.get(index).map(|token| &token.kind),
+                Some(TokenKind::Newline)
+            ) {
+                index += 1;
+            }
+            if !self.token_at(index, |kind| matches!(kind, TokenKind::Symbol(','))) {
+                break;
+            }
+            index += 1;
+            while matches!(
+                self.tokens.get(index).map(|token| &token.kind),
+                Some(TokenKind::Newline)
+            ) {
+                index += 1;
+            }
+            if !self.token_at(index, |kind| matches!(kind, TokenKind::Identifier(_))) {
+                return false;
+            }
+            index += 1;
+        }
+        if self.token_at(index, |kind| matches!(kind, TokenKind::Symbol(':'))) {
+            return true;
+        }
+        if !self.token_at(index, |kind| matches!(kind, TokenKind::Symbol('('))) {
+            return false;
+        }
+        let mut depth = 0usize;
+        while index < self.tokens.len() {
+            match self.tokens[index].kind {
+                TokenKind::Symbol('(') => depth += 1,
+                TokenKind::Symbol(')') => {
+                    depth -= 1;
+                    if depth == 0 {
+                        index += 1;
+                        break;
+                    }
+                }
+                TokenKind::Eof => return false,
+                _ => {}
+            }
+            index += 1;
+        }
+        while matches!(
+            self.tokens.get(index).map(|token| &token.kind),
+            Some(TokenKind::Newline)
+        ) {
+            index += 1;
+        }
+        self.token_at(index, |kind| {
+            matches!(kind, TokenKind::Symbol(':'))
+                || matches!(kind, TokenKind::Operator(operator) if operator == "=")
+        })
+    }
+
     fn skip_newlines_before_continuation(&mut self) {
         let mut next = self.index;
         while matches!(
@@ -1726,10 +1920,6 @@ impl Parser {
         }) {
             self.skip_newlines();
         }
-    }
-
-    fn at_statement_end(&self) -> bool {
-        self.at_newline() || self.at_symbol(';') || self.is_eof() || self.at_keyword("fim")
     }
 
     fn skip_separators(&mut self) {
@@ -1770,6 +1960,7 @@ impl Parser {
     }
 
     fn consume_symbol(&mut self, symbol: char) -> Option<Token> {
+        self.skip_newlines();
         if self.at_symbol(symbol) {
             Some(self.advance().clone())
         } else {
@@ -1783,6 +1974,7 @@ impl Parser {
     }
 
     fn consume_operator(&mut self, operator: &str) -> Option<Token> {
+        self.skip_newlines();
         if matches!(&self.current().kind, TokenKind::Operator(found) if found == operator) {
             Some(self.advance().clone())
         } else {
@@ -1796,6 +1988,7 @@ impl Parser {
     }
 
     fn expect_identifier(&mut self) -> Result<Token, Vec<Diagnostic>> {
+        self.skip_newlines();
         if let TokenKind::Identifier(word) = &self.current().kind
             && !is_reserved_keyword(word)
         {
@@ -1913,6 +2106,40 @@ impl Parser {
     }
 }
 
+fn is_assignment_target(kind: &ExprKind) -> bool {
+    match kind {
+        ExprKind::Identifier(_) | ExprKind::Member { .. } => is_qualified_identifier(kind),
+        ExprKind::Index { receiver, indices } => {
+            indices.len() == 1
+                && (is_qualified_identifier(&receiver.kind) || is_assignment_target(&receiver.kind))
+        }
+        _ => false,
+    }
+}
+
+fn is_qualified_identifier(kind: &ExprKind) -> bool {
+    match kind {
+        ExprKind::Identifier(_) => true,
+        ExprKind::Member { receiver, .. } => is_qualified_identifier(&receiver.kind),
+        _ => false,
+    }
+}
+
+fn decode_string_escapes(raw: &str) -> String {
+    let mut result = String::with_capacity(raw.len());
+    let mut characters = raw.chars();
+    while let Some(character) = characters.next() {
+        if character == '\\' {
+            if let Some(escaped) = characters.next() {
+                result.push(escaped);
+            }
+        } else {
+            result.push(character);
+        }
+    }
+    result
+}
+
 fn is_reserved_keyword(word: &str) -> bool {
     matches!(
         word,
@@ -1946,8 +2173,11 @@ fn is_reserved_keyword(word: &str) -> bool {
             | "retorne"
             | "se"
             | "senao"
+            | "senaose"
             | "senão"
+            | "senãose"
             | "tipo"
+            | "isto"
             | "use"
             | "val"
             | "var"

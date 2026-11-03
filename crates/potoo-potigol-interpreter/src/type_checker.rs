@@ -686,6 +686,15 @@ impl Checker {
                 ValueType::Text
             }
             ExprKind::Identifier(name) => self.identifier_type(name, expression.span)?,
+            ExprKind::This => {
+                let Some(type_name) = self.current_classes.last() else {
+                    return Err(vec![self.error(
+                        "'isto' só pode ser usado dentro de um tipo",
+                        expression.span,
+                    )]);
+                };
+                ValueType::Named(type_name.clone())
+            }
             ExprKind::Placeholder => {
                 if self.placeholder_parameters.is_empty() {
                     return Err(vec![self.error(
@@ -1646,9 +1655,10 @@ impl Checker {
                     }
                 }
                 _ => {
-                    for pattern in patterns {
-                        self.bind_pattern(pattern, value_type.clone(), mutable)?;
-                    }
+                    return Err(vec![self.error(
+                        format!("padrão de tupla incompatível com {value_type}"),
+                        pattern.span,
+                    )]);
                 }
             },
             PatternKind::List(patterns) => {
@@ -2145,10 +2155,7 @@ impl Checker {
             "posição" | "posicao" => {
                 ValueType::Function(vec![element], Box::new(ValueType::Integer))
             }
-            "get" => ValueType::Function(
-                vec![ValueType::Integer],
-                Box::new(ValueType::Option(Box::new(element))),
-            ),
+            "get" => ValueType::Function(vec![ValueType::Integer], Box::new(element)),
             "ache" | "find" => ValueType::Function(
                 vec![ValueType::Function(
                     vec![element.clone()],
@@ -2264,25 +2271,26 @@ impl Checker {
             if arguments.len() != 1 {
                 return Err(vec![self.error("reduza recebe uma função", span)]);
             }
-            if let ExprKind::Lambda { parameters, .. } = &arguments[0].kind
-                && parameters
-                    .iter()
-                    .any(|parameter| parameter.annotation.is_none())
-            {
-                return Err(vec![self.error(
-                    "reduza exige os tipos dos parâmetros da função",
-                    arguments[0].span,
-                )]);
+            let reducer_type = ValueType::Function(
+                vec![element.clone(), element.clone()],
+                Box::new(element.clone()),
+            );
+            if matches!(&arguments[0].kind, ExprKind::Lambda { .. }) {
+                self.check_argument_as(&arguments[0], &reducer_type)?;
+                return Ok(element);
             }
-            let reducer = self.check_argument_as(
-                &arguments[0],
-                &ValueType::Function(
-                    vec![element.clone(), element.clone()],
-                    Box::new(element.clone()),
-                ),
-            )?;
-            self.apply_type(reducer, &[element.clone(), element.clone()], span)?;
-            return Ok(element);
+            let first_type = self.check_argument(&arguments[0])?;
+            if matches!(self.resolve(first_type.clone()), ValueType::Function(_, _)) {
+                self.unify(&reducer_type, &first_type, arguments[0].span)?;
+                return Ok(element);
+            }
+            return Ok(ValueType::Function(
+                vec![ValueType::Function(
+                    vec![first_type.clone(), element],
+                    Box::new(first_type.clone()),
+                )],
+                Box::new(first_type),
+            ));
         }
         let argument_types = arguments
             .iter()
@@ -2422,6 +2430,7 @@ impl Checker {
             "lista" => ValueType::List(Box::new(ValueType::Character)),
             "cabeça" | "cabeca" | "primeiro" | "último" | "ultimo" => ValueType::Character,
             "cauda" | "ordene" | "qual_tipo" => ValueType::Text,
+            "get" => ValueType::Function(vec![ValueType::Integer], Box::new(ValueType::Character)),
             "divida" => ValueType::List(Box::new(ValueType::Text)),
             "ache" | "find" => ValueType::Function(
                 vec![ValueType::Function(
@@ -2492,6 +2501,20 @@ impl Checker {
             )?;
             return Ok(ValueType::List(Box::new(ValueType::Text)));
         }
+        if name == "injete"
+            && arguments.len() == 1
+            && matches!(&arguments[0].kind, ExprKind::Lambda { parameters, .. }
+                if parameters.iter().all(|parameter| parameter.annotation.is_none()))
+        {
+            self.check_argument_as(
+                &arguments[0],
+                &ValueType::Function(
+                    vec![ValueType::Text, ValueType::Character],
+                    Box::new(ValueType::Text),
+                ),
+            )?;
+            return Ok(ValueType::Text);
+        }
         let argument_types = arguments
             .iter()
             .map(|argument| self.check_argument(argument))
@@ -2507,6 +2530,13 @@ impl Checker {
                     self.unify(&ValueType::Text, argument_type, span)?;
                 }
                 Ok(ValueType::List(Box::new(ValueType::Text)))
+            }
+            "get" => {
+                if arguments.len() != 1 {
+                    return Err(vec![self.error("get recebe um índice", span)]);
+                }
+                self.unify(&ValueType::Integer, &argument_types[0], arguments[0].span)?;
+                Ok(ValueType::Character)
             }
             "pegue" | "descarte" => {
                 if argument_types.len() != 1 {
@@ -2544,10 +2574,18 @@ impl Checker {
             "injete" => {
                 if argument_types.len() != 1 {
                     return Err(vec![
-                        self.error("injete recebe um acumulador antes da função", span),
+                        self.error("injete recebe uma função ou um acumulador inicial", span),
                     ]);
                 }
                 let accumulator = argument_types[0].clone();
+                if let ValueType::Function(parameters, result) = self.resolve(accumulator.clone()) {
+                    if parameters.len() == 2
+                        && matches!(self.resolve(parameters[1].clone()), ValueType::Character)
+                    {
+                        self.unify(&parameters[0], &result, span)?;
+                        return Ok(*result);
+                    }
+                }
                 Ok(ValueType::Function(
                     vec![ValueType::Function(
                         vec![accumulator.clone(), ValueType::Character],
@@ -2577,11 +2615,10 @@ impl Checker {
                 Ok(ValueType::Text)
             }
             "junte" => {
-                if !matches!(argument_types.len(), 1 | 3) {
-                    return Err(vec![self.error(
-                        "junte recebe um separador ou prefixo, separador e sufixo",
-                        span,
-                    )]);
+                if !matches!(argument_types.len(), 0 | 1 | 3) {
+                    return Err(vec![
+                        self.error("junte recebe zero, um ou três argumentos", span),
+                    ]);
                 }
                 for argument in &argument_types {
                     self.unify(&ValueType::Text, argument, span)?;

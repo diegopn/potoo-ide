@@ -58,7 +58,7 @@ impl Scanner {
                 '\r' => {
                     self.advance();
                 }
-                ' ' | '\t' | '\u{000c}' => {
+                ' ' | '\t' => {
                     self.advance();
                 }
                 '#' => self.skip_comment(start)?,
@@ -227,6 +227,25 @@ impl Scanner {
                 self.advance();
                 break;
             }
+            if character == '\\' {
+                value.push(self.advance_raw().unwrap_or('\\'));
+                let Some(escaped) = self.current() else {
+                    return Err(vec![self.error(
+                        DiagnosticKind::Lexical,
+                        "escape não terminado em texto",
+                        start,
+                    )]);
+                };
+                if !matches!(escaped, '"' | '\\') {
+                    return Err(vec![self.error(
+                        DiagnosticKind::Lexical,
+                        "escape inválido em texto",
+                        start,
+                    )]);
+                }
+                value.push(self.advance_raw().unwrap_or(escaped));
+                continue;
+            }
             if character == '{' {
                 self.scan_interpolation(&mut value)?;
                 continue;
@@ -306,6 +325,25 @@ impl Scanner {
             if character == '"' {
                 value.push(self.advance_raw().unwrap_or('"'));
                 return Ok(());
+            }
+            if character == '\\' {
+                value.push(self.advance_raw().unwrap_or('\\'));
+                let Some(escaped) = self.current() else {
+                    return Err(vec![self.error(
+                        DiagnosticKind::Lexical,
+                        "escape não terminado em texto interpolado",
+                        start,
+                    )]);
+                };
+                if !matches!(escaped, '"' | '\\') {
+                    return Err(vec![self.error(
+                        DiagnosticKind::Lexical,
+                        "escape inválido em texto interpolado",
+                        start,
+                    )]);
+                }
+                value.push(self.advance_raw().unwrap_or(escaped));
+                continue;
             }
             value.push(self.advance_raw().unwrap_or(character));
         }
