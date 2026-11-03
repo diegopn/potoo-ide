@@ -440,12 +440,17 @@ impl Parser {
                 break;
             }
             let before = self.index;
-            if self.consume_keyword("def").is_some() || self.looks_like_function_declaration() {
+            if self.consume_keyword("def").is_some()
+                || self.looks_like_function_declaration()
+                || (abstract_type && self.looks_like_empty_function_body_declaration())
+            {
                 let mut method = self.parse_function_signature()?;
                 self.skip_newlines();
+                // RC2's bodyless `dcl_fun` production requires an explicit result type.
                 let body = if self.consume_operator("=").is_some() {
                     FunctionBody::Expression(Box::new(self.parse_expression(0)?))
-                } else if abstract_type && self.starts_type_member() {
+                } else if abstract_type && method.return_type.is_some() && self.starts_type_member()
+                {
                     FunctionBody::Abstract
                 } else {
                     let block = self.parse_function_body_block()?;
@@ -1709,27 +1714,13 @@ impl Parser {
     }
 
     fn looks_like_function_declaration(&self) -> bool {
-        if !matches!(self.current().kind, TokenKind::Identifier(_))
-            || !self.token_at(self.index + 1, |kind| {
-                matches!(kind, TokenKind::Symbol('('))
-            })
-        {
+        self.looks_like_function_declaration_at(self.index)
+    }
+
+    fn looks_like_function_declaration_at(&self, start: usize) -> bool {
+        let Some(mut index) = self.function_signature_end(start) else {
             return false;
-        }
-        let mut index = self.index + 2;
-        let mut nesting = 1usize;
-        while index < self.tokens.len() && nesting > 0 {
-            match self.tokens[index].kind {
-                TokenKind::Symbol('(') => nesting += 1,
-                TokenKind::Symbol(')') => nesting -= 1,
-                TokenKind::Eof => return false,
-                _ => {}
-            }
-            index += 1;
-        }
-        if nesting != 0 {
-            return false;
-        }
+        };
         while matches!(
             self.tokens.get(index).map(|token| &token.kind),
             Some(TokenKind::Newline)
@@ -1767,6 +1758,56 @@ impl Parser {
                 .any(|token| matches!(&token.kind, TokenKind::Identifier(word) if word == "fim"));
         }
         false
+    }
+
+    fn looks_like_empty_function_body_declaration(&self) -> bool {
+        self.looks_like_empty_function_body_declaration_at(self.index)
+    }
+
+    fn looks_like_empty_function_body_declaration_at(&self, start: usize) -> bool {
+        let Some(mut index) = self.function_signature_end(start) else {
+            return false;
+        };
+        while matches!(
+            self.tokens.get(index).map(|token| &token.kind),
+            Some(TokenKind::Newline)
+        ) {
+            index += 1;
+        }
+        self.token_at(
+            index,
+            |kind| matches!(kind, TokenKind::Identifier(word) if word == "fim"),
+        ) && self.tokens[index + 1..]
+            .iter()
+            .any(|token| matches!(&token.kind, TokenKind::Identifier(word) if word == "fim"))
+    }
+
+    fn function_signature_end(&self, start: usize) -> Option<usize> {
+        if !self.token_at(start, |kind| matches!(kind, TokenKind::Identifier(_))) {
+            return None;
+        }
+        let mut index = start + 1;
+        while matches!(
+            self.tokens.get(index).map(|token| &token.kind),
+            Some(TokenKind::Newline)
+        ) {
+            index += 1;
+        }
+        if !self.token_at(index, |kind| matches!(kind, TokenKind::Symbol('('))) {
+            return None;
+        }
+        index += 1;
+        let mut nesting = 1usize;
+        while index < self.tokens.len() && nesting > 0 {
+            match self.tokens[index].kind {
+                TokenKind::Symbol('(') => nesting += 1,
+                TokenKind::Symbol(')') => nesting -= 1,
+                TokenKind::Eof => return None,
+                _ => {}
+            }
+            index += 1;
+        }
+        (nesting == 0).then_some(index)
     }
 
     fn looks_like_immutable_binding(&self) -> bool {
@@ -1827,7 +1868,10 @@ impl Parser {
     }
 
     fn starts_type_member(&self) -> bool {
-        let mut index = self.index;
+        self.starts_type_member_at(self.index)
+    }
+
+    fn starts_type_member_at(&self, mut index: usize) -> bool {
         while matches!(
             self.tokens.get(index).map(|token| &token.kind),
             Some(TokenKind::Newline)
@@ -1874,35 +1918,13 @@ impl Parser {
         if self.token_at(index, |kind| matches!(kind, TokenKind::Symbol(':'))) {
             return true;
         }
-        if !self.token_at(index, |kind| matches!(kind, TokenKind::Symbol('('))) {
-            return false;
+        if self.token_at(index, |kind| {
+            matches!(kind, TokenKind::Operator(operator) if matches!(operator.as_str(), "=" | ":="))
+        }) {
+            return true;
         }
-        let mut depth = 0usize;
-        while index < self.tokens.len() {
-            match self.tokens[index].kind {
-                TokenKind::Symbol('(') => depth += 1,
-                TokenKind::Symbol(')') => {
-                    depth -= 1;
-                    if depth == 0 {
-                        index += 1;
-                        break;
-                    }
-                }
-                TokenKind::Eof => return false,
-                _ => {}
-            }
-            index += 1;
-        }
-        while matches!(
-            self.tokens.get(index).map(|token| &token.kind),
-            Some(TokenKind::Newline)
-        ) {
-            index += 1;
-        }
-        self.token_at(index, |kind| {
-            matches!(kind, TokenKind::Symbol(':'))
-                || matches!(kind, TokenKind::Operator(operator) if operator == "=")
-        })
+        self.looks_like_function_declaration_at(index)
+            || self.looks_like_empty_function_body_declaration_at(index)
     }
 
     fn skip_newlines_before_continuation(&mut self) {
