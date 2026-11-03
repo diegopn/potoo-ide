@@ -28,7 +28,7 @@ The IDE includes a native compatibility layer for a supported subset of the Jeri
 
 The app runs Potigol through an independent Rust interpreter targeting the documented 1.0.0-RC2 language; it does not run or bundle the official Scala/JVM interpreter. See [crates/potoo-potigol-interpreter](crates/potoo-potigol-interpreter/README.md) for coverage and limits.
 
-The app also runs Portugol programs with variables, functions, constants, conditionals, loops, vectors and matrices, interactive input, and the Matematica, Texto, Tipos, Util, Calendario, Arquivos, and Objetos libraries. Its reusable interpreter is in [crates/potoo-portugol-interpreter](crates/potoo-portugol-interpreter/README.md), which lists compatibility gaps.
+The app also runs Portugol programs with variables, functions, constants, conditionals, loops, vectors and matrices, interactive input, and the Matematica, Texto, Tipos, Util, Calendario, Arquivos, and Objetos libraries. Its reusable interpreter is in [crates/potoo-portugol-studio-interpreter](crates/potoo-portugol-studio-interpreter/README.md), which lists compatibility gaps.
 
 The app can also run classic VisuAlg .alg programs through the reusable [potoo-visualg-interpreter](crates/potoo-visualg-interpreter/README.md) Rust library, which targets VisuAlg 3.0.5.2 and has no third-party dependencies. The interpreters provide interactive input, source-located diagnostics, resource limits, and debugger control. Compatibility details and current limits are documented in each crate README.
 

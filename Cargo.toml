@@ -17,7 +17,7 @@ path = "src/main.rs"
 [dependencies]
 gtk = { package = "gtk4", version = "=0.11.3", features = ["v4_20"] }
 relm4 = { version = "=0.11.0", default-features = false }
-potoo-portugol-interpreter = { path = "crates/potoo-portugol-interpreter" }
+potoo-portugol-interpreter = { path = "crates/potoo-portugol-studio-interpreter" }
 potoo-gportugol-interpreter = { path = "crates/potoo-gportugol-interpreter" }
 potoo-visualg-interpreter = { path = "crates/potoo-visualg-interpreter" }
 potoo-potigol-interpreter = { path = "crates/potoo-potigol-interpreter" }
@@ -30,7 +30,7 @@ strip = "symbols"
 [workspace]
 members = [
     "crates/potoo-gportugol-interpreter",
-    "crates/potoo-portugol-interpreter",
+    "crates/potoo-portugol-studio-interpreter",
     "crates/potoo-visualg-interpreter",
     "crates/potoo-potigol-interpreter",
 ]
