@@ -1,5 +1,5 @@
-use super::super::SourceConstruct;
 use super::analyze_source_line_cancellable;
+use crate::languages::model::SourceConstruct;
 
 #[test]
 fn analyzes_statements_inside_multiple_statement_control_flow_bodies() {

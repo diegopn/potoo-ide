@@ -1,6 +1,6 @@
 use super::{CurrentLearningAnalysis, LearningAnalysisIdentity, invalidate_learning_hint};
-use crate::components::content_panel::Language;
-use crate::learning::learning_hint;
+use crate::features::learning::learning_hint;
+use crate::languages::model::Language;
 
 fn current(language: Language, document_id: u64, line: usize) -> CurrentLearningAnalysis {
     CurrentLearningAnalysis {

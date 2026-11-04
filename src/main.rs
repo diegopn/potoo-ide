@@ -1,11 +1,7 @@
 mod app;
-mod audio;
-mod components;
-mod debugging;
-mod diagnostics;
-mod execution;
-mod graphics;
-mod learning;
+mod features;
+mod languages;
+mod ui;
 
 use gtk::prelude::*;
 use relm4::prelude::*;

@@ -1,10 +1,10 @@
-use super::super::SourceConstruct;
 use super::analyze_source_line_cancellable;
+use crate::languages::model::{SourceConstruct, SourceLineAnalysis};
 
 fn analyze_source_line(
     source: &str,
     line: usize,
-) -> Result<Option<super::super::SourceLineAnalysis>, Vec<potoo_portugol_interpreter::Diagnostic>> {
+) -> Result<Option<SourceLineAnalysis>, Vec<potoo_portugol_interpreter::Diagnostic>> {
     analyze_source_line_cancellable(source, line, || false)
 }
 

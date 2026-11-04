@@ -1,7 +1,9 @@
 use crate::{
     app::UiLanguage,
-    components::content_panel::view::localize_learning_problem,
-    learning::{LearningProblem, LearningProblemKind, LearningProblemText, LearningSeverity},
+    features::learning::{
+        LearningProblem, LearningProblemKind, LearningProblemText, LearningSeverity,
+    },
+    ui::components::content_panel::view::localize_learning_problem,
 };
 
 fn syntax_problem(message: &str) -> LearningProblem {
