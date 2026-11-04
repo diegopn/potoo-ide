@@ -2,9 +2,12 @@ use super::model::{Language, SourceDocument};
 use crate::{
     app::{MainWindow, MainWindowMsg, RightPanelSection, UiLanguage, tr},
     components::{clear_box, icon},
+    diagnostics::{DiagnosticCategory, DiagnosticSeverity, EditorDiagnostic},
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
+use sourceview5::prelude::*;
+use std::collections::BTreeMap;
 
 #[derive(Clone)]
 pub(crate) struct SyntaxTags {
@@ -14,6 +17,10 @@ pub(crate) struct SyntaxTags {
     comment: gtk::TextTag,
     current_line: gtk::TextTag,
     matching_delimiter: gtk::TextTag,
+    diagnostic_error_line: gtk::TextTag,
+    diagnostic_warning_line: gtk::TextTag,
+    diagnostic_error_range: gtk::TextTag,
+    diagnostic_warning_range: gtk::TextTag,
 }
 
 pub(crate) struct OutputPanelUi {
@@ -22,9 +29,7 @@ pub(crate) struct OutputPanelUi {
     pub(crate) output_buffer: gtk::TextBuffer,
     pub(crate) output_tab: gtk::Button,
     pub(crate) output_view: gtk::TextView,
-    pub(crate) problems_buffer: gtk::TextBuffer,
-    pub(crate) problems_view: gtk::TextView,
-    pub(crate) problems_tab: gtk::Button,
+    pub(crate) problems_list: gtk::Box,
     pub(crate) debugger_controls: gtk::Stack,
     pub(crate) debugger_start: gtk::Button,
     pub(crate) debugger_step: gtk::Button,
@@ -41,8 +46,11 @@ pub(crate) struct DebuggerLearningUi {
     pub(crate) content_scroll: gtk::ScrolledWindow,
     pub(crate) line_title: gtk::Label,
     pub(crate) explanation: gtk::Label,
+    pub(crate) concept_section: gtk::Box,
     pub(crate) concept_title: gtk::Label,
     pub(crate) concept_text: gtk::Label,
+    pub(crate) experiment_section: gtk::Box,
+    pub(crate) experiment: gtk::Label,
     pub(crate) problem_list: gtk::Box,
     pub(crate) problem_empty: gtk::Label,
 }
@@ -53,7 +61,9 @@ pub(crate) struct LearningPanelUi {
     pub(crate) analysis_stack: gtk::Stack,
     pub(crate) line_title: gtk::Label,
     pub(crate) explanation: gtk::Label,
+    pub(crate) concept_section: gtk::Box,
     pub(crate) experiment: gtk::Label,
+    pub(crate) experiment_section: gtk::Box,
     pub(crate) concept_title: gtk::Label,
     pub(crate) concept_text: gtk::Label,
     pub(crate) problem_list: gtk::Box,
@@ -69,6 +79,7 @@ pub(crate) struct ToolPanelUi {
     pub(crate) game_preview_button: gtk::Button,
     pub(crate) game_preview_stack: gtk::Stack,
     pub(crate) game_preview_area: gtk::DrawingArea,
+    pub(crate) game_preview_open_button: gtk::Button,
 }
 
 pub(crate) fn rebuild_editor_tabs(
@@ -187,6 +198,7 @@ pub(crate) fn build_learning_panel(language: UiLanguage) -> LearningPanelUi {
     explanation.add_css_class("potoo-learning-description");
     content.append(&explanation);
 
+    let concept_section = gtk::Box::new(gtk::Orientation::Vertical, 16);
     let concept = gtk::Box::new(gtk::Orientation::Vertical, 8);
     concept.add_css_class("potoo-card");
     concept.add_css_class("potoo-concept-card");
@@ -206,8 +218,9 @@ pub(crate) fn build_learning_panel(language: UiLanguage) -> LearningPanelUi {
     concept_text.set_selectable(true);
     concept.append(&concept_title);
     concept.append(&concept_text);
-    content.append(&concept);
-    content.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+    concept_section.append(&concept);
+    concept_section.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+    content.append(&concept_section);
 
     let problems = gtk::Box::new(gtk::Orientation::Vertical, 6);
     let problems_title = gtk::Label::new(Some(tr(language, "Problemas nesta linha")));
@@ -224,12 +237,13 @@ pub(crate) fn build_learning_panel(language: UiLanguage) -> LearningPanelUi {
     problem_empty.add_css_class("potoo-learning-problem-empty");
     problems.append(&problem_empty);
     content.append(&problems);
-    content.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
 
+    let experiment_section = gtk::Box::new(gtk::Orientation::Vertical, 16);
+    experiment_section.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
     let experiment_title = gtk::Label::new(Some(tr(language, "Experimente")));
     experiment_title.set_xalign(0.0);
     experiment_title.add_css_class("heading");
-    content.append(&experiment_title);
+    experiment_section.append(&experiment_title);
 
     let experiment = gtk::Label::new(Some(tr(
         language,
@@ -244,7 +258,8 @@ pub(crate) fn build_learning_panel(language: UiLanguage) -> LearningPanelUi {
     experiment.set_margin_end(4);
     experiment.set_margin_top(4);
     experiment.set_margin_bottom(4);
-    content.append(&experiment);
+    experiment_section.append(&experiment);
+    content.append(&experiment_section);
 
     let analysis_stack = gtk::Stack::new();
     analysis_stack.set_transition_type(gtk::StackTransitionType::Crossfade);
@@ -270,8 +285,10 @@ pub(crate) fn build_learning_panel(language: UiLanguage) -> LearningPanelUi {
         line_title,
         explanation,
         experiment,
+        concept_section,
         concept_title,
         concept_text,
+        experiment_section,
         problem_list,
         problem_empty,
     }
@@ -305,29 +322,60 @@ pub(crate) fn build_tool_panel(
     preview_title.set_margin_top(18);
     let game_preview_stack = gtk::Stack::new();
     game_preview_stack.set_vexpand(true);
+    game_preview_stack.set_hexpand(true);
     let preview_empty = gtk::Label::new(Some(tr(
         language,
         "Execute um programa Potigol Jerimum para ver o jogo aqui.",
     )));
     preview_empty.set_wrap(true);
-    preview_empty.set_halign(gtk::Align::Center);
-    preview_empty.set_valign(gtk::Align::Center);
+    preview_empty.set_xalign(0.0);
+    preview_empty.set_yalign(0.0);
+    preview_empty.set_hexpand(true);
+    preview_empty.set_vexpand(true);
+    preview_empty.set_halign(gtk::Align::Fill);
+    preview_empty.set_valign(gtk::Align::Start);
     preview_empty.set_margin_start(18);
     preview_empty.set_margin_end(18);
     preview_empty.set_margin_top(18);
     preview_empty.set_margin_bottom(18);
     preview_empty.add_css_class("potoo-game-preview-empty");
     let game_preview_area = gtk::DrawingArea::new();
-    game_preview_area.set_size_request(240, 150);
-    game_preview_area.set_halign(gtk::Align::Center);
-    game_preview_area.set_valign(gtk::Align::Start);
+    game_preview_area.set_hexpand(true);
+    game_preview_area.set_vexpand(true);
+    game_preview_area.set_halign(gtk::Align::Fill);
+    game_preview_area.set_valign(gtk::Align::Fill);
     game_preview_area.set_focusable(true);
     game_preview_area.add_css_class("potoo-game-preview-area");
+    let game_preview_frame = gtk::AspectFrame::new(0.5, 0.0, 4.0 / 3.0, false);
+    game_preview_frame.set_hexpand(true);
+    game_preview_frame.set_vexpand(true);
+    game_preview_frame.set_margin_start(18);
+    game_preview_frame.set_margin_end(18);
+    game_preview_frame.set_child(Some(&game_preview_area));
     game_preview_stack.add_named(&preview_empty, Some("idle"));
-    game_preview_stack.add_named(&game_preview_area, Some("canvas"));
+    game_preview_stack.add_named(&game_preview_frame, Some("canvas"));
     game_preview_stack.set_visible_child_name("idle");
     preview_panel.append(&preview_title);
     preview_panel.append(&game_preview_stack);
+    let game_preview_open_button = gtk::Button::new();
+    let open_window_content = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    open_window_content.set_halign(gtk::Align::Center);
+    open_window_content.append(&icon("open-external"));
+    open_window_content.append(&gtk::Label::new(Some(tr(
+        language,
+        "Abrir em janela separada",
+    ))));
+    game_preview_open_button.set_child(Some(&open_window_content));
+    game_preview_open_button.set_tooltip_text(Some(tr(language, "Abrir em janela separada")));
+    game_preview_open_button.add_css_class("potoo-debugger-start");
+    game_preview_open_button.add_css_class("potoo-game-preview-open-window");
+    game_preview_open_button.set_hexpand(true);
+    game_preview_open_button.set_sensitive(false);
+    let sender_for_game_window = sender.clone();
+    game_preview_open_button.connect_clicked(move |_| {
+        sender_for_game_window.input(MainWindowMsg::OpenGamePreviewWindow);
+    });
+    preview_panel.append(&game_preview_open_button);
     stack.add_named(&preview_panel, Some("game-preview"));
     stack.set_visible_child_name("learning");
 
@@ -366,7 +414,7 @@ pub(crate) fn build_tool_panel(
     game_preview_button.set_child(Some(&icon("game-preview")));
     game_preview_button.set_tooltip_text(Some(tr(language, "Abrir prévia do jogo")));
     game_preview_button.add_css_class("potoo-tool-rail-button");
-    let sender_for_game_preview = sender;
+    let sender_for_game_preview = sender.clone();
     game_preview_button.connect_clicked(move |_| {
         sender_for_game_preview.input(MainWindowMsg::SelectRightPanel(
             RightPanelSection::GamePreview,
@@ -387,6 +435,7 @@ pub(crate) fn build_tool_panel(
         game_preview_button,
         game_preview_stack,
         game_preview_area,
+        game_preview_open_button,
     }
 }
 
@@ -846,20 +895,16 @@ pub(crate) fn build_output_panel(
         .build();
     stack.add_named(&output_scroll, Some("output"));
 
-    let problems = gtk::TextView::builder()
-        .editable(false)
-        .cursor_visible(false)
-        .monospace(true)
-        .wrap_mode(gtk::WrapMode::WordChar)
-        .left_margin(14)
-        .right_margin(14)
-        .top_margin(12)
-        .bottom_margin(12)
-        .build();
-    problems.add_css_class("potoo-output-view");
-    problems.add_css_class("potoo-output-placeholder-text");
-    let problems_buffer = problems.buffer();
-    problems_buffer.set_text(tr(language, "Nenhum problema detectado"));
+    let problems = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    problems.add_css_class("potoo-problems-list");
+    problems.set_margin_start(12);
+    problems.set_margin_end(12);
+    problems.set_margin_top(10);
+    problems.set_margin_bottom(12);
+    let empty_problems = gtk::Label::new(Some(tr(language, "Nenhum problema detectado")));
+    empty_problems.set_xalign(0.0);
+    empty_problems.add_css_class("potoo-problems-empty");
+    problems.append(&empty_problems);
     let problems_scroll = gtk::ScrolledWindow::builder()
         .vexpand(true)
         .child(&problems)
@@ -990,9 +1035,7 @@ pub(crate) fn build_output_panel(
         output_buffer,
         output_tab,
         output_view: output,
-        problems_buffer,
-        problems_view: problems,
-        problems_tab,
+        problems_list: problems,
         debugger_controls,
         debugger_start,
         debugger_step,
@@ -1000,6 +1043,95 @@ pub(crate) fn build_output_panel(
         debugger_position,
         debugger_variables,
         debugger_learning,
+    }
+}
+
+pub(crate) fn show_diagnostics(
+    container: &gtk::Box,
+    diagnostics: &[EditorDiagnostic],
+    language: UiLanguage,
+    sender: ComponentSender<MainWindow>,
+) {
+    clear_box(container);
+    if diagnostics.is_empty() {
+        let empty = gtk::Label::new(Some(tr(language, "Nenhum problema detectado")));
+        empty.set_xalign(0.0);
+        empty.add_css_class("potoo-problems-empty");
+        container.append(&empty);
+        return;
+    }
+
+    for diagnostic in diagnostics {
+        let severity = match diagnostic.severity {
+            DiagnosticSeverity::Error => ("Erro", "diagnostic-error", "potoo-problem-error"),
+            DiagnosticSeverity::Warning => ("Aviso", "diagnostic-warning", "potoo-problem-warning"),
+            DiagnosticSeverity::Information => (
+                "Informação",
+                "diagnostic-information",
+                "potoo-problem-information",
+            ),
+            DiagnosticSeverity::Hint => ("Dica", "diagnostic-hint", "potoo-problem-hint"),
+        };
+        let category = match diagnostic.category {
+            DiagnosticCategory::Lexical => tr(language, "Erro léxico"),
+            DiagnosticCategory::Syntax => tr(language, "Erro de sintaxe"),
+            DiagnosticCategory::Type => tr(language, "Erro de tipo"),
+            DiagnosticCategory::Runtime => tr(language, "Erro de execução"),
+            DiagnosticCategory::StaticAnalysis => tr(language, "Análise estática"),
+        };
+        let file = diagnostic
+            .source_path
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| diagnostic.source_name.clone());
+
+        let button = gtk::Button::new();
+        button.set_halign(gtk::Align::Fill);
+        button.set_hexpand(true);
+        button.add_css_class("potoo-problem-row");
+        button.add_css_class(severity.2);
+        button.set_tooltip_text(Some(&diagnostic.message));
+
+        let content = gtk::Box::new(gtk::Orientation::Vertical, 5);
+        content.set_margin_start(8);
+        content.set_margin_end(8);
+        content.set_margin_top(7);
+        content.set_margin_bottom(7);
+        let heading = gtk::Box::new(gtk::Orientation::Horizontal, 7);
+        heading.set_hexpand(true);
+        let severity_icon = icon(severity.1);
+        severity_icon.set_pixel_size(16);
+        heading.append(&severity_icon);
+        let severity_label = gtk::Label::new(Some(tr(language, severity.0)));
+        severity_label.add_css_class("potoo-problem-severity");
+        heading.append(&severity_label);
+        let location = gtk::Label::new(Some(&format!(
+            "{file} · {}:{} · {category} · {}",
+            diagnostic.line,
+            diagnostic.column,
+            diagnostic.language.label()
+        )));
+        location.set_xalign(0.0);
+        location.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+        location.set_hexpand(true);
+        location.add_css_class("potoo-problem-location");
+        heading.append(&location);
+        content.append(&heading);
+
+        let message = gtk::Label::new(Some(&diagnostic.message));
+        message.set_xalign(0.0);
+        message.set_wrap(true);
+        message.set_selectable(true);
+        message.add_css_class("potoo-problem-message");
+        content.append(&message);
+        button.set_child(Some(&content));
+
+        let sender = sender.clone();
+        let diagnostic = diagnostic.clone();
+        button.connect_clicked(move |_| {
+            sender.input(MainWindowMsg::NavigateToDiagnostic(diagnostic.clone()));
+        });
+        container.append(&button);
     }
 }
 
@@ -1040,6 +1172,7 @@ fn build_debugger_learning(language: UiLanguage) -> DebuggerLearningUi {
     explanation.add_css_class("potoo-learning-description");
     content.append(&explanation);
 
+    let concept_section = gtk::Box::new(gtk::Orientation::Vertical, 10);
     let concept = gtk::Box::new(gtk::Orientation::Vertical, 8);
     concept.add_css_class("potoo-card");
     concept.add_css_class("potoo-concept-card");
@@ -1056,8 +1189,9 @@ fn build_debugger_learning(language: UiLanguage) -> DebuggerLearningUi {
     concept_text.set_selectable(true);
     concept.append(&concept_title);
     concept.append(&concept_text);
-    content.append(&concept);
-    content.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+    concept_section.append(&concept);
+    concept_section.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+    content.append(&concept_section);
 
     let problems = gtk::Box::new(gtk::Orientation::Vertical, 4);
     let problems_title = gtk::Label::new(Some(tr(language, "Problemas nesta linha")));
@@ -1073,6 +1207,25 @@ fn build_debugger_learning(language: UiLanguage) -> DebuggerLearningUi {
     problem_empty.add_css_class("potoo-learning-problem-empty");
     problems.append(&problem_empty);
     content.append(&problems);
+
+    let experiment_section = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    experiment_section.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+    let experiment_title = gtk::Label::new(Some(tr(language, "Experimente")));
+    experiment_title.set_xalign(0.0);
+    experiment_title.add_css_class("heading");
+    experiment_section.append(&experiment_title);
+    let experiment = gtk::Label::new(Some(""));
+    experiment.set_xalign(0.0);
+    experiment.set_wrap(true);
+    experiment.set_selectable(true);
+    experiment.add_css_class("potoo-card");
+    experiment.add_css_class("potoo-experiment-card");
+    experiment.set_margin_start(2);
+    experiment.set_margin_end(2);
+    experiment.set_margin_top(4);
+    experiment.set_margin_bottom(4);
+    experiment_section.append(&experiment);
+    content.append(&experiment_section);
 
     let content_scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
@@ -1092,8 +1245,11 @@ fn build_debugger_learning(language: UiLanguage) -> DebuggerLearningUi {
         content_scroll,
         line_title,
         explanation,
+        concept_section,
         concept_title,
         concept_text,
+        experiment_section,
+        experiment,
         problem_list,
         problem_empty,
     }
@@ -1122,12 +1278,30 @@ pub(crate) fn make_syntax_tags(buffer: &gtk::TextBuffer) -> SyntaxTags {
         .name("matching-delimiter")
         .weight(700)
         .build();
+    let diagnostic_error_line = gtk::TextTag::builder()
+        .name("diagnostic-error-line")
+        .build();
+    let diagnostic_warning_line = gtk::TextTag::builder()
+        .name("diagnostic-warning-line")
+        .build();
+    let diagnostic_error_range = gtk::TextTag::builder()
+        .name("diagnostic-error-range")
+        .build();
+    diagnostic_error_range.set_property("underline", gtk::pango::Underline::Error);
+    let diagnostic_warning_range = gtk::TextTag::builder()
+        .name("diagnostic-warning-range")
+        .build();
+    diagnostic_warning_range.set_property("underline", gtk::pango::Underline::Error);
     table.add(&keyword);
     table.add(&string);
     table.add(&number);
     table.add(&comment);
     table.add(&current_line);
     table.add(&matching_delimiter);
+    table.add(&diagnostic_error_line);
+    table.add(&diagnostic_warning_line);
+    table.add(&diagnostic_error_range);
+    table.add(&diagnostic_warning_range);
     SyntaxTags {
         keyword,
         string,
@@ -1135,6 +1309,10 @@ pub(crate) fn make_syntax_tags(buffer: &gtk::TextBuffer) -> SyntaxTags {
         comment,
         current_line,
         matching_delimiter,
+        diagnostic_error_line,
+        diagnostic_warning_line,
+        diagnostic_error_range,
+        diagnostic_warning_range,
     }
 }
 
@@ -1155,18 +1333,217 @@ pub(crate) fn set_syntax_palette(tags: &SyntaxTags, dark: bool) {
         .set_property("background", if dark { "#416a53" } else { "#cce8d8" });
     tags.matching_delimiter
         .set_property("foreground", if dark { "#ffffff" } else { "#075b3e" });
+    let error_line = if dark {
+        gtk::gdk::RGBA::new(0.62, 0.17, 0.17, 0.22)
+    } else {
+        gtk::gdk::RGBA::new(0.91, 0.28, 0.25, 0.14)
+    };
+    let warning_line = if dark {
+        gtk::gdk::RGBA::new(0.58, 0.42, 0.13, 0.2)
+    } else {
+        gtk::gdk::RGBA::new(0.93, 0.68, 0.17, 0.16)
+    };
+    let error_underline = if dark {
+        gtk::gdk::RGBA::new(1.0, 0.43, 0.39, 1.0)
+    } else {
+        gtk::gdk::RGBA::new(0.78, 0.12, 0.1, 1.0)
+    };
+    let warning_underline = if dark {
+        gtk::gdk::RGBA::new(1.0, 0.78, 0.24, 1.0)
+    } else {
+        gtk::gdk::RGBA::new(0.66, 0.43, 0.03, 1.0)
+    };
+    tags.diagnostic_error_line
+        .set_property("paragraph-background-rgba", error_line);
+    tags.diagnostic_warning_line
+        .set_property("paragraph-background-rgba", warning_line);
+    tags.diagnostic_error_range
+        .set_property("underline-rgba", error_underline);
+    tags.diagnostic_warning_range
+        .set_property("underline-rgba", warning_underline);
+}
+
+pub(crate) fn install_diagnostic_markers(view: &sourceview5::View, dark: bool) {
+    for (category, icon_name, priority, background) in [
+        (
+            "potoo-diagnostic-error",
+            "potoo-diagnostic-error-symbolic",
+            40,
+            gtk::gdk::RGBA::new(
+                if dark { 0.62 } else { 0.91 },
+                if dark { 0.17 } else { 0.28 },
+                if dark { 0.17 } else { 0.25 },
+                if dark { 0.22 } else { 0.14 },
+            ),
+        ),
+        (
+            "potoo-diagnostic-warning",
+            "potoo-diagnostic-warning-symbolic",
+            30,
+            gtk::gdk::RGBA::new(
+                if dark { 0.58 } else { 0.93 },
+                if dark { 0.42 } else { 0.68 },
+                if dark { 0.13 } else { 0.17 },
+                if dark { 0.2 } else { 0.16 },
+            ),
+        ),
+        (
+            "potoo-diagnostic-information",
+            "potoo-diagnostic-information-symbolic",
+            20,
+            gtk::gdk::RGBA::new(0.23, 0.48, 0.72, 0.12),
+        ),
+        (
+            "potoo-diagnostic-hint",
+            "potoo-diagnostic-hint-symbolic",
+            10,
+            gtk::gdk::RGBA::new(0.42, 0.48, 0.44, 0.1),
+        ),
+    ] {
+        let attributes = sourceview5::MarkAttributes::new();
+        attributes.set_icon_name(icon_name);
+        attributes.set_background(&background);
+        attributes.connect_query_tooltip_text(|_, mark| {
+            mark.name()
+                .map_or_else(String::new, |name| name.to_string())
+        });
+        view.set_mark_attributes(category, &attributes, priority);
+    }
+}
+
+pub(crate) fn apply_diagnostics(
+    _view: &sourceview5::View,
+    buffer: &gtk::TextBuffer,
+    diagnostics: &[EditorDiagnostic],
+    tags: &SyntaxTags,
+    _dark: bool,
+) {
+    let start = buffer.start_iter();
+    let end = buffer.end_iter();
+    buffer.remove_tag(&tags.diagnostic_error_line, &start, &end);
+    buffer.remove_tag(&tags.diagnostic_warning_line, &start, &end);
+    buffer.remove_tag(&tags.diagnostic_error_range, &start, &end);
+    buffer.remove_tag(&tags.diagnostic_warning_range, &start, &end);
+
+    let Some(source_buffer) = buffer.downcast_ref::<sourceview5::Buffer>() else {
+        return;
+    };
+    for category in [
+        "potoo-diagnostic-error",
+        "potoo-diagnostic-warning",
+        "potoo-diagnostic-information",
+        "potoo-diagnostic-hint",
+    ] {
+        source_buffer.remove_source_marks(&start, &end, Some(category));
+    }
+
+    let mut by_line = BTreeMap::<usize, Vec<&EditorDiagnostic>>::new();
+    for diagnostic in diagnostics {
+        by_line
+            .entry(diagnostic.line.max(1))
+            .or_default()
+            .push(diagnostic);
+        let Some(range) = &diagnostic.range else {
+            continue;
+        };
+        let limit = buffer.char_count().max(0) as usize;
+        let first = range.start.min(limit);
+        let last = range.end.min(limit);
+        let tag = match diagnostic.severity {
+            DiagnosticSeverity::Error => Some(&tags.diagnostic_error_range),
+            DiagnosticSeverity::Warning => Some(&tags.diagnostic_warning_range),
+            DiagnosticSeverity::Information | DiagnosticSeverity::Hint => None,
+        };
+        if let Some(tag) = tag {
+            apply_tag_range(buffer, tag, first, last);
+        }
+    }
+
+    for (line, diagnostics) in by_line {
+        let line_index = line
+            .saturating_sub(1)
+            .min(buffer.line_count().saturating_sub(1) as usize) as i32;
+        let Some(line_start) = buffer.iter_at_line(line_index) else {
+            continue;
+        };
+        let mut line_end = line_start.clone();
+        line_end.forward_to_line_end();
+        let severity = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.severity)
+            .max_by_key(|severity| severity_priority(*severity))
+            .unwrap_or(DiagnosticSeverity::Hint);
+        let line_tag = match severity {
+            DiagnosticSeverity::Error => Some(&tags.diagnostic_error_line),
+            DiagnosticSeverity::Warning => Some(&tags.diagnostic_warning_line),
+            DiagnosticSeverity::Information | DiagnosticSeverity::Hint => None,
+        };
+        if let Some(tag) = line_tag {
+            buffer.apply_tag(tag, &line_start, &line_end);
+        }
+
+        let category = marker_category(severity);
+        let tooltip = diagnostics
+            .iter()
+            .map(|diagnostic| {
+                format!(
+                    "{}: {}",
+                    severity_label(diagnostic.severity),
+                    diagnostic.message
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        source_buffer.create_source_mark(Some(&tooltip), category, &line_start);
+    }
+}
+
+fn severity_priority(severity: DiagnosticSeverity) -> u8 {
+    match severity {
+        DiagnosticSeverity::Error => 4,
+        DiagnosticSeverity::Warning => 3,
+        DiagnosticSeverity::Information => 2,
+        DiagnosticSeverity::Hint => 1,
+    }
+}
+
+fn marker_category(severity: DiagnosticSeverity) -> &'static str {
+    match severity {
+        DiagnosticSeverity::Error => "potoo-diagnostic-error",
+        DiagnosticSeverity::Warning => "potoo-diagnostic-warning",
+        DiagnosticSeverity::Information => "potoo-diagnostic-information",
+        DiagnosticSeverity::Hint => "potoo-diagnostic-hint",
+    }
+}
+
+fn severity_label(severity: DiagnosticSeverity) -> &'static str {
+    match severity {
+        DiagnosticSeverity::Error => "Erro",
+        DiagnosticSeverity::Warning => "Aviso",
+        DiagnosticSeverity::Information => "Informação",
+        DiagnosticSeverity::Hint => "Dica",
+    }
 }
 
 pub(crate) fn highlight_buffer(buffer: &gtk::TextBuffer, language: Language, tags: &SyntaxTags) {
     let start = buffer.start_iter();
     let end = buffer.end_iter();
-    buffer.remove_all_tags(&start, &end);
+    for tag in [
+        &tags.keyword,
+        &tags.string,
+        &tags.number,
+        &tags.comment,
+        &tags.current_line,
+        &tags.matching_delimiter,
+    ] {
+        buffer.remove_tag(tag, &start, &end);
+    }
     let source = buffer.text(&start, &end, false);
     let chars: Vec<char> = source.chars().collect();
     let mut index = 0;
 
     while index < chars.len() {
-        if language == Language::GPortugol && chars[index] == '/' {
+        if matches!(language, Language::GPortugol | Language::Calango) && chars[index] == '/' {
             let comment_end = match chars.get(index + 1) {
                 Some('/') => {
                     let mut end = index + 2;
@@ -1206,6 +1583,24 @@ pub(crate) fn highlight_buffer(buffer: &gtk::TextBuffer, language: Language, tag
                 let closes_string = chars[index] == '"';
                 index += 1;
                 if closes_string {
+                    break;
+                }
+            }
+            apply_tag_range(buffer, &tags.string, first, index);
+            continue;
+        }
+
+        if language == Language::Calango && chars[index] == '\'' {
+            let first = index;
+            index += 1;
+            while index < chars.len() {
+                if chars[index] == '\\' {
+                    index = (index + 2).min(chars.len());
+                    continue;
+                }
+                let closes_character = chars[index] == '\'';
+                index += 1;
+                if closes_character {
                     break;
                 }
             }
@@ -1297,8 +1692,10 @@ fn matching_delimiter_at_cursor(
             continue;
         }
 
-        if matches!(language, Language::Portugol | Language::GPortugol)
-            && current == '/'
+        if matches!(
+            language,
+            Language::Portugol | Language::GPortugol | Language::Calango
+        ) && current == '/'
             && next == Some('*')
         {
             index += 2;
@@ -1369,15 +1766,6 @@ fn apply_tag_range(buffer: &gtk::TextBuffer, tag: &gtk::TextTag, first: usize, l
     buffer.apply_tag(tag, &start, &end);
 }
 
-pub(crate) fn update_line_numbers(buffer: &gtk::TextBuffer, gutter: &gtk::Label) {
-    let count = buffer.line_count().max(1);
-    let numbers = (1..=count)
-        .map(|line| line.to_string())
-        .collect::<Vec<_>>()
-        .join("\n");
-    gutter.set_text(&numbers);
-}
-
 #[cfg(test)]
 #[path = "../../../tests/learning/problem_localization_tests.rs"]
 mod problem_localization_tests;
@@ -1405,47 +1793,6 @@ mod debugger_ui_tests {
 
         assert_eq!(stack.visible_child_name().as_deref(), Some("controls"));
         assert!(sent.get());
-    }
-}
-
-#[cfg(test)]
-mod line_number_ui_tests {
-    use gtk::prelude::*;
-
-    #[test]
-    #[ignore = "requires a GTK display; run with xvfb-run"]
-    fn line_numbers_use_the_same_font_metrics_as_editor_text() {
-        gtk::init().expect("GTK should initialize under Xvfb");
-        let display = gtk::gdk::Display::default().expect("a GTK display should be available");
-        let provider = gtk::CssProvider::new();
-        provider.load_from_string(include_str!("../../../data/potoo.css"));
-        gtk::style_context_add_provider_for_display(
-            &display,
-            &provider,
-            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
-        );
-
-        let window = gtk::Window::new();
-        let row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-        let line_numbers = gtk::Label::new(Some("1\n2\n3"));
-        line_numbers.add_css_class("dim-label");
-        line_numbers.add_css_class("monospace");
-        line_numbers.add_css_class("potoo-line-numbers");
-        let editor = gtk::TextView::new();
-        editor.add_css_class("potoo-code-editor");
-        row.append(&line_numbers);
-        row.append(&editor);
-        window.set_child(Some(&row));
-        window.present();
-
-        while gtk::glib::MainContext::default().iteration(false) {}
-
-        assert_eq!(
-            line_numbers.pango_context().font_description().as_ref(),
-            editor.pango_context().font_description().as_ref(),
-            "the gutter and editor must use identical font metrics to keep each row aligned"
-        );
-        window.close();
     }
 }
 
@@ -1485,5 +1832,72 @@ mod gportugol_syntax_tests {
         assert!(has_tag_at(&buffer, &comments, source, "/*"));
         assert!(has_tag_at(&buffer, &comments, source, "//"));
         assert!(!has_tag_at(&buffer, &tags.keyword, source, "fim"));
+    }
+}
+
+#[cfg(test)]
+mod editor_diagnostic_presentation_tests {
+    use super::{apply_diagnostics, install_diagnostic_markers, make_syntax_tags};
+    use crate::{
+        components::content_panel::Language,
+        diagnostics::{DiagnosticCategory, DiagnosticSeverity, EditorDiagnostic},
+    };
+    use gtk::prelude::*;
+    use sourceview5::prelude::*;
+
+    #[test]
+    #[ignore = "requires a GTK display; run with xvfb-run"]
+    fn marks_the_exact_multibyte_span_and_clears_old_marks() {
+        gtk::init().expect("GTK should initialize under Xvfb");
+        let source_buffer = sourceview5::Buffer::new(None::<&gtk::TextTagTable>);
+        let buffer = source_buffer.clone().upcast::<gtk::TextBuffer>();
+        buffer.set_text("ação erro\n");
+        let view = sourceview5::View::with_buffer(&source_buffer);
+        let tags = make_syntax_tags(&buffer);
+        install_diagnostic_markers(&view, false);
+        let diagnostic = EditorDiagnostic {
+            document_id: 1,
+            source_name: "teste.gpt".to_owned(),
+            source_path: None,
+            language: Language::GPortugol,
+            severity: DiagnosticSeverity::Error,
+            category: DiagnosticCategory::Syntax,
+            message: "erro de sintaxe".to_owned(),
+            offset: 5,
+            range: Some(5..9),
+            line: 1,
+            column: 6,
+        };
+
+        apply_diagnostics(&view, &buffer, &[diagnostic], &tags, false);
+        assert!(
+            buffer
+                .iter_at_offset(6)
+                .has_tag(&tags.diagnostic_error_range)
+        );
+        assert!(
+            !buffer
+                .iter_at_offset(4)
+                .has_tag(&tags.diagnostic_error_range)
+        );
+        assert!(
+            buffer
+                .iter_at_offset(0)
+                .has_tag(&tags.diagnostic_error_line)
+        );
+        assert_eq!(source_buffer.source_marks_at_line(0, None).len(), 1);
+
+        apply_diagnostics(&view, &buffer, &[], &tags, false);
+        assert!(
+            !buffer
+                .iter_at_offset(6)
+                .has_tag(&tags.diagnostic_error_range)
+        );
+        assert!(
+            !buffer
+                .iter_at_offset(0)
+                .has_tag(&tags.diagnostic_error_line)
+        );
+        assert!(source_buffer.source_marks_at_line(0, None).is_empty());
     }
 }

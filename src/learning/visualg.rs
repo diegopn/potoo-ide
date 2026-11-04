@@ -40,6 +40,7 @@ pub(super) fn analyze_source_line_cancellable(
             return_type: None,
             parameters: Vec::new(),
             variables: Vec::new(),
+            call: None,
         }));
     }
 
@@ -101,6 +102,7 @@ fn analyze_program_line(program: &Program, line: usize) -> Option<SourceLineAnal
             return_type: None,
             parameters: Vec::new(),
             variables,
+            call: None,
         });
     }
 
@@ -120,6 +122,7 @@ fn analyze_program_line(program: &Program, line: usize) -> Option<SourceLineAnal
                 return_type: None,
                 parameters: Vec::new(),
                 variables,
+                call: None,
             });
         }
         if let Some(mut analysis) = analyze_statements(&routine.body, line) {
@@ -165,6 +168,7 @@ fn analyze_routine(routine: &Routine) -> SourceLineAnalysis {
             })
             .collect(),
         variables: Vec::new(),
+        call: None,
     }
 }
 
@@ -189,6 +193,7 @@ fn analyze_statements(statements: &[Statement], line: usize) -> Option<SourceLin
                         SourceConstruct::Output
                     }
                     ExpressionKind::Call { name, .. } if name == "leia" => SourceConstruct::Input,
+                    ExpressionKind::Call { .. } => SourceConstruct::Call,
                     _ => SourceConstruct::Other,
                 },
                 _ => SourceConstruct::Other,
@@ -204,6 +209,7 @@ fn analyze_statements(statements: &[Statement], line: usize) -> Option<SourceLin
                 return_type: None,
                 parameters: Vec::new(),
                 variables: Vec::new(),
+                call: None,
             });
         }
 

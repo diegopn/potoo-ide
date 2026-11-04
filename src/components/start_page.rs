@@ -13,6 +13,7 @@ pub(crate) struct StartPageUi {
     pub(crate) recent_more_button: gtk::Button,
     pub(crate) all_recent_list: gtk::Box,
     pub(crate) portugol_button: gtk::Button,
+    pub(crate) calango_button: gtk::Button,
     pub(crate) potigol_button: gtk::Button,
     pub(crate) open_folder_button: gtk::Button,
     pub(crate) open_file_button: gtk::Button,
@@ -33,6 +34,8 @@ pub(crate) fn build_start_page(language: UiLanguage) -> StartPageUi {
     content.add_css_class("potoo-start-content");
     content.set_halign(gtk::Align::Center);
     content.set_size_request(720, -1);
+    content.set_margin_start(24);
+    content.set_margin_end(24);
     content.set_margin_top(40);
     content.set_margin_bottom(40);
 
@@ -103,11 +106,13 @@ pub(crate) fn build_start_page(language: UiLanguage) -> StartPageUi {
         "Portugol",
         tr(
             language,
-            "Dialetos do Portugol: G-Portugol, Portugol 2.0 e VisuAlg",
+            "Dialetos do Portugol: G-Portugol, VisuAlg, Portugol Studio 2.0 e Mapler (.mapler)",
         ),
     );
+    let calango_button = language_option("Calango", tr(language, "Criar programa inicial (.clg)"));
     let potigol_button = language_option("Potigol", tr(language, "Criar programa inicial (.poti)"));
     create_options.append(&portugol_button);
+    create_options.append(&calango_button);
     create_options.append(&potigol_button);
     home.append(&create_options);
 
@@ -131,7 +136,7 @@ pub(crate) fn build_start_page(language: UiLanguage) -> StartPageUi {
         language,
         "open-document",
         "Abrir arquivo",
-        "Abra um arquivo .por, .alg, .poti ou .gpt diretamente no editor.",
+        "Abra um arquivo .por, .alg, .poti, .gpt, .clg ou .mapler.",
         "potoo-start-open-file",
     );
     open_actions.append(&open_folder_button);
@@ -186,6 +191,7 @@ pub(crate) fn build_start_page(language: UiLanguage) -> StartPageUi {
         recent_more_button,
         all_recent_list,
         portugol_button,
+        calango_button,
         potigol_button,
         open_folder_button,
         open_file_button,

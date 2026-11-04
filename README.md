@@ -12,10 +12,17 @@ The project aims to provide a simple, intuitive space for students to practice a
 
 **Runnable in the IDE; compatibility work is ongoing**
 
-- **Portugol 2.0** (`.por`)
+- **Portugol Studio 2.0** (`.por`)
 - **VisuAlg** (`.alg`; targets classic 3.0.5.2)
 - **Potigol** (`.poti`; independent Rust implementation targeting the documented 1.0.0-RC2 language)
 - **G-Portugol** (`.gpt`; independent Rust implementation targeting the documented 1.4.0 language)
+
+**Integrations in development**
+
+- **Calango** (`.clg`)
+- **Portugol Mapler** (`.mapler`; Potoo-specific extension)
+
+These two options are being integrated and are not yet listed as runnable. Mapler is a separate Portugol dialect; its upstream manual describes structured Portuguese pseudocode and `.txt` files. See the [Mapler manual](https://portugol.sourceforge.io/manuais.html) and [syntax repository](https://github.com/Projeto-Mapler/portugol). Calango's upstream project is [available on GitHub](https://github.com/GeovanaRamos/calango).
 
 The IDE includes a native compatibility layer for a supported subset of the Jerimum API through its GTK graphics and audio hosts. It provides native facades for selected `Color`, `BufferedImage`, `JFrame`, `Canvas`, and `Graphics2D` members without bundling the JVM or providing general Swing/AWT interop.
 
@@ -25,6 +32,8 @@ The IDE includes a native compatibility layer for a supported subset of the Jeri
 - Linotte
 - C0 (Simplified C)
 - Karel
+- [Égua](https://github.com/eguadev/egua)
+- Logic Basic
 
 The app runs Potigol through an independent Rust interpreter targeting the documented 1.0.0-RC2 language; it does not run or bundle the official Scala/JVM interpreter. See [crates/potoo-potigol-interpreter](crates/potoo-potigol-interpreter/README.md) for coverage and limits.
 

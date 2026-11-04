@@ -5,7 +5,7 @@ window.potoo-window {
   --potoo-panel-hover-bg: #d0d9d3;
   --potoo-surface-bg: #fbfcfb;
   --potoo-editor-bg: #ffffff;
-  --potoo-gutter-bg: #f5f7f5;
+  --potoo-gutter-bg: #ffffff;
   --potoo-border: #d8dfdb;
   --potoo-border-subtle: #e8ece9;
   --potoo-text: #111111;
@@ -19,6 +19,14 @@ window.potoo-window {
   --potoo-learning-problem-bg: #fff3f1;
   --potoo-learning-problem-border: #e6b5af;
   --potoo-learning-problem-text: #8b3028;
+  --potoo-diagnostic-error: #a52722;
+  --potoo-diagnostic-error-bg: rgba(232, 71, 64, 0.14);
+  --potoo-diagnostic-warning: #865700;
+  --potoo-diagnostic-warning-bg: rgba(237, 173, 43, 0.16);
+  --potoo-diagnostic-information: #28628e;
+  --potoo-diagnostic-information-bg: rgba(59, 122, 184, 0.12);
+  --potoo-diagnostic-hint: #56645b;
+  --potoo-diagnostic-hint-bg: rgba(107, 122, 112, 0.1);
   --potoo-selection-bg: #b9ddc9;
   --potoo-selection-text: #111111;
   --potoo-control-bg: #dfe5e1;
@@ -233,6 +241,14 @@ window.potoo-window.potoo-dark {
   --potoo-learning-problem-bg: #3c292a;
   --potoo-learning-problem-border: #785052;
   --potoo-learning-problem-text: #ffb9b2;
+  --potoo-diagnostic-error: #ff827a;
+  --potoo-diagnostic-error-bg: rgba(158, 43, 43, 0.22);
+  --potoo-diagnostic-warning: #f5c65a;
+  --potoo-diagnostic-warning-bg: rgba(148, 107, 33, 0.2);
+  --potoo-diagnostic-information: #8fc8f0;
+  --potoo-diagnostic-information-bg: rgba(59, 122, 184, 0.12);
+  --potoo-diagnostic-hint: #bec9c1;
+  --potoo-diagnostic-hint-bg: rgba(107, 122, 112, 0.1);
   --potoo-selection-bg: #356247;
   --potoo-selection-text: #ffffff;
   --potoo-control-bg: #363e44;
@@ -931,15 +947,12 @@ entry.potoo-program-input:focus {
   border-color: var(--potoo-accent);
 }
 
-.potoo-line-numbers {
-  background-color: var(--potoo-gutter-bg);
+.potoo-code-gutter {
+  background-color: var(--potoo-editor-bg);
   color: var(--potoo-text-muted);
   font-family: "JetBrains Mono", "Cascadia Code", monospace;
-  font-size: 14px;
-}
-
-.potoo-line-number-gutter {
-  background-color: var(--potoo-editor-bg);
+  padding: 0 12px;
+  border-right: 1px solid var(--potoo-border-subtle);
 }
 
 textview.potoo-code-editor,
@@ -954,28 +967,15 @@ textview.potoo-code-editor text selection {
   color: var(--potoo-selection-text);
 }
 
-separator.potoo-gutter-separator {
-  min-width: 1px;
-  margin: 0;
-  padding: 0;
-  background-color: var(--potoo-border-subtle);
-  background-image: none;
-  border: 0;
-  box-shadow: none;
-}
-
-textview.potoo-code-editor.potoo-font-15,
-label.potoo-line-numbers.potoo-font-15 {
+textview.potoo-code-editor.potoo-font-15 {
   font-size: 15px;
 }
 
-textview.potoo-code-editor.potoo-font-16,
-label.potoo-line-numbers.potoo-font-16 {
+textview.potoo-code-editor.potoo-font-16 {
   font-size: 16px;
 }
 
-textview.potoo-code-editor.potoo-font-18,
-label.potoo-line-numbers.potoo-font-18 {
+textview.potoo-code-editor.potoo-font-18 {
   font-size: 18px;
 }
 
@@ -989,6 +989,79 @@ label.potoo-line-numbers.potoo-font-18 {
   padding: 0 8px;
   background-color: var(--potoo-panel-bg);
   border-bottom: 1px solid var(--potoo-border);
+}
+
+.potoo-problems-list {
+  background-color: var(--potoo-surface-bg);
+  color: var(--potoo-text);
+}
+
+.potoo-problems-empty {
+  color: var(--potoo-text-muted);
+  padding: 8px;
+}
+
+button.potoo-problem-row {
+  padding: 0;
+  background-image: none;
+  background-color: var(--potoo-surface-bg);
+  border: 1px solid var(--potoo-border-subtle);
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--potoo-text);
+  text-align: start;
+}
+
+button.potoo-problem-row:hover,
+button.potoo-problem-row:focus-visible {
+  border-color: var(--potoo-border);
+  background-color: var(--potoo-panel-hover-bg);
+}
+
+button.potoo-problem-error {
+  background-color: var(--potoo-diagnostic-error-bg);
+}
+
+button.potoo-problem-warning {
+  background-color: var(--potoo-diagnostic-warning-bg);
+}
+
+button.potoo-problem-information {
+  background-color: var(--potoo-diagnostic-information-bg);
+}
+
+button.potoo-problem-hint {
+  background-color: var(--potoo-diagnostic-hint-bg);
+}
+
+button.potoo-problem-error image.potoo-icon,
+button.potoo-problem-error .potoo-problem-severity {
+  color: var(--potoo-diagnostic-error);
+}
+
+button.potoo-problem-warning image.potoo-icon,
+button.potoo-problem-warning .potoo-problem-severity {
+  color: var(--potoo-diagnostic-warning);
+}
+
+button.potoo-problem-information image.potoo-icon,
+button.potoo-problem-information .potoo-problem-severity {
+  color: var(--potoo-diagnostic-information);
+}
+
+button.potoo-problem-hint image.potoo-icon,
+button.potoo-problem-hint .potoo-problem-severity {
+  color: var(--potoo-diagnostic-hint);
+}
+
+.potoo-problem-location {
+  color: var(--potoo-text-muted);
+  font-size: 11px;
+}
+
+.potoo-problem-message {
+  color: var(--potoo-text);
+  font-size: 13px;
 }
 
 button.potoo-output-tab {
@@ -1171,13 +1244,48 @@ textview.potoo-output-placeholder-text {
 }
 
 .potoo-game-preview-area {
-  margin: 0 18px 18px;
   background-color: var(--potoo-panel-deep-bg);
+}
+
+window.potoo-window .potoo-game-preview-area:focus {
+  outline-color: var(--potoo-accent);
+  outline-style: solid;
+  outline-width: 2px;
+}
+
+.potoo-game-preview-window-area {
+  margin: 18px;
+  background-color: var(--potoo-panel-deep-bg);
+}
+
+.potoo-game-preview-open-window {
+  margin: 0 18px 18px;
 }
 
 .potoo-game-preview-empty {
   color: var(--potoo-text-muted);
   font-size: 13px;
+}
+
+headerbar.potoo-game-preview-titlebar {
+  min-height: 46px;
+  padding: 0 14px;
+  background-color: var(--potoo-window-bg);
+  background-image: none;
+  border: 0;
+  border-bottom: 1px solid var(--potoo-border);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+window.potoo-window headerbar.potoo-game-preview-titlebar windowcontrols button {
+  border-radius: 0;
+  color: var(--potoo-text-muted);
+}
+
+window.potoo-window headerbar.potoo-game-preview-titlebar windowcontrols button:hover {
+  background-color: var(--potoo-panel-hover-bg);
+  color: var(--potoo-text);
 }
 
 .potoo-tool-rail {

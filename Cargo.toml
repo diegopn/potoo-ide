@@ -22,6 +22,7 @@ potoo-portugol-interpreter = { path = "crates/potoo-portugol-studio-interpreter"
 potoo-gportugol-interpreter = { path = "crates/potoo-gportugol-interpreter" }
 potoo-visualg-interpreter = { path = "crates/potoo-visualg-interpreter" }
 potoo-potigol-interpreter = { path = "crates/potoo-potigol-interpreter" }
+potoo-calango-interpreter = { path = "crates/potoo-calango-interpreter" }
 potoo-mapler-interpreter = { path = "crates/potoo-mapler-interpreter" }
 
 [profile.release]
@@ -35,6 +36,7 @@ members = [
     "crates/potoo-portugol-studio-interpreter",
     "crates/potoo-visualg-interpreter",
     "crates/potoo-potigol-interpreter",
+    "crates/potoo-calango-interpreter",
     "crates/potoo-mapler-interpreter",
 ]
 resolver = "3"

@@ -162,6 +162,7 @@ fn analyze_program_line(program: &Program, line: usize) -> Option<SourceLineAnal
                     .flat_map(|declaration| source_symbols(declaration))
                     .collect(),
                 variables: Vec::new(),
+                call: None,
             });
         }
         if function.body.span.start.line == line || function.body.span.end.line == line {
@@ -195,6 +196,7 @@ fn analyze_declarations(declarations: &[VariableDecl], line: usize) -> Option<So
         return_type: None,
         parameters: Vec::new(),
         variables: matching.into_iter().flat_map(source_symbols).collect(),
+        call: None,
     })
 }
 
@@ -256,8 +258,10 @@ fn analyze_statement(
             Statement::Call { call, .. } => (
                 if is_call_named(call, "imprima") {
                     SourceConstruct::Output
+                } else if is_call_named(call, "leia") {
+                    SourceConstruct::Input
                 } else {
-                    SourceConstruct::Other
+                    SourceConstruct::Call
                 },
                 None,
             ),
@@ -279,6 +283,7 @@ fn analyze_statement(
             },
             parameters: Vec::new(),
             variables: Vec::new(),
+            call: None,
         });
     }
 
@@ -313,6 +318,7 @@ fn empty_analysis(line: usize, column: usize, construct: SourceConstruct) -> Sou
         return_type: None,
         parameters: Vec::new(),
         variables: Vec::new(),
+        call: None,
     }
 }
 

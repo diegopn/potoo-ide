@@ -1,6 +1,7 @@
 mod app;
 mod audio;
 mod components;
+mod diagnostics;
 mod execution;
 mod graphics;
 mod learning;

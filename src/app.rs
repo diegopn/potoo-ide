@@ -4,9 +4,10 @@ use crate::components::{
     sidebar::ProjectFile,
     start_page,
 };
+use crate::diagnostics::{self, AnalysisIdentity, EditorDiagnostic};
 use crate::execution::{self, ControlAction, DebuggerSnapshot, ExecutionEvent, InputPrompt};
 use crate::learning::{
-    LearningHint, LearningSymbol, LearningTopic, learning_hint_with_runtime_cancellable,
+    LearningHint, LearningSymbol, LearningTopic, catalog, learning_hint_with_runtime_cancellable,
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -178,16 +179,17 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Projeto G-Portugol" => "G-Portugol project",
             "Comece com um arquivo .por" => "Start with a .por file",
             "Comece com um arquivo .alg" => "Start with a .alg file",
-            "Dialetos do Portugol: G-Portugol, Portugol 2.0 e VisuAlg" => {
-                "Portugol dialects: G-Portugol, Portugol 2.0, and VisuAlg"
+            "Dialetos do Portugol: G-Portugol, VisuAlg, Portugol Studio 2.0 e Mapler (.mapler)" => {
+                "Portugol dialects: G-Portugol, VisuAlg, Portugol Studio 2.0, and Mapler (.mapler)"
             }
-            "3 variantes" => "3 variants",
+            "4 variantes" => "4 variants",
             "2 variantes" => "2 variants",
+            "Criar programa inicial (.clg)" => "Create a starter program (.clg)",
             "Criar programa inicial (.poti)" => "Create a starter program (.poti)",
             "Selecionar uma pasta" => "Choose a folder",
             "Abra um projeto que não aparece na lista." => "Open a project that is not listed.",
-            "Abra um arquivo .por, .alg, .poti ou .gpt diretamente no editor." => {
-                "Open a .por, .alg, .poti, or .gpt file directly in the editor."
+            "Abra um arquivo .por, .alg, .poti, .gpt, .clg ou .mapler." => {
+                "Open a .por, .alg, .poti, .gpt, .clg, or .mapler file."
             }
             "Projeto" => "Project",
             "Abrir um programa recente" => "Open a recent program",
@@ -237,8 +239,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Criar item no projeto" => "Create project item",
             "Novo projeto" => "New project",
             "Criar projeto" => "Create project",
-            "Criar um projeto Portugol, VisuAlg, Potigol ou G-Portugol" => {
-                "Create a Portugol, VisuAlg, Potigol, or G-Portugol project"
+            "Criar um projeto Calango, G-Portugol, VisuAlg, Portugol Studio 2.0, Mapler ou Potigol" => {
+                "Create a Calango, G-Portugol, VisuAlg, Portugol Studio 2.0, Mapler, or Potigol project"
             }
             "Selecione a linguagem/pseudolinguagem do projeto" => {
                 "Select the project's language/pseudolanguage"
@@ -246,14 +248,12 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Linguagem/pseudolinguagem" => "Language/pseudolanguage",
             "Depuração encerrada com erro" => "Debugging ended with an error",
             "Variante do Portugol" => "Portugol variant",
+            "Mapler" => "Mapler",
             "Variante do Potigol" => "Potigol variant",
-            "Esta análise do Potigol é heurística e pode não reconhecer todos os casos da linguagem." => {
-                "Potigol analysis here is heuristic and may not recognize every language construct."
-            }
             "Uma rotina executa ações sem devolver um resultado; cada linguagem define como seus parâmetros são passados." => {
                 "A routine performs actions without returning a result; each language defines how its parameters are passed."
             }
-            "Portugol 2.0" => "Portugol 2.0",
+            "Portugol Studio 2.0" => "Portugol Studio 2.0",
             "G-Portugol" => "G-Portugol",
             "Potigol Clássico" => "Classic Potigol",
             "Potigol Jerimum (Jogo 2D)" => "Potigol Jerimum (2D Game)",
@@ -261,6 +261,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Arquivo inicial .alg" => "Initial .alg file",
             "Arquivo inicial .poti" => "Initial .poti file",
             "Arquivo inicial .gpt" => "Initial .gpt file",
+            "Arquivo inicial .mapler" => "Initial .mapler file",
             "Crie uma pasta para reunir seus programas e exercícios." => {
                 "Create a folder to keep your programs and exercises together."
             }
@@ -288,8 +289,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Não foi possível criar o projeto" => "Could not create the project",
             "Projeto criado" => "Project created",
             "Novo arquivo" => "New file",
-            "Criar um arquivo Portugol, VisuAlg, Potigol ou G-Portugol" => {
-                "Create a Portugol, VisuAlg, Potigol, or G-Portugol file"
+            "Criar um arquivo Calango, G-Portugol, VisuAlg, Portugol Studio 2.0, Mapler ou Potigol" => {
+                "Create a Calango, G-Portugol, VisuAlg, Portugol Studio 2.0, Mapler, or Potigol file"
             }
             "Nova pasta" => "New folder",
             "Criar uma pasta no projeto" => "Create a folder in the project",
@@ -314,6 +315,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Abrir prévia do jogo" => "Open game preview",
             "Recolher prévia do jogo" => "Hide game preview",
             "Prévia do jogo" => "Game preview",
+            "Abrir em janela separada" => "Open in separate window",
             "Execute um programa Potigol Jerimum para ver o jogo aqui." => {
                 "Run a Potigol Jerimum program to see the game here."
             }
@@ -335,19 +337,27 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "saída" => "output",
             "variável" => "variable",
             "função" => "function",
-            "procedimento" => "procedure",
             "palavra-chave" => "keyword",
             "biblioteca" => "library",
+            "chamada de biblioteca" => "library call",
             "membro" => "member",
             "snippet" => "snippet",
             "símbolo" => "symbol",
+            "procedimento" => "procedure",
             "atribuição" => "assignment",
             "retorno" => "return",
             "programa" => "program",
             "Problemas nesta linha" => "Problems on this line",
             "Nenhum problema conhecido nesta linha." => "No known problem on this line.",
+            "Erro" => "Error",
+            "Aviso" => "Warning",
+            "Informação" => "Information",
+            "Dica" => "Hint",
+            "Erro léxico" => "Lexical error",
             "Erro de sintaxe" => "Syntax error",
             "Erro de tipo" => "Type error",
+            "Erro de execução" => "Runtime error",
+            "Análise estática" => "Static analysis",
             "Erro durante a execução" => "Runtime error",
             "Possível problema lógico" => "Possible logic issue",
             "Índice fora dos limites" => "Index out of bounds",
@@ -485,21 +495,106 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "A atribuição calcula o lado direito e atualiza o valor da variável à esquerda." => {
                 "An assignment evaluates the right side and updates the variable on the left."
             }
-            "Esta função não devolve valor; retorne encerra sua execução." => {
-                "This function returns no value; retorne ends its execution."
+            "chamada" => "call",
+            "importação" => "import",
+            "não identificada" => "unrecognized",
+            "A chamada" => "The call",
+            "obtém dados de entrada para o programa" => "reads input for the program",
+            "A instrução de entrada fornece valores para o programa usar." => {
+                "An input instruction provides values for the program to use."
             }
-            "retorne encerra a rotina e pode entregar um resultado a quem a chamou." => {
-                "retorne ends the routine and can provide a result to its caller."
+            "Esta instrução apresenta os dados informados na saída do programa." => {
+                "This instruction presents the provided data in the program output."
             }
-            "retorne encerra a função e entrega um valor do tipo" => {
-                "retorne ends the function and gives a value of type"
+            "executa a função ou operação identificada nesta linha" => {
+                "executes the function or operation identified on this line"
             }
-            "a quem a chamou" => "to its caller",
+            "executa uma operação disponível na biblioteca importada" => {
+                "executes an operation provided by the imported library"
+            }
+            "A importação" => "The import",
+            "disponibiliza os elementos dessa biblioteca ao programa" => {
+                "makes this library's members available to the program"
+            }
+            "Esta linha importa elementos para uso no programa." => {
+                "This line imports members for use in the program."
+            }
+            "A análise não reconheceu esta linha; consulte a mensagem em Problemas nesta linha." => {
+                "The analysis did not recognize this line; see the message under Problems on this line."
+            }
+            "Esta linha não contém uma instrução reconhecida; comentários e linhas vazias não executam código." => {
+                "This line has no recognized executable instruction; comments and blank lines do not run code."
+            }
+            "A análise não reconheceu esta construção; não foi possível verificar problemas." => {
+                "The analysis did not recognize this construct, so it could not check this line for problems."
+            }
+            "Uma chamada transfere a execução para uma função ou operação e depois continua no ponto seguinte." => {
+                "A call transfers execution to a function or operation, then continues at the next point."
+            }
+            "Uma biblioteca fornece operações que o programa pode reutilizar." => {
+                "A library provides operations the program can reuse."
+            }
+            "A importação torna disponíveis nomes e operações definidos em outra biblioteca." => {
+                "An import makes names and operations from another library available."
+            }
+            "iniciar configura e abre a janela do jogo com título, dimensões, funções de atualização e desenho, e taxa de quadros." => {
+                "iniciar configures and opens the game window with a title, dimensions, update and draw functions, and frame rate."
+            }
+            "O laço do jogo chama a atualização e o desenho repetidamente enquanto a janela estiver aberta." => {
+                "The game loop repeatedly calls the update and draw functions while the window is open."
+            }
+            "Altere a largura e a altura da chamada e observe como o espaço do jogo muda." => {
+                "Change the call's width and height and see how the game area changes."
+            }
+            "incluir registra uma função de desenho para compor a cena do jogo." => {
+                "incluir registers a draw function that contributes to the game scene."
+            }
+            "Separar cada elemento em uma função de desenho ajuda a organizar a cena." => {
+                "Giving each element its own draw function helps organize the scene."
+            }
+            "Comente temporariamente esta inclusão e observe qual elemento deixa de aparecer." => {
+                "Temporarily comment out this inclusion and see which element disappears."
+            }
+            "setColor define a cor usada pelas próximas operações gráficas deste contexto." => {
+                "setColor sets the color used by subsequent graphics operations in this context."
+            }
+            "A cor é um estado do contexto gráfico e permanece ativa até outra chamada de setColor." => {
+                "Color is state on the graphics context and remains active until another setColor call."
+            }
+            "Troque o argumento de cor por outra constante Cor e observe os próximos desenhos." => {
+                "Change the color argument to another Cor constant and observe the next drawings."
+            }
+            "fillRect desenha um retângulo preenchido usando posição x/y e largura/altura." => {
+                "fillRect draws a filled rectangle using x/y position and width/height."
+            }
+            "As coordenadas indicam a posição do retângulo; largura e altura definem seu tamanho." => {
+                "Coordinates set the rectangle's position; width and height set its size."
+            }
+            "Aumente os dois últimos argumentos e observe o tamanho do retângulo." => {
+                "Increase the last two arguments and observe the rectangle's size."
+            }
+            "drawString desenha o texto informado nas coordenadas x/y da área gráfica." => {
+                "drawString draws the given text at the x/y coordinates in the graphics area."
+            }
+            "A posição do texto é definida por coordenadas dentro da tela do jogo." => {
+                "The text position is set by coordinates within the game screen."
+            }
+            "Mude o texto ou suas coordenadas e observe o resultado na tela." => {
+                "Change the text or its coordinates and observe the result on screen."
+            }
+            "Esta função termina sem devolver um valor." => {
+                "This function ends without returning a value."
+            }
+            "O retorno entrega um valor do tipo" => "The return provides a value of type",
+            "ao ponto que chamou a função" => "to the point that called the function",
+            "O retorno devolve o controle ao ponto que chamou a rotina." => {
+                "The return passes control back to the point that called the routine."
+            }
             "Parâmetros são os dados recebidos pela função. `vazio` informa que nenhum resultado é devolvido." => {
                 "Parameters are the data received by a function. `vazio` means no result is returned."
             }
-            "A função produz um valor de texto, representado pelo tipo `cadeia` em Portugol 2.0." => {
-                "The function produces text, represented by the `cadeia` type in Portugol 2.0."
+            "A função produz um valor de texto, representado pelo tipo `cadeia` em Portugol Studio 2.0." => {
+                "The function produces text, represented by the `cadeia` type in Portugol Studio 2.0."
             }
             "A função devolve um resultado do tipo `{return_type}`. Seus parâmetros recebem os dados usados no cálculo." => {
                 "The function returns a `{return_type}` value. Its parameters receive the data used in the calculation."
@@ -531,6 +626,9 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Altere o valor inicial ou um elemento do vetor e observe o efeito no resultado." => {
                 "Change the initial value or a vector element and observe the effect on the result."
+            }
+            "Chame a função e observe as ações que ela executa." => {
+                "Call the function and observe the actions it performs."
             }
             "Mude um argumento na chamada de" => "Change an argument in the call to",
             "e compare o resultado devolvido" => "and compare the returned result",
@@ -643,8 +741,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Esta pasta não contém arquivos visíveis." => {
                 "This folder contains no visible files."
             }
-            "Nenhum programa .por, .alg, .poti ou .gpt nesta pasta. Os demais arquivos aparecem na lista." => {
-                "No .por, .alg, .poti, or .gpt programs in this folder. Other files appear in the list."
+            "Nenhum programa .por, .alg, .poti, .gpt, .clg ou .mapler nesta pasta. Os demais arquivos aparecem na lista." => {
+                "No .por, .alg, .poti, .gpt, .clg, or .mapler programs in this folder. Other files appear in the list."
             }
             "Fechar arquivo" => "Close file",
             "Escolha um nome e a linguagem do novo arquivo." => {
@@ -686,11 +784,14 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Arquivo aberto" => "File opened",
             "Arquivo salvo" => "File saved",
-            "Pasta aberta. Crie um arquivo .por, .alg, .poti ou .gpt para começar." => {
-                "Folder opened. Create a .por, .alg, .poti, or .gpt file to get started."
+            "Pasta aberta. Crie um arquivo .por, .alg, .poti, .gpt, .clg ou .mapler para começar." => {
+                "Folder opened. Create a .por, .alg, .poti, .gpt, .clg, or .mapler file to get started."
             }
             "Novo arquivo criado" => "New file created",
             "Já existe um arquivo com esse nome." => "A file with that name already exists.",
+            "Já existe um arquivo neste caminho; escolha outro nome em Salvar como." => {
+                "A file already exists at this path; choose another name in Save As."
+            }
             "Já existe um item com esse nome." => "An item with that name already exists.",
             "Renomear" => "Rename",
             "Excluir" => "Delete",
@@ -719,8 +820,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Não foi possível abrir a pasta" => "Could not open folder",
             "Não foi possível salvar o arquivo" => "Could not save file",
             "Não foi possível criar o arquivo" => "Could not create file",
-            "O editor abre apenas arquivos .por, .alg, .poti e .gpt." => {
-                "The editor opens only .por, .alg, .poti, and .gpt files."
+            "O editor abre arquivos .por, .alg, .poti, .gpt, .clg e .mapler; arquivos .txt exigem confirmação como Mapler." => {
+                "The editor opens .por, .alg, .poti, .gpt, .clg, and .mapler files; .txt files require confirmation as Mapler."
             }
             "Abra uma pasta de projeto antes de criar arquivos." => {
                 "Open a project folder before creating files."
@@ -731,12 +832,18 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Use um nome simples, sem pastas ou caracteres especiais." => {
                 "Use a simple name without folders or special characters."
             }
-            "Use a extensão .por, .alg, .poti ou .gpt." => {
-                "Use the .por, .alg, .poti, or .gpt extension."
+            "Use a extensão .por, .alg, .poti, .gpt, .clg ou .mapler." => {
+                "Use the .por, .alg, .poti, .gpt, .clg, or .mapler extension."
             }
-            "Salve o código com a extensão .por, .alg, .poti ou .gpt." => {
-                "Save the code with the .por, .alg, .poti, or .gpt extension."
+            "Salve o código com a extensão .por, .alg, .poti, .gpt, .clg ou .mapler." => {
+                "Save the code with the .por, .alg, .poti, .gpt, .clg, or .mapler extension."
             }
+            "Abrir arquivo Mapler" => "Open Mapler file",
+            "Deseja abrir este arquivo .txt como Mapler?" => "Open this .txt file as Mapler?",
+            "A IDE original do Mapler usa .txt. O Potoo usa .mapler; arquivos .txt só são abertos como Mapler após esta confirmação." => {
+                "The original Mapler IDE uses .txt. Potoo uses .mapler; .txt files are opened as Mapler only after this confirmation."
+            }
+            "Abrir como Mapler" => "Open as Mapler",
             "Selecione uma pasta local para abrir." => "Choose a local folder to open.",
             "Selecione um arquivo local." => "Choose a local file.",
             "Escolha um caminho local para salvar o arquivo." => {
@@ -744,8 +851,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Não foi possível abrir a janela de salvamento" => "Could not open the save dialog",
             "Abrir arquivo de código" => "Open source file",
-            "Portugol, VisuAlg, Potigol e G-Portugol (*.por, *.alg, *.poti, *.gpt)" => {
-                "Portugol, VisuAlg, Potigol, and G-Portugol (*.por, *.alg, *.poti, *.gpt)"
+            "Arquivos Mapler e outros dialetos (*.mapler, *.clg, *.gpt, *.alg, *.por, *.poti, *.txt para Mapler)" => {
+                "Mapler and other dialect files (*.mapler, *.clg, *.gpt, *.alg, *.por, *.poti, *.txt for Mapler)"
             }
             "Não foi possível abrir o arquivo de código" => "Could not open the source file",
             "novo-arquivo" => "new-file",
@@ -775,18 +882,19 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Projeto G-Portugol" => "Proyecto G-Portugol",
             "Comece com um arquivo .por" => "Empieza con un archivo .por",
             "Comece com um arquivo .alg" => "Empieza con un archivo .alg",
-            "Dialetos do Portugol: G-Portugol, Portugol 2.0 e VisuAlg" => {
-                "Dialectos de Portugol: G-Portugol, Portugol 2.0 y VisuAlg"
+            "Dialetos do Portugol: G-Portugol, VisuAlg, Portugol Studio 2.0 e Mapler (.mapler)" => {
+                "Dialectos de Portugol: G-Portugol, VisuAlg, Portugol Studio 2.0 y Mapler (.mapler)"
             }
-            "3 variantes" => "3 variantes",
+            "4 variantes" => "4 variantes",
             "2 variantes" => "2 variantes",
+            "Criar programa inicial (.clg)" => "Crear un programa inicial (.clg)",
             "Criar programa inicial (.poti)" => "Crear un programa inicial (.poti)",
             "Selecionar uma pasta" => "Seleccionar una carpeta",
             "Abra um projeto que não aparece na lista." => {
                 "Abre un proyecto que no aparece en la lista."
             }
-            "Abra um arquivo .por, .alg, .poti ou .gpt diretamente no editor." => {
-                "Abre un archivo .por, .alg, .poti o .gpt directamente en el editor."
+            "Abra um arquivo .por, .alg, .poti, .gpt, .clg ou .mapler." => {
+                "Abre un archivo .por, .alg, .poti, .gpt, .clg o .mapler."
             }
             "Projeto" => "Proyecto",
             "Abrir um programa recente" => "Abrir un programa reciente",
@@ -836,8 +944,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Criar item no projeto" => "Crear elemento del proyecto",
             "Novo projeto" => "Nuevo proyecto",
             "Criar projeto" => "Crear proyecto",
-            "Criar um projeto Portugol, VisuAlg, Potigol ou G-Portugol" => {
-                "Crear un proyecto Portugol, VisuAlg, Potigol o G-Portugol"
+            "Criar um projeto Calango, G-Portugol, VisuAlg, Portugol Studio 2.0, Mapler ou Potigol" => {
+                "Crear un proyecto de Calango, G-Portugol, VisuAlg, Portugol Studio 2.0, Mapler o Potigol"
             }
             "Selecione a linguagem/pseudolinguagem do projeto" => {
                 "Selecciona el lenguaje/pseudolenguaje del proyecto"
@@ -845,14 +953,12 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Linguagem/pseudolinguagem" => "Lenguaje/pseudolenguaje",
             "Depuração encerrada com erro" => "La depuración terminó con un error",
             "Variante do Portugol" => "Variante de Portugol",
+            "Mapler" => "Mapler",
             "Variante do Potigol" => "Variante de Potigol",
-            "Esta análise do Potigol é heurística e pode não reconhecer todos os casos da linguagem." => {
-                "El análisis de Potigol es heurístico y puede no reconocer todos los casos del lenguaje."
-            }
             "Uma rotina executa ações sem devolver um resultado; cada linguagem define como seus parâmetros são passados." => {
                 "Una rutina realiza acciones sin devolver un resultado; cada lenguaje define cómo se pasan sus parámetros."
             }
-            "Portugol 2.0" => "Portugol 2.0",
+            "Portugol Studio 2.0" => "Portugol Studio 2.0",
             "G-Portugol" => "G-Portugol",
             "Potigol Clássico" => "Potigol clásico",
             "Potigol Jerimum (Jogo 2D)" => "Potigol Jerimum (juego 2D)",
@@ -860,6 +966,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Arquivo inicial .alg" => "Archivo inicial .alg",
             "Arquivo inicial .poti" => "Archivo inicial .poti",
             "Arquivo inicial .gpt" => "Archivo inicial .gpt",
+            "Arquivo inicial .mapler" => "Archivo inicial .mapler",
             "Crie uma pasta para reunir seus programas e exercícios." => {
                 "Crea una carpeta para reunir tus programas y ejercicios."
             }
@@ -891,8 +998,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Não foi possível criar o projeto" => "No se pudo crear el proyecto",
             "Projeto criado" => "Proyecto creado",
             "Novo arquivo" => "Nuevo archivo",
-            "Criar um arquivo Portugol, VisuAlg, Potigol ou G-Portugol" => {
-                "Crear un archivo Portugol, VisuAlg, Potigol o G-Portugol"
+            "Criar um arquivo Calango, G-Portugol, VisuAlg, Portugol Studio 2.0, Mapler ou Potigol" => {
+                "Crear un archivo de Calango, G-Portugol, VisuAlg, Portugol Studio 2.0, Mapler o Potigol"
             }
             "Nova pasta" => "Nueva carpeta",
             "Criar uma pasta no projeto" => "Crear una carpeta en el proyecto",
@@ -919,6 +1026,7 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Abrir prévia do jogo" => "Abrir vista previa del juego",
             "Recolher prévia do jogo" => "Ocultar vista previa del juego",
             "Prévia do jogo" => "Vista previa del juego",
+            "Abrir em janela separada" => "Abrir en ventana separada",
             "Execute um programa Potigol Jerimum para ver o jogo aqui." => {
                 "Ejecuta un programa de Potigol Jerimum para ver el juego aquí."
             }
@@ -940,19 +1048,27 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "saída" => "salida",
             "variável" => "variable",
             "função" => "función",
-            "procedimento" => "procedimiento",
             "palavra-chave" => "palabra clave",
             "biblioteca" => "biblioteca",
+            "chamada de biblioteca" => "llamada de biblioteca",
             "membro" => "miembro",
             "snippet" => "fragmento",
             "símbolo" => "símbolo",
+            "procedimento" => "procedimiento",
             "atribuição" => "asignación",
             "retorno" => "retorno",
             "programa" => "programa",
             "Problemas nesta linha" => "Problemas en esta línea",
             "Nenhum problema conhecido nesta linha." => "No se conocen problemas en esta línea.",
+            "Erro" => "Error",
+            "Aviso" => "Aviso",
+            "Informação" => "Información",
+            "Dica" => "Sugerencia",
+            "Erro léxico" => "Error léxico",
             "Erro de sintaxe" => "Error de sintaxis",
             "Erro de tipo" => "Error de tipo",
+            "Erro de execução" => "Error de ejecución",
+            "Análise estática" => "Análisis estático",
             "Erro durante a execução" => "Error durante la ejecución",
             "Possível problema lógico" => "Posible problema lógico",
             "Índice fora dos limites" => "Índice fuera de los límites",
@@ -1092,21 +1208,108 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "A atribuição calcula o lado direito e atualiza o valor da variável à esquerda." => {
                 "La asignación evalúa el lado derecho y actualiza la variable de la izquierda."
             }
-            "Esta função não devolve valor; retorne encerra sua execução." => {
-                "Esta función no devuelve un valor; retorne termina su ejecución."
+            "chamada" => "llamada",
+            "importação" => "importación",
+            "não identificada" => "no identificada",
+            "A chamada" => "La llamada",
+            "obtém dados de entrada para o programa" => {
+                "obtiene datos de entrada para el programa"
             }
-            "retorne encerra a rotina e pode entregar um resultado a quem a chamou." => {
-                "retorne termina la rutina y puede entregar un resultado a quien la llamó."
+            "A instrução de entrada fornece valores para o programa usar." => {
+                "Una instrucción de entrada proporciona valores para que el programa los use."
             }
-            "retorne encerra a função e entrega um valor do tipo" => {
-                "retorne termina la función y entrega un valor del tipo"
+            "Esta instrução apresenta os dados informados na saída do programa." => {
+                "Esta instrucción presenta los datos indicados en la salida del programa."
             }
-            "a quem a chamou" => "a quien la llamó",
+            "executa a função ou operação identificada nesta linha" => {
+                "ejecuta la función u operación identificada en esta línea"
+            }
+            "executa uma operação disponível na biblioteca importada" => {
+                "ejecuta una operación disponible en la biblioteca importada"
+            }
+            "A importação" => "La importación",
+            "disponibiliza os elementos dessa biblioteca ao programa" => {
+                "pone los elementos de esta biblioteca a disposición del programa"
+            }
+            "Esta linha importa elementos para uso no programa." => {
+                "Esta línea importa elementos para usarlos en el programa."
+            }
+            "A análise não reconheceu esta linha; consulte a mensagem em Problemas nesta linha." => {
+                "El análisis no reconoció esta línea; consulta el mensaje en Problemas en esta línea."
+            }
+            "Esta linha não contém uma instrução reconhecida; comentários e linhas vazias não executam código." => {
+                "Esta línea no tiene una instrucción ejecutable reconocida; los comentarios y las líneas vacías no ejecutan código."
+            }
+            "A análise não reconheceu esta construção; não foi possível verificar problemas." => {
+                "El análisis no reconoció esta construcción, así que no pudo comprobar si hay problemas en esta línea."
+            }
+            "Uma chamada transfere a execução para uma função ou operação e depois continua no ponto seguinte." => {
+                "Una llamada transfiere la ejecución a una función u operación y luego continúa en el siguiente punto."
+            }
+            "Uma biblioteca fornece operações que o programa pode reutilizar." => {
+                "Una biblioteca proporciona operaciones que el programa puede reutilizar."
+            }
+            "A importação torna disponíveis nomes e operações definidos em outra biblioteca." => {
+                "Una importación pone a disposición nombres y operaciones definidos en otra biblioteca."
+            }
+            "iniciar configura e abre a janela do jogo com título, dimensões, funções de atualização e desenho, e taxa de quadros." => {
+                "iniciar configura y abre la ventana del juego con título, dimensiones, funciones de actualización y dibujo, y frecuencia de fotogramas."
+            }
+            "O laço do jogo chama a atualização e o desenho repetidamente enquanto a janela estiver aberta." => {
+                "El bucle del juego llama repetidamente a las funciones de actualización y dibujo mientras la ventana está abierta."
+            }
+            "Altere a largura e a altura da chamada e observe como o espaço do jogo muda." => {
+                "Cambia el ancho y el alto de la llamada y observa cómo cambia el espacio del juego."
+            }
+            "incluir registra uma função de desenho para compor a cena do jogo." => {
+                "incluir registra una función de dibujo que forma parte de la escena del juego."
+            }
+            "Separar cada elemento em uma função de desenho ajuda a organizar a cena." => {
+                "Separar cada elemento en una función de dibujo ayuda a organizar la escena."
+            }
+            "Comente temporariamente esta inclusão e observe qual elemento deixa de aparecer." => {
+                "Comenta temporalmente esta inclusión y observa qué elemento deja de aparecer."
+            }
+            "setColor define a cor usada pelas próximas operações gráficas deste contexto." => {
+                "setColor define el color usado por las siguientes operaciones gráficas de este contexto."
+            }
+            "A cor é um estado do contexto gráfico e permanece ativa até outra chamada de setColor." => {
+                "El color es un estado del contexto gráfico y permanece activo hasta otra llamada a setColor."
+            }
+            "Troque o argumento de cor por outra constante Cor e observe os próximos desenhos." => {
+                "Cambia el argumento de color por otra constante Cor y observa los siguientes dibujos."
+            }
+            "fillRect desenha um retângulo preenchido usando posição x/y e largura/altura." => {
+                "fillRect dibuja un rectángulo relleno usando la posición x/y y el ancho/alto."
+            }
+            "As coordenadas indicam a posição do retângulo; largura e altura definem seu tamanho." => {
+                "Las coordenadas indican la posición del rectángulo; el ancho y el alto definen su tamaño."
+            }
+            "Aumente os dois últimos argumentos e observe o tamanho do retângulo." => {
+                "Aumenta los dos últimos argumentos y observa el tamaño del rectángulo."
+            }
+            "drawString desenha o texto informado nas coordenadas x/y da área gráfica." => {
+                "drawString dibuja el texto indicado en las coordenadas x/y del área gráfica."
+            }
+            "A posição do texto é definida por coordenadas dentro da tela do jogo." => {
+                "La posición del texto se define mediante coordenadas dentro de la pantalla del juego."
+            }
+            "Mude o texto ou suas coordenadas e observe o resultado na tela." => {
+                "Cambia el texto o sus coordenadas y observa el resultado en la pantalla."
+            }
+            "Esta função termina sem devolver um valor." => {
+                "Esta función termina sin devolver un valor."
+            }
+            "O retorno entrega um valor do tipo" => "El retorno entrega un valor del tipo",
+            "ao ponto que chamou a função" => "al punto que llamó a la función",
+            "O retorno devolve o controle ao ponto que chamou a rotina." => {
+                "El retorno devuelve el control al punto que llamó a la rutina."
+            }
             "Parâmetros são os dados recebidos pela função. `vazio` informa que nenhum resultado é devolvido." => {
                 "Los parámetros son los datos que recibe la función. `vazio` indica que no devuelve un resultado."
             }
-            "A função produz um valor de texto, representado pelo tipo `cadeia` em Portugol 2.0." => {
-                "La función produce texto, representado por el tipo `cadeia` en Portugol 2.0."
+            "A função produz um valor de texto, representado pelo tipo `cadeia` em Portugol Studio 2.0." => {
+                "La función produce texto, representado por el tipo `cadeia` en Portugol Studio 2.0."
             }
             "A função devolve um resultado do tipo `{return_type}`. Seus parâmetros recebem os dados usados no cálculo." => {
                 "La función devuelve un valor `{return_type}`. Sus parámetros reciben los datos usados en el cálculo."
@@ -1138,6 +1341,9 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Altere o valor inicial ou um elemento do vetor e observe o efeito no resultado." => {
                 "Cambia el valor inicial o un elemento del vector y observa el efecto en el resultado."
+            }
+            "Chame a função e observe as ações que ela executa." => {
+                "Llama a la función y observa las acciones que ejecuta."
             }
             "Mude um argumento na chamada de" => "Cambia un argumento en la llamada a",
             "e compare o resultado devolvido" => "y compara el resultado devuelto",
@@ -1258,8 +1464,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Esta pasta não contém arquivos visíveis." => {
                 "Esta carpeta no tiene archivos visibles."
             }
-            "Nenhum programa .por, .alg, .poti ou .gpt nesta pasta. Os demais arquivos aparecem na lista." => {
-                "No hay programas .por, .alg, .poti o .gpt en esta carpeta. Los demás archivos aparecen en la lista."
+            "Nenhum programa .por, .alg, .poti, .gpt, .clg ou .mapler nesta pasta. Os demais arquivos aparecem na lista." => {
+                "No hay programas .por, .alg, .poti, .gpt, .clg o .mapler en esta carpeta. Los demás archivos aparecen en la lista."
             }
             "Fechar arquivo" => "Cerrar archivo",
             "Escolha um nome e a linguagem do novo arquivo." => {
@@ -1303,11 +1509,14 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             }
             "Arquivo aberto" => "Archivo abierto",
             "Arquivo salvo" => "Archivo guardado",
-            "Pasta aberta. Crie um arquivo .por, .alg, .poti ou .gpt para começar." => {
-                "Carpeta abierta. Crea un archivo .por, .alg, .poti o .gpt para empezar."
+            "Pasta aberta. Crie um arquivo .por, .alg, .poti, .gpt, .clg ou .mapler para começar." => {
+                "Carpeta abierta. Crea un archivo .por, .alg, .poti, .gpt, .clg o .mapler para empezar."
             }
             "Novo arquivo criado" => "Archivo nuevo creado",
             "Já existe um arquivo com esse nome." => "Ya existe un archivo con ese nombre.",
+            "Já existe um arquivo neste caminho; escolha outro nome em Salvar como." => {
+                "Ya existe un archivo en esta ruta; elige otro nombre en Guardar como."
+            }
             "Já existe um item com esse nome." => "Ya existe un elemento con ese nombre.",
             "Renomear" => "Renombrar",
             "Excluir" => "Eliminar",
@@ -1338,8 +1547,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Não foi possível abrir a pasta" => "No se pudo abrir la carpeta",
             "Não foi possível salvar o arquivo" => "No se pudo guardar el archivo",
             "Não foi possível criar o arquivo" => "No se pudo crear el archivo",
-            "O editor abre apenas arquivos .por, .alg, .poti e .gpt." => {
-                "El editor solo abre archivos .por, .alg, .poti y .gpt."
+            "O editor abre arquivos .por, .alg, .poti, .gpt, .clg e .mapler; arquivos .txt exigem confirmação como Mapler." => {
+                "El editor abre archivos .por, .alg, .poti, .gpt, .clg y .mapler; los archivos .txt requieren confirmación como Mapler."
             }
             "Abra uma pasta de projeto antes de criar arquivos." => {
                 "Abre una carpeta de proyecto antes de crear archivos."
@@ -1352,12 +1561,20 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "Use um nome simples, sem pastas ou caracteres especiais." => {
                 "Usa un nombre sencillo, sin carpetas ni caracteres especiales."
             }
-            "Use a extensão .por, .alg, .poti ou .gpt." => {
-                "Usa la extensión .por, .alg, .poti o .gpt."
+            "Use a extensão .por, .alg, .poti, .gpt, .clg ou .mapler." => {
+                "Usa la extensión .por, .alg, .poti, .gpt, .clg o .mapler."
             }
-            "Salve o código com a extensão .por, .alg, .poti ou .gpt." => {
-                "Guarda el código con la extensión .por, .alg, .poti o .gpt."
+            "Salve o código com a extensão .por, .alg, .poti, .gpt, .clg ou .mapler." => {
+                "Guarda el código con la extensión .por, .alg, .poti, .gpt, .clg o .mapler."
             }
+            "Abrir arquivo Mapler" => "Abrir archivo Mapler",
+            "Deseja abrir este arquivo .txt como Mapler?" => {
+                "¿Abrir este archivo .txt como Mapler?"
+            }
+            "A IDE original do Mapler usa .txt. O Potoo usa .mapler; arquivos .txt só são abertos como Mapler após esta confirmação." => {
+                "La IDE original de Mapler usa .txt. Potoo usa .mapler; los archivos .txt solo se abren como Mapler tras esta confirmación."
+            }
+            "Abrir como Mapler" => "Abrir como Mapler",
             "Selecione uma pasta local para abrir." => "Selecciona una carpeta local para abrir.",
             "Selecione um arquivo local." => "Selecciona un archivo local.",
             "Escolha um caminho local para salvar o arquivo." => {
@@ -1367,8 +1584,8 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
                 "No se pudo abrir la ventana para guardar"
             }
             "Abrir arquivo de código" => "Abrir archivo de código",
-            "Portugol, VisuAlg, Potigol e G-Portugol (*.por, *.alg, *.poti, *.gpt)" => {
-                "Portugol, VisuAlg, Potigol y G-Portugol (*.por, *.alg, *.poti, *.gpt)"
+            "Arquivos Mapler e outros dialetos (*.mapler, *.clg, *.gpt, *.alg, *.por, *.poti, *.txt para Mapler)" => {
+                "Archivos Mapler y otros dialectos (*.mapler, *.clg, *.gpt, *.alg, *.por, *.poti, *.txt para Mapler)"
             }
             "Não foi possível abrir o arquivo de código" => {
                 "No se pudo abrir el archivo de código"
@@ -1444,16 +1661,18 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Projeto G-Portugol",
     "Comece com um arquivo .por",
     "Comece com um arquivo .alg",
-    "Dialetos do Portugol: G-Portugol, Portugol 2.0 e VisuAlg",
-    "3 variantes",
+    "Dialetos do Portugol: G-Portugol, VisuAlg, Portugol Studio 2.0 e Mapler (.mapler)",
+    "4 variantes",
+    "Mapler",
     "2 variantes",
+    "Criar programa inicial (.clg)",
     "Criar programa inicial (.poti)",
     "Pressione Esc para cancelar a execução.",
     "Analisando linha…",
     "Aguardando a próxima linha…",
     "Selecionar uma pasta",
     "Abra um projeto que não aparece na lista.",
-    "Abra um arquivo .por, .alg, .poti ou .gpt diretamente no editor.",
+    "Abra um arquivo .por, .alg, .poti, .gpt, .clg ou .mapler.",
     "Projeto",
     "Abrir um programa recente",
     "O arquivo ou a pasta recente não está mais disponível.",
@@ -1492,13 +1711,13 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Criar item no projeto",
     "Novo projeto",
     "Criar projeto",
-    "Criar um projeto Portugol, VisuAlg, Potigol ou G-Portugol",
+    "Criar um projeto Calango, G-Portugol, VisuAlg, Portugol Studio 2.0, Mapler ou Potigol",
     "Selecione a linguagem/pseudolinguagem do projeto",
     "Linguagem/pseudolinguagem",
     "Depuração encerrada com erro",
     "Variante do Portugol",
     "Variante do Potigol",
-    "Portugol 2.0",
+    "Portugol Studio 2.0",
     "G-Portugol",
     "Potigol Clássico",
     "Potigol Jerimum (Jogo 2D)",
@@ -1506,6 +1725,7 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Arquivo inicial .alg",
     "Arquivo inicial .poti",
     "Arquivo inicial .gpt",
+    "Arquivo inicial .mapler",
     "Crie uma pasta para reunir seus programas e exercícios.",
     "Nome do projeto",
     "Por exemplo: Meu primeiro projeto",
@@ -1525,7 +1745,7 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Não foi possível criar o projeto",
     "Projeto criado",
     "Novo arquivo",
-    "Criar um arquivo Portugol, VisuAlg, Potigol ou G-Portugol",
+    "Criar um arquivo Calango, G-Portugol, VisuAlg, Portugol Studio 2.0, Mapler ou Potigol",
     "Nova pasta",
     "Criar uma pasta no projeto",
     "Criar pasta",
@@ -1561,21 +1781,30 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Abrir prévia do jogo",
     "Recolher prévia do jogo",
     "Prévia do jogo",
+    "Abrir em janela separada",
     "Execute um programa Potigol Jerimum para ver o jogo aqui.",
     "Analisando a linha selecionada…",
     "função",
-    "procedimento",
     "palavra-chave",
     "biblioteca",
+    "chamada de biblioteca",
     "membro",
     "snippet",
     "símbolo",
+    "procedimento",
     "atribuição",
     "retorno",
     "Problemas nesta linha",
     "Nenhum problema conhecido nesta linha.",
+    "Erro",
+    "Aviso",
+    "Informação",
+    "Dica",
+    "Erro léxico",
     "Erro de sintaxe",
     "Erro de tipo",
+    "Erro de execução",
+    "Análise estática",
     "Erro durante a execução",
     "Possível problema lógico",
     "Índice fora dos limites",
@@ -1609,24 +1838,57 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "escreva e escreval mostram na saída os valores e textos informados.",
     "imprima mostra na saída os valores e textos informados.",
     "A atribuição calcula o lado direito e atualiza o valor da variável à esquerda.",
-    "Esta função não devolve valor; retorne encerra sua execução.",
-    "retorne encerra a rotina e pode entregar um resultado a quem a chamou.",
-    "retorne encerra a função e entrega um valor do tipo",
-    "a quem a chamou",
+    "Esta função termina sem devolver um valor.",
+    "O retorno entrega um valor do tipo",
+    "ao ponto que chamou a função",
+    "O retorno devolve o controle ao ponto que chamou a rotina.",
     "Parâmetros são os dados recebidos pela função. `vazio` informa que nenhum resultado é devolvido.",
-    "A função produz um valor de texto, representado pelo tipo `cadeia` em Portugol 2.0.",
+    "A função produz um valor de texto, representado pelo tipo `cadeia` em Portugol Studio 2.0.",
     "A função devolve um resultado do tipo `{return_type}`. Seus parâmetros recebem os dados usados no cálculo.",
     "A função devolve um resultado do tipo",
     "Seus parâmetros recebem os dados usados no cálculo.",
     "Parâmetros são os dados recebidos pela função; o tipo de retorno descreve o resultado produzido.",
     "Uma rotina executa ações sem devolver um resultado; cada linguagem define como seus parâmetros são passados.",
-    "Esta análise do Potigol é heurística e pode não reconhecer todos os casos da linguagem.",
     "O tipo define quais valores podem ser guardados; o formato indica se há um valor, um vetor ou uma matriz.",
     "Atribuir associa um novo valor a uma variável; o operador determina como o valor é calculado.",
     "O retorno leva o resultado da função de volta ao ponto que a chamou.",
+    "chamada",
+    "importação",
+    "não identificada",
+    "A chamada",
+    "obtém dados de entrada para o programa",
+    "A instrução de entrada fornece valores para o programa usar.",
+    "Esta instrução apresenta os dados informados na saída do programa.",
+    "executa a função ou operação identificada nesta linha",
+    "executa uma operação disponível na biblioteca importada",
+    "A importação",
+    "disponibiliza os elementos dessa biblioteca ao programa",
+    "Esta linha importa elementos para uso no programa.",
+    "A análise não reconheceu esta linha; consulte a mensagem em Problemas nesta linha.",
+    "Esta linha não contém uma instrução reconhecida; comentários e linhas vazias não executam código.",
+    "A análise não reconheceu esta construção; não foi possível verificar problemas.",
+    "Uma chamada transfere a execução para uma função ou operação e depois continua no ponto seguinte.",
+    "Uma biblioteca fornece operações que o programa pode reutilizar.",
+    "A importação torna disponíveis nomes e operações definidos em outra biblioteca.",
+    "iniciar configura e abre a janela do jogo com título, dimensões, funções de atualização e desenho, e taxa de quadros.",
+    "O laço do jogo chama a atualização e o desenho repetidamente enquanto a janela estiver aberta.",
+    "Altere a largura e a altura da chamada e observe como o espaço do jogo muda.",
+    "incluir registra uma função de desenho para compor a cena do jogo.",
+    "Separar cada elemento em uma função de desenho ajuda a organizar a cena.",
+    "Comente temporariamente esta inclusão e observe qual elemento deixa de aparecer.",
+    "setColor define a cor usada pelas próximas operações gráficas deste contexto.",
+    "A cor é um estado do contexto gráfico e permanece ativa até outra chamada de setColor.",
+    "Troque o argumento de cor por outra constante Cor e observe os próximos desenhos.",
+    "fillRect desenha um retângulo preenchido usando posição x/y e largura/altura.",
+    "As coordenadas indicam a posição do retângulo; largura e altura definem seu tamanho.",
+    "Aumente os dois últimos argumentos e observe o tamanho do retângulo.",
+    "drawString desenha o texto informado nas coordenadas x/y da área gráfica.",
+    "A posição do texto é definida por coordenadas dentro da tela do jogo.",
+    "Mude o texto ou suas coordenadas e observe o resultado na tela.",
     "Troque o valor atribuído e acompanhe a próxima leitura da variável.",
     "Altere o valor devolvido e veja como a chamada da função reage.",
     "Altere o valor inicial ou um elemento do vetor e observe o efeito no resultado.",
+    "Chame a função e observe as ações que ela executa.",
     "Mude um argumento na chamada de",
     "e compare o resultado devolvido",
     "Altere um parâmetro usado ao chamar",
@@ -1695,7 +1957,7 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "2 espaços",
     "4 espaços",
     "Esta pasta não contém arquivos visíveis.",
-    "Nenhum programa .por, .alg, .poti ou .gpt nesta pasta. Os demais arquivos aparecem na lista.",
+    "Nenhum programa .por, .alg, .poti, .gpt, .clg ou .mapler nesta pasta. Os demais arquivos aparecem na lista.",
     "Fechar arquivo",
     "Escolha um nome e a linguagem do novo arquivo.",
     "Crie um arquivo dentro do projeto atual.",
@@ -1721,27 +1983,32 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "Não foi possível atualizar os arquivos do projeto",
     "Arquivo aberto",
     "Arquivo salvo",
-    "Pasta aberta. Crie um arquivo .por, .alg, .poti ou .gpt para começar.",
+    "Pasta aberta. Crie um arquivo .por, .alg, .poti, .gpt, .clg ou .mapler para começar.",
     "Novo arquivo criado",
     "Já existe um arquivo com esse nome.",
+    "Já existe um arquivo neste caminho; escolha outro nome em Salvar como.",
     "Não foi possível abrir o arquivo",
     "Não foi possível abrir a pasta",
     "Não foi possível salvar o arquivo",
     "Não foi possível criar o arquivo",
-    "O editor abre apenas arquivos .por, .alg, .poti e .gpt.",
+    "O editor abre arquivos .por, .alg, .poti, .gpt, .clg e .mapler; arquivos .txt exigem confirmação como Mapler.",
     "Abra uma pasta de projeto antes de criar arquivos.",
     "Crie ou abra um arquivo antes de salvar.",
     "Não foi possível salvar as configurações",
     "Não foi possível salvar a sessão",
     "Use um nome simples, sem pastas ou caracteres especiais.",
-    "Use a extensão .por, .alg, .poti ou .gpt.",
-    "Salve o código com a extensão .por, .alg, .poti ou .gpt.",
+    "Use a extensão .por, .alg, .poti, .gpt, .clg ou .mapler.",
+    "Salve o código com a extensão .por, .alg, .poti, .gpt, .clg ou .mapler.",
     "Selecione uma pasta local para abrir.",
     "Selecione um arquivo local.",
     "Escolha um caminho local para salvar o arquivo.",
     "Não foi possível abrir a janela de salvamento",
     "Abrir arquivo de código",
-    "Portugol, VisuAlg, Potigol e G-Portugol (*.por, *.alg, *.poti, *.gpt)",
+    "Arquivos Mapler e outros dialetos (*.mapler, *.clg, *.gpt, *.alg, *.por, *.poti, *.txt para Mapler)",
+    "Abrir arquivo Mapler",
+    "Deseja abrir este arquivo .txt como Mapler?",
+    "A IDE original do Mapler usa .txt. O Potoo usa .mapler; arquivos .txt só são abertos como Mapler após esta confirmação.",
+    "Abrir como Mapler",
     "Não foi possível abrir o arquivo de código",
     "novo-arquivo",
     "caminho de configuração inválido",
@@ -1793,7 +2060,7 @@ impl Default for Preferences {
             line_numbers_visible: true,
             word_wrap: false,
             indent_width: 4,
-            default_language: Language::Portugol,
+            default_language: Language::GPortugol,
             ui_language: UiLanguage::from_system(),
         }
     }
@@ -1839,6 +2106,7 @@ pub(crate) enum MainWindowMsg {
     DocumentReadCompleted {
         project_generation: u64,
         path: PathBuf,
+        language_override: Option<Language>,
         standalone: bool,
         result: Result<String, String>,
     },
@@ -1850,6 +2118,7 @@ pub(crate) enum MainWindowMsg {
     DeleteProjectItem(PathBuf),
     DeleteProjectItemConfirmed(PathBuf),
     OpenFile(PathBuf),
+    OpenMaplerText(PathBuf),
     ActivateDocument(u64),
     CloseDocument(u64),
     CloseDocumentDecision(u64, bool),
@@ -1872,14 +2141,22 @@ pub(crate) enum MainWindowMsg {
     StartDebug,
     StepDebug,
     StopDebug,
+    OpenGamePreviewWindow,
     ExecutionEvent(u64, ExecutionEvent),
     ExecutionLost(u64),
     FileSelectionResolved(u64, Result<String, String>),
     SubmitProgramInput(String),
+    ProgramInputChanged(String),
     SourceChanged(String),
     CursorMoved(usize),
     SelectRightPanel(RightPanelSection),
     LearningDebounceElapsed(u64),
+    DiagnosticsDebounceElapsed(AnalysisIdentity),
+    DiagnosticsAnalysisReady {
+        identity: AnalysisIdentity,
+        diagnostics: Vec<EditorDiagnostic>,
+    },
+    NavigateToDiagnostic(EditorDiagnostic),
     LearningAnalysisReady {
         generation: u64,
         document_id: u64,
@@ -1899,6 +2176,14 @@ struct LearningAnalysisRequest {
     contents: String,
     language: Language,
     runtime_diagnostics: Vec<execution::ExecutionDiagnostic>,
+    editor_diagnostics: Vec<EditorDiagnostic>,
+}
+
+struct DiagnosticsAnalysisRequest {
+    identity: AnalysisIdentity,
+    source_name: String,
+    source_path: Option<PathBuf>,
+    contents: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1918,6 +2203,51 @@ struct CurrentLearningAnalysis {
     revision: u64,
     line: usize,
     language: Option<Language>,
+}
+
+fn merge_editor_diagnostics(hint: &mut LearningHint, diagnostics: &[EditorDiagnostic]) {
+    for diagnostic in diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.line == hint.line)
+    {
+        let severity = match diagnostic.severity {
+            diagnostics::DiagnosticSeverity::Error => crate::learning::LearningSeverity::Error,
+            diagnostics::DiagnosticSeverity::Warning => crate::learning::LearningSeverity::Warning,
+            diagnostics::DiagnosticSeverity::Information
+            | diagnostics::DiagnosticSeverity::Hint => {
+                continue;
+            }
+        };
+        let kind = match diagnostic.category {
+            diagnostics::DiagnosticCategory::Lexical | diagnostics::DiagnosticCategory::Syntax => {
+                crate::learning::LearningProblemKind::Syntax
+            }
+            diagnostics::DiagnosticCategory::Type => crate::learning::LearningProblemKind::Type,
+            diagnostics::DiagnosticCategory::Runtime => {
+                crate::learning::LearningProblemKind::Runtime
+            }
+            diagnostics::DiagnosticCategory::StaticAnalysis => {
+                crate::learning::LearningProblemKind::PossibleLogic
+            }
+        };
+        if hint.problems.iter().any(|problem| {
+            problem.kind == kind
+                && problem.line == diagnostic.line
+                && problem.column == diagnostic.column
+                && problem.message == diagnostic.message
+        }) {
+            continue;
+        }
+        hint.problems.push(crate::learning::LearningProblem {
+            kind,
+            severity,
+            line: diagnostic.line,
+            column: diagnostic.column,
+            text: crate::learning::LearningProblemText::InterpreterDiagnostic,
+            message: diagnostic.message.clone(),
+            suggestion: None,
+        });
+    }
 }
 
 impl CurrentLearningAnalysis {
@@ -1999,7 +2329,11 @@ impl LearningAnalysisWorker {
                     request.language,
                     &request.runtime_diagnostics,
                     || generation_for_worker.load(Ordering::Acquire) != request_generation,
-                );
+                )
+                .map(|mut hint| {
+                    merge_editor_diagnostics(&mut hint, &request.editor_diagnostics);
+                    hint
+                });
                 if let Some(hint) = hint
                     && generation_for_worker.load(Ordering::Acquire) == request_generation
                 {
@@ -2053,6 +2387,111 @@ impl Drop for LearningAnalysisWorker {
         state.latest_request = None;
         wake.notify_one();
     }
+}
+
+#[derive(Default)]
+struct DiagnosticsAnalysisWorkerState {
+    latest_request: Option<DiagnosticsAnalysisRequest>,
+    shutdown: bool,
+}
+
+struct DiagnosticsAnalysisWorker {
+    state: Arc<(Mutex<DiagnosticsAnalysisWorkerState>, Condvar)>,
+    generation: Arc<AtomicU64>,
+}
+
+impl DiagnosticsAnalysisWorker {
+    fn new(sender: ComponentSender<MainWindow>) -> Self {
+        let state = Arc::new((
+            Mutex::new(DiagnosticsAnalysisWorkerState::default()),
+            Condvar::new(),
+        ));
+        let generation = Arc::new(AtomicU64::new(0));
+        let state_for_worker = Arc::clone(&state);
+        let generation_for_worker = Arc::clone(&generation);
+        std::thread::spawn(move || {
+            loop {
+                let request = {
+                    let (state_lock, wake) = &*state_for_worker;
+                    let mut state = state_lock
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    while state.latest_request.is_none() && !state.shutdown {
+                        state = wake
+                            .wait(state)
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    }
+                    if state.shutdown {
+                        return;
+                    }
+                    state.latest_request.take().expect("request was checked")
+                };
+                if generation_for_worker.load(Ordering::Acquire) != request.identity.generation {
+                    continue;
+                }
+
+                let diagnostics = diagnostics::analyze(
+                    request.identity.document_id,
+                    &request.source_name,
+                    request.source_path.as_deref(),
+                    request.identity.language,
+                    &request.contents,
+                );
+                if generation_for_worker.load(Ordering::Acquire) == request.identity.generation {
+                    sender.input(MainWindowMsg::DiagnosticsAnalysisReady {
+                        identity: request.identity,
+                        diagnostics,
+                    });
+                }
+            }
+        });
+        Self { state, generation }
+    }
+
+    fn invalidate(&self, generation: u64) {
+        self.generation.store(generation, Ordering::Release);
+        let (state_lock, _) = &*self.state;
+        let mut state = state_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.latest_request = None;
+    }
+
+    fn submit(&self, request: DiagnosticsAnalysisRequest) {
+        if self.generation.load(Ordering::Acquire) != request.identity.generation {
+            return;
+        }
+        let (state_lock, wake) = &*self.state;
+        let mut state = state_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if state.shutdown || self.generation.load(Ordering::Acquire) != request.identity.generation
+        {
+            return;
+        }
+        state.latest_request = Some(request);
+        wake.notify_one();
+    }
+}
+
+impl Drop for DiagnosticsAnalysisWorker {
+    fn drop(&mut self) {
+        self.generation.fetch_add(1, Ordering::AcqRel);
+        let (state_lock, wake) = &*self.state;
+        let mut state = state_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.shutdown = true;
+        state.latest_request = None;
+        wake.notify_one();
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct DiagnosticNavigation {
+    serial: u64,
+    document_id: u64,
+    offset: usize,
 }
 
 pub(crate) struct MainWindow {
@@ -2114,6 +2553,12 @@ pub(crate) struct MainWindow {
     execution_diagnostics: Vec<execution::ExecutionDiagnostic>,
     execution_diagnostics_document_id: Option<u64>,
     execution_source_fingerprint: Option<u64>,
+    diagnostics_generation: u64,
+    diagnostics_worker: DiagnosticsAnalysisWorker,
+    diagnostics_active_document_id: Option<u64>,
+    diagnostics_pending: Option<AnalysisIdentity>,
+    navigation_serial: u64,
+    navigation_target: Option<DiagnosticNavigation>,
     learning_generation: u64,
     learning_revision: u64,
     learning_cursor_line: usize,
@@ -2575,6 +3020,9 @@ fn restore_session(snapshot: SessionSnapshot) -> (Vec<SourceDocument>, Option<u6
             language: saved.language,
             contents,
             saved_contents,
+            revision: 0,
+            diagnostics: None,
+            runtime_diagnostics: Vec::new(),
         });
     }
     if active_document_id.is_none() {
@@ -2614,6 +3062,73 @@ impl MainWindow {
         }
     }
 
+    fn schedule_diagnostics_refresh(&mut self, sender: ComponentSender<Self>, delay: Duration) {
+        self.diagnostics_generation = self.diagnostics_generation.wrapping_add(1).max(1);
+        let generation = self.diagnostics_generation;
+        self.diagnostics_worker.invalidate(generation);
+        self.diagnostics_pending = None;
+        let Some(document) = self.active_document() else {
+            return;
+        };
+        let identity = AnalysisIdentity {
+            generation,
+            document_id: document.id,
+            revision: document.revision,
+            language: document.language,
+        };
+        self.diagnostics_pending = Some(identity);
+        gtk::glib::timeout_add_local_once(delay, move || {
+            sender.input(MainWindowMsg::DiagnosticsDebounceElapsed(identity));
+        });
+    }
+
+    fn ensure_diagnostics_for_active_document(&mut self, sender: ComponentSender<Self>) {
+        if self.diagnostics_active_document_id != self.active_document_id {
+            self.diagnostics_active_document_id = self.active_document_id;
+            self.diagnostics_generation = self.diagnostics_generation.wrapping_add(1).max(1);
+            self.diagnostics_worker
+                .invalidate(self.diagnostics_generation);
+            self.diagnostics_pending = None;
+        }
+        let should_analyze = self
+            .active_document()
+            .is_some_and(|document| document.diagnostics.is_none());
+        if should_analyze
+            && !self.diagnostics_pending.is_some_and(|identity| {
+                Some(identity.document_id) == self.active_document_id
+                    && self.active_document().is_some_and(|document| {
+                        identity.revision == document.revision
+                            && identity.language == document.language
+                    })
+            })
+        {
+            self.schedule_diagnostics_refresh(sender, Duration::from_millis(40));
+        }
+    }
+
+    fn all_diagnostics(&self) -> Vec<EditorDiagnostic> {
+        let mut diagnostics = Vec::new();
+        for document in &self.documents {
+            let static_diagnostics = document.diagnostics.as_deref().unwrap_or_default();
+            diagnostics.extend(static_diagnostics.iter().cloned());
+            diagnostics.extend(
+                document
+                    .runtime_diagnostics
+                    .iter()
+                    .filter(|runtime| {
+                        !static_diagnostics.iter().any(|static_diagnostic| {
+                            static_diagnostic.category == runtime.category
+                                && static_diagnostic.message == runtime.message
+                                && static_diagnostic.line == runtime.line
+                                && static_diagnostic.column == runtime.column
+                        })
+                    })
+                    .cloned(),
+            );
+        }
+        diagnostics
+    }
+
     fn cancel_file_selection(&mut self, execution_id: u64) {
         if self
             .file_selection_cancellable
@@ -2643,6 +3158,13 @@ impl MainWindow {
         self.debugger_learning_hint = None;
         self.debugging_active = debugging;
         self.execution_line = None;
+        if let Some(current) = self
+            .documents
+            .iter_mut()
+            .find(|current| current.id == document.id)
+        {
+            current.runtime_diagnostics.clear();
+        }
         self.execution_diagnostics.clear();
         self.execution_diagnostics_document_id = None;
         self.schedule_learning_refresh(sender.clone(), Duration::from_millis(20));
@@ -2736,12 +3258,47 @@ impl MainWindow {
             language,
             contents,
             saved_contents,
+            revision: 0,
+            diagnostics: None,
+            runtime_diagnostics: Vec::new(),
         });
         self.active_document_id = Some(id);
         id
     }
 
-    fn open_document(&mut self, path: PathBuf, sender: ComponentSender<Self>) {
+    fn open_document(
+        &mut self,
+        path: PathBuf,
+        language_override: Option<Language>,
+        sender: ComponentSender<Self>,
+    ) {
+        if language_override.is_none()
+            && path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("txt"))
+        {
+            let sender_for_confirmation = sender.clone();
+            let path_for_confirmation = path.clone();
+            show_potoo_confirmation(
+                &self.window,
+                self.ui_language,
+                self.dark,
+                "Abrir arquivo Mapler",
+                "Deseja abrir este arquivo .txt como Mapler?",
+                "A IDE original do Mapler usa .txt. O Potoo usa .mapler; arquivos .txt só são abertos como Mapler após esta confirmação.",
+                vec!["Cancelar", "Abrir como Mapler"],
+                Some(1),
+                None,
+                move |response| {
+                    if response == 1 {
+                        sender_for_confirmation
+                            .input(MainWindowMsg::OpenMaplerText(path_for_confirmation.clone()));
+                    }
+                },
+            );
+            return;
+        }
         let standalone = self
             .project_root
             .as_ref()
@@ -2755,9 +3312,9 @@ impl MainWindow {
             self.start_page_visible = false;
             return;
         }
-        if Language::from_path(&path).is_none() {
+        if language_override.is_none() && Language::from_path(&path).is_none() {
             self.output_status = self
-                .text("O editor abre apenas arquivos .por, .alg, .poti e .gpt.")
+                .text("O editor abre arquivos .por, .alg, .poti, .gpt, .clg e .mapler; arquivos .txt exigem confirmação como Mapler.")
                 .to_string();
             return;
         }
@@ -2768,6 +3325,7 @@ impl MainWindow {
             sender.input(MainWindowMsg::DocumentReadCompleted {
                 project_generation,
                 path,
+                language_override,
                 standalone,
                 result,
             });
@@ -2827,6 +3385,7 @@ impl MainWindow {
         &mut self,
         project_generation: u64,
         path: PathBuf,
+        language_override: Option<Language>,
         standalone: bool,
         result: Result<String, String>,
         sender: ComponentSender<Self>,
@@ -2861,7 +3420,7 @@ impl MainWindow {
             self.project_root = Some(root.clone());
             self.schedule_project_scan(root, false, sender);
         }
-        let Some(language) = Language::from_path(&path) else {
+        let Some(language) = language_override.or_else(|| Language::from_path(&path)) else {
             return;
         };
         let name = path
@@ -2979,10 +3538,10 @@ impl MainWindow {
                 .map(|file| file.path.clone())
         });
         if let Some(path) = first_source_file {
-            self.open_document(path, sender);
+            self.open_document(path, None, sender);
         } else {
             self.output_status = self
-                .text("Pasta aberta. Crie um arquivo .por, .alg, .poti ou .gpt para começar.")
+                .text("Pasta aberta. Crie um arquivo .por, .alg, .poti, .gpt, .clg ou .mapler para começar.")
                 .to_string();
         }
     }
@@ -2999,20 +3558,60 @@ impl MainWindow {
                     return false;
                 }
             };
+        if self.documents[index].language == Language::Mapler
+            && self.documents[index].path.as_ref().is_some_and(|source| {
+                source != &path
+                    && source
+                        .extension()
+                        .and_then(|extension| extension.to_str())
+                        .is_some_and(|extension| extension.eq_ignore_ascii_case("txt"))
+                    && path.exists()
+            })
+        {
+            self.output_status = self
+                .text("Já existe um arquivo neste caminho; escolha outro nome em Salvar como.")
+                .to_string();
+            return false;
+        }
         let standalone = self
             .project_root
             .as_ref()
             .map_or(true, |root| !path.starts_with(root));
         match atomic_write(&path, self.documents[index].contents.as_bytes()) {
             Ok(()) => {
-                let document = &mut self.documents[index];
-                document.path = Some(path.clone());
-                document.language = language;
-                document.name = path
-                    .file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| path.display().to_string());
-                document.saved_contents.clone_from(&document.contents);
+                let language_changed = {
+                    let document = &mut self.documents[index];
+                    document.path = Some(path.clone());
+                    let language_changed = document.language != language;
+                    document.language = language;
+                    document.name = path
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| path.display().to_string());
+                    document.saved_contents.clone_from(&document.contents);
+                    if language_changed {
+                        document.revision = document.revision.wrapping_add(1);
+                        document.diagnostics = None;
+                        document.runtime_diagnostics.clear();
+                    }
+                    let source_name = document.name.clone();
+                    let source_path = document.path.clone();
+                    for diagnostic in document
+                        .diagnostics
+                        .iter_mut()
+                        .flatten()
+                        .chain(document.runtime_diagnostics.iter_mut())
+                    {
+                        diagnostic.source_name.clone_from(&source_name);
+                        diagnostic.source_path.clone_from(&source_path);
+                        diagnostic.language = language;
+                    }
+                    language_changed
+                };
+                if language_changed && self.execution_diagnostics_document_id == Some(id) {
+                    self.execution_diagnostics.clear();
+                    self.execution_diagnostics_document_id = None;
+                }
                 if self.project_root.is_none() {
                     self.project_root = path.parent().map(Path::to_path_buf);
                     if let Some(root) = &self.project_root {
@@ -3209,6 +3808,7 @@ impl MainWindow {
             return;
         }
 
+        let mut clear_execution_diagnostics = false;
         for document in &mut self.documents {
             let Some(document_path) = document.path.clone() else {
                 continue;
@@ -3222,10 +3822,34 @@ impl MainWindow {
                     .map(|name| name.to_string_lossy().into_owned())
                     .unwrap_or_else(|| new_path.display().to_string());
                 if let Some(language) = Language::from_path(&new_path) {
+                    if document.language != language {
+                        document.revision = document.revision.wrapping_add(1);
+                        document.diagnostics = None;
+                        document.runtime_diagnostics.clear();
+                        clear_execution_diagnostics |=
+                            self.execution_diagnostics_document_id == Some(document.id);
+                    }
                     document.language = language;
                 }
             }
             document.path = Some(new_path.join(relative_path));
+            let source_name = document.name.clone();
+            let source_path = document.path.clone();
+            let language = document.language;
+            for diagnostic in document
+                .diagnostics
+                .iter_mut()
+                .flatten()
+                .chain(document.runtime_diagnostics.iter_mut())
+            {
+                diagnostic.source_name.clone_from(&source_name);
+                diagnostic.source_path.clone_from(&source_path);
+                diagnostic.language = language;
+            }
+        }
+        if clear_execution_diagnostics {
+            self.execution_diagnostics.clear();
+            self.execution_diagnostics_document_id = None;
         }
 
         if let Some(root) = self.project_root.clone() {
@@ -3393,13 +4017,9 @@ pub struct MainUi {
     code_view: sourceview5::View,
     completion_provider: content_panel::CompletionProvider,
     syntax_tags: SyntaxTags,
-    line_numbers: gtk::Label,
-    line_numbers_separator: gtk::Separator,
     output_buffer: gtk::TextBuffer,
     output_view: gtk::TextView,
-    problems_buffer: gtk::TextBuffer,
-    problems_view: gtk::TextView,
-    problems_tab: gtk::Button,
+    problems_list: gtk::Box,
     input_entry: gtk::Entry,
     output_status: gtk::Label,
     debugger_start: gtk::Button,
@@ -3416,11 +4036,14 @@ pub struct MainUi {
     game_preview_button: gtk::Button,
     game_preview_stack: gtk::Stack,
     game_preview_area: gtk::DrawingArea,
+    game_preview_open_button: gtk::Button,
     learning_spinner: gtk::Spinner,
     learning_analysis_stack: gtk::Stack,
     learning_line_title: gtk::Label,
     learning_explanation: gtk::Label,
     learning_experiment: gtk::Label,
+    learning_concept_section: gtk::Box,
+    learning_experiment_section: gtk::Box,
     learning_concept_title: gtk::Label,
     learning_concept_text: gtk::Label,
     learning_problem_list: gtk::Box,
@@ -3450,7 +4073,8 @@ pub struct MainUi {
     displayed_preferred_ui_language: UiLanguage,
     displayed_settings_visible: bool,
     displayed_output_text: String,
-    displayed_problem_text: String,
+    displayed_diagnostics: Vec<EditorDiagnostic>,
+    displayed_navigation_serial: u64,
     displayed_input_requested: bool,
     displayed_output_status: String,
     displayed_debugger_snapshot: Option<DebuggerSnapshot>,
@@ -3594,6 +4218,10 @@ impl MainWindow {
                     self.game_preview_active = false;
                     let finished_document_id = self.execution_document_id;
                     let debugger_run = self.debugger_document_id == finished_document_id;
+                    if debugger_run {
+                        self.debugger_snapshot = None;
+                        self.debugger_learning_hint = None;
+                    }
                     let source_matches_execution = finished_document_id
                         .and_then(|id| self.documents.iter().find(|document| document.id == id))
                         .is_some_and(|document| {
@@ -3614,6 +4242,13 @@ impl MainWindow {
                     self.input_prompt = None;
                     match result {
                         Ok(()) => {
+                            if source_matches_execution
+                                && let Some(document) = finished_document_id.and_then(|id| {
+                                    self.documents.iter_mut().find(|document| document.id == id)
+                                })
+                            {
+                                document.runtime_diagnostics.clear();
+                            }
                             self.execution_diagnostics.clear();
                             self.execution_diagnostics_document_id = None;
                             self.output_status = if stopped {
@@ -3623,12 +4258,42 @@ impl MainWindow {
                             };
                         }
                         Err(diagnostics) => {
-                            let diagnostic_text = format_diagnostics(&diagnostics);
+                            let diagnostic_source = if source_matches_execution {
+                                finished_document_id.and_then(|id| {
+                                    self.documents
+                                        .iter()
+                                        .find(|document| document.id == id)
+                                        .map(|document| {
+                                            (document.language, document.contents.clone())
+                                        })
+                                })
+                            } else {
+                                None
+                            };
+                            let diagnostic_text = format_diagnostics(
+                                &diagnostics,
+                                diagnostic_source
+                                    .as_ref()
+                                    .map(|(language, source)| (*language, source.as_str())),
+                            );
                             self.problem_text.clone_from(&diagnostic_text);
                             self.debugger_error = debugger_run;
                             self.output_status =
                                 self.text("O programa terminou com um erro.").to_string();
                             if source_matches_execution {
+                                if let Some(document) = finished_document_id.and_then(|id| {
+                                    self.documents.iter_mut().find(|document| document.id == id)
+                                }) {
+                                    document.runtime_diagnostics =
+                                        crate::diagnostics::from_execution(
+                                            document.id,
+                                            &document.name,
+                                            document.path.as_deref(),
+                                            document.language,
+                                            &document.contents,
+                                            &diagnostics,
+                                        );
+                                }
                                 self.execution_diagnostics = diagnostics;
                                 self.execution_diagnostics_document_id = finished_document_id;
                                 self.schedule_learning_refresh(
@@ -3642,6 +4307,23 @@ impl MainWindow {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    fn submit_program_input(&mut self, input: String) {
+        if self.input_requested {
+            if self
+                .execution_input
+                .as_ref()
+                .is_some_and(|sender| sender.send(input).is_ok())
+            {
+                self.input_requested = false;
+                self.input_prompt = None;
+            } else {
+                self.output_status = self
+                    .text("Não foi possível enviar a entrada ao programa.")
+                    .to_string();
             }
         }
     }
@@ -3780,6 +4462,7 @@ impl SimpleComponent for MainWindow {
             );
         }
         let learning_worker = LearningAnalysisWorker::new(sender.clone());
+        let diagnostics_worker = DiagnosticsAnalysisWorker::new(sender.clone());
 
         let mut model = Self {
             window: root.clone(),
@@ -3863,6 +4546,12 @@ impl SimpleComponent for MainWindow {
             execution_diagnostics: Vec::new(),
             execution_diagnostics_document_id: None,
             execution_source_fingerprint: None,
+            diagnostics_generation: 0,
+            diagnostics_worker,
+            diagnostics_active_document_id: None,
+            diagnostics_pending: None,
+            navigation_serial: 0,
+            navigation_target: None,
             learning_generation: 0,
             learning_revision: 0,
             learning_cursor_line: 1,
@@ -3917,12 +4606,13 @@ impl SimpleComponent for MainWindow {
             &widgets.start_page.all_recent_list,
             &model.recent_paths,
             model.ui_language,
-            sender,
+            sender.clone(),
         );
         widgets
             .start_page
             .recent_more_button
             .set_visible(model.recent_paths.len() > 2);
+        model.ensure_diagnostics_for_active_document(sender.clone());
         widgets.displayed_tabs = model
             .documents
             .iter()
@@ -3962,6 +4652,7 @@ impl SimpleComponent for MainWindow {
                 | MainWindowMsg::RenameProjectItemConfirmed(_, _)
                 | MainWindowMsg::DeleteProjectItemConfirmed(_)
                 | MainWindowMsg::OpenFile(_)
+                | MainWindowMsg::OpenMaplerText(_)
                 | MainWindowMsg::ActivateDocument(_)
                 | MainWindowMsg::CloseDocument(_)
                 | MainWindowMsg::CloseDocumentDecision(_, _)
@@ -4003,7 +4694,7 @@ impl SimpleComponent for MainWindow {
                             self.load_project(path, false, sender.clone());
                         }
                     } else {
-                        self.open_document(path, sender.clone());
+                        self.open_document(path, None, sender.clone());
                     }
                 } else {
                     self.output_status = match self.forget_recent(&path) {
@@ -4065,11 +4756,13 @@ impl SimpleComponent for MainWindow {
             MainWindowMsg::DocumentReadCompleted {
                 project_generation,
                 path,
+                language_override,
                 standalone,
                 result,
             } => self.finish_document_read(
                 project_generation,
                 path,
+                language_override,
                 standalone,
                 result,
                 sender.clone(),
@@ -4136,7 +4829,10 @@ impl SimpleComponent for MainWindow {
             MainWindowMsg::DeleteProjectItemConfirmed(path) => {
                 self.delete_project_item(path, sender.clone());
             }
-            MainWindowMsg::OpenFile(path) => self.open_document(path, sender.clone()),
+            MainWindowMsg::OpenFile(path) => self.open_document(path, None, sender.clone()),
+            MainWindowMsg::OpenMaplerText(path) => {
+                self.open_document(path, Some(Language::Mapler), sender.clone())
+            }
             MainWindowMsg::ActivateDocument(id) => {
                 if self.documents.iter().any(|doc| doc.id == id) {
                     self.active_document_id = Some(id);
@@ -4331,31 +5027,43 @@ impl SimpleComponent for MainWindow {
                 }
             }
             MainWindowMsg::SubmitProgramInput(input) => {
-                if self.input_requested {
-                    if self
-                        .execution_input
+                if self
+                    .input_prompt
+                    .as_ref()
+                    .is_none_or(|prompt| !prompt.immediate_character || !input.is_empty())
+                {
+                    self.submit_program_input(input);
+                }
+            }
+            MainWindowMsg::ProgramInputChanged(input) => {
+                if !input.is_empty()
+                    && self
+                        .input_prompt
                         .as_ref()
-                        .is_some_and(|sender| sender.send(input).is_ok())
-                    {
-                        self.input_requested = false;
-                        self.input_prompt = None;
-                    } else {
-                        self.output_status = self
-                            .text("Não foi possível enviar a entrada ao programa.")
-                            .to_string();
-                    }
+                        .is_some_and(|prompt| prompt.immediate_character)
+                {
+                    self.submit_program_input(input);
                 }
             }
             MainWindowMsg::SourceChanged(contents) => {
-                if let Some(id) = self.active_document_id {
-                    if let Some(document) = self.documents.iter_mut().find(|doc| doc.id == id) {
-                        document.contents = contents;
-                    }
+                let edited_document_id = self.active_document_id;
+                if let Some(document) = self
+                    .documents
+                    .iter_mut()
+                    .find(|document| Some(document.id) == edited_document_id)
+                {
+                    document.contents = contents;
+                    document.revision = document.revision.wrapping_add(1);
+                    document.diagnostics = None;
+                    document.runtime_diagnostics.clear();
                 }
                 self.learning_revision = self.learning_revision.wrapping_add(1);
-                self.execution_diagnostics.clear();
-                self.execution_diagnostics_document_id = None;
+                if self.execution_diagnostics_document_id == edited_document_id {
+                    self.execution_diagnostics.clear();
+                    self.execution_diagnostics_document_id = None;
+                }
                 self.schedule_learning_refresh(sender.clone(), Duration::from_millis(280));
+                self.schedule_diagnostics_refresh(sender.clone(), Duration::from_millis(280));
                 self.recovery_generation += 1;
                 let generation = self.recovery_generation;
                 let sender_for_recovery = sender.clone();
@@ -4380,6 +5088,14 @@ impl SimpleComponent for MainWindow {
                     self.right_panel_section = section;
                 }
             }
+            MainWindowMsg::OpenGamePreviewWindow => {
+                if let Err(error) = self
+                    .graphics_host
+                    .open_jerimum_preview_window(self.text("Prévia do jogo"))
+                {
+                    self.output_status = error;
+                }
+            }
             MainWindowMsg::LearningDebounceElapsed(generation) => {
                 if generation == self.learning_generation {
                     if let Some(document) = self.active_document().cloned() {
@@ -4399,6 +5115,7 @@ impl SimpleComponent for MainWindow {
                             contents: document.contents,
                             language: document.language,
                             runtime_diagnostics,
+                            editor_diagnostics: document.diagnostics.unwrap_or_default(),
                         });
                     } else {
                         self.learning_loading = false;
@@ -4442,6 +5159,74 @@ impl SimpleComponent for MainWindow {
                     self.learning_loading = false;
                 }
             }
+            MainWindowMsg::DiagnosticsDebounceElapsed(identity) => {
+                if self.diagnostics_pending == Some(identity)
+                    && identity.generation == self.diagnostics_generation
+                    && let Some(document) = self.active_document().cloned()
+                    && diagnostics::is_current_analysis(
+                        identity,
+                        self.diagnostics_generation,
+                        document.id,
+                        document.revision,
+                        document.language,
+                    )
+                {
+                    self.diagnostics_worker.submit(DiagnosticsAnalysisRequest {
+                        identity,
+                        source_name: document.name,
+                        source_path: document.path,
+                        contents: document.contents,
+                    });
+                }
+            }
+            MainWindowMsg::DiagnosticsAnalysisReady {
+                identity,
+                diagnostics,
+            } => {
+                let active_document_id = self.active_document_id;
+                let generation = self.diagnostics_generation;
+                let accepted = if let Some(document) = self
+                    .documents
+                    .iter_mut()
+                    .find(|document| document.id == identity.document_id)
+                {
+                    if active_document_id == Some(identity.document_id)
+                        && diagnostics::is_current_analysis(
+                            identity,
+                            generation,
+                            document.id,
+                            document.revision,
+                            document.language,
+                        )
+                    {
+                        document.diagnostics = Some(diagnostics);
+                        self.diagnostics_pending = None;
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+                if accepted {
+                    self.schedule_learning_refresh(sender.clone(), Duration::from_millis(40));
+                }
+            }
+            MainWindowMsg::NavigateToDiagnostic(diagnostic) => {
+                if self
+                    .documents
+                    .iter()
+                    .any(|document| document.id == diagnostic.document_id)
+                {
+                    self.active_document_id = Some(diagnostic.document_id);
+                    self.navigation_serial = self.navigation_serial.wrapping_add(1).max(1);
+                    self.navigation_target = Some(DiagnosticNavigation {
+                        serial: self.navigation_serial,
+                        document_id: diagnostic.document_id,
+                        offset: diagnostic.offset,
+                    });
+                }
+            }
             MainWindowMsg::PersistRecovery(generation) => {
                 if generation == self.recovery_generation {
                     self.persist_session(false, false);
@@ -4456,6 +5241,7 @@ impl SimpleComponent for MainWindow {
             self.learning_revision = self.learning_revision.wrapping_add(1);
             self.schedule_learning_refresh(sender.clone(), Duration::from_millis(80));
         }
+        self.ensure_diagnostics_for_active_document(sender.clone());
 
         if persist_after {
             self.persist_session(false, false);
@@ -4537,10 +5323,6 @@ impl SimpleComponent for MainWindow {
                     "Abrir prévia do jogo"
                 },
             )));
-            if game_preview_selected && !collapsed {
-                ui.game_preview_area.grab_focus();
-            }
-
             ui.displayed_right_panel_section = Some(section);
             ui.displayed_right_panel_collapsed = collapsed;
         }
@@ -4554,6 +5336,8 @@ impl SimpleComponent for MainWindow {
                 });
             ui.displayed_game_preview_active = self.game_preview_active;
         }
+        ui.game_preview_open_button
+            .set_sensitive(self.game_preview_active);
 
         let active_document_id = active_document.map(|document| document.id);
         let current_learning_hint = if self.learning_loading {
@@ -4572,6 +5356,11 @@ impl SimpleComponent for MainWindow {
                 let (explanation, concept, experiment) = learning_copy(hint, self.ui_language);
                 ui.learning_explanation.set_text(&explanation);
                 ui.learning_experiment.set_text(&experiment);
+                let show_learning_concept = hint.topic != LearningTopic::Unrecognized;
+                ui.learning_concept_section
+                    .set_visible(show_learning_concept);
+                ui.learning_experiment_section
+                    .set_visible(show_learning_concept && !experiment.is_empty());
                 ui.learning_concept_title
                     .set_text(&format!("{} {topic_name}", self.text("Conceito:")));
                 ui.learning_concept_text.set_text(&concept);
@@ -4583,7 +5372,18 @@ impl SimpleComponent for MainWindow {
                     &ui.code_buffer,
                     ui.code_view.upcast_ref(),
                 );
+                ui.learning_problem_empty
+                    .set_text(self.text("Nenhum problema conhecido nesta linha."));
+                ui.learning_problem_empty.set_text(self.text(
+                    if hint.topic == LearningTopic::Unrecognized {
+                        "A análise não reconheceu esta construção; não foi possível verificar problemas."
+                    } else {
+                        "Nenhum problema conhecido nesta linha."
+                    },
+                ));
             } else {
+                ui.learning_concept_section.set_visible(true);
+                ui.learning_experiment_section.set_visible(true);
                 ui.learning_line_title
                     .set_text(self.text("Linha 1 · programa"));
                 ui.learning_explanation.set_text(
@@ -4687,6 +5487,7 @@ impl SimpleComponent for MainWindow {
                 ui.settings.window.remove_css_class("potoo-dark");
             }
             content_panel::set_syntax_palette(&ui.syntax_tags, self.dark);
+            content_panel::install_diagnostic_markers(&ui.code_view, self.dark);
             ui.displayed_dark = self.dark;
         }
 
@@ -4696,16 +5497,14 @@ impl SimpleComponent for MainWindow {
         }
         if ui.displayed_font_size != self.font_size {
             set_font_size(&ui.code_view, ui.displayed_font_size, self.font_size);
-            set_font_size(&ui.line_numbers, ui.displayed_font_size, self.font_size);
             ui.settings
                 .font_size_picker
                 .set_selected(font_size_index(self.font_size));
             ui.displayed_font_size = self.font_size;
         }
         if ui.displayed_line_numbers_visible != self.line_numbers_visible {
-            ui.line_numbers.set_visible(self.line_numbers_visible);
-            ui.line_numbers_separator
-                .set_visible(self.line_numbers_visible);
+            ui.code_view
+                .set_show_line_numbers(self.line_numbers_visible);
             ui.settings
                 .line_numbers_switch
                 .set_active(self.line_numbers_visible);
@@ -4889,6 +5688,7 @@ impl SimpleComponent for MainWindow {
 
         if self.close_app_ready && !ui.displayed_close_app_ready {
             ui.displayed_close_app_ready = true;
+            self.graphics_host.close_preview_window();
             ui.close_authorized.set(true);
             ui.window.close();
         }
@@ -4908,20 +5708,16 @@ impl SimpleComponent for MainWindow {
             ui.output_status.set_text(&self.output_status);
             ui.displayed_output_status.clone_from(&self.output_status);
         }
-        if ui.displayed_problem_text != self.problem_text {
-            ui.problems_buffer.set_text(&self.problem_text);
-            let is_placeholder = self.problem_text == self.text("Nenhum problema detectado");
-            if is_placeholder || self.problem_text.is_empty() {
-                ui.problems_view
-                    .add_css_class("potoo-output-placeholder-text");
-            } else {
-                ui.problems_view
-                    .remove_css_class("potoo-output-placeholder-text");
-            }
-            if !self.problem_text.is_empty() && !is_placeholder {
-                ui.problems_tab.emit_clicked();
-            }
-            ui.displayed_problem_text.clone_from(&self.problem_text);
+        let editor_diagnostics = self.all_diagnostics();
+        let diagnostics_changed = ui.displayed_diagnostics != editor_diagnostics;
+        if diagnostics_changed {
+            content_panel::show_diagnostics(
+                &ui.problems_list,
+                &editor_diagnostics,
+                self.ui_language,
+                sender.clone(),
+            );
+            ui.displayed_diagnostics.clone_from(&editor_diagnostics);
         }
         if ui.displayed_input_requested != self.input_requested {
             ui.input_entry.set_visible(self.input_requested);
@@ -4934,6 +5730,8 @@ impl SimpleComponent for MainWindow {
                     ui.input_entry.set_placeholder_text(Some(&placeholder));
                 }
                 ui.input_entry.grab_focus();
+            } else {
+                ui.input_entry.set_text("");
             }
             ui.displayed_input_requested = self.input_requested;
         }
@@ -5036,8 +5834,16 @@ impl SimpleComponent for MainWindow {
                     self.text("Linha"),
                     hint.line
                 ));
-                let (explanation, concept, _) = learning_copy(hint, self.ui_language);
+                let (explanation, concept, experiment) = learning_copy(hint, self.ui_language);
                 ui.debugger_learning.explanation.set_text(&explanation);
+                ui.debugger_learning.experiment.set_text(&experiment);
+                let show_learning_concept = hint.topic != LearningTopic::Unrecognized;
+                ui.debugger_learning
+                    .concept_section
+                    .set_visible(show_learning_concept);
+                ui.debugger_learning
+                    .experiment_section
+                    .set_visible(show_learning_concept && !experiment.is_empty());
                 ui.debugger_learning
                     .concept_title
                     .set_text(&format!("{} {topic_name}", self.text("Conceito:")));
@@ -5050,7 +5856,19 @@ impl SimpleComponent for MainWindow {
                     &ui.code_buffer,
                     ui.code_view.upcast_ref(),
                 );
+                ui.debugger_learning
+                    .problem_empty
+                    .set_text(self.text("Nenhum problema conhecido nesta linha."));
+                ui.debugger_learning.problem_empty.set_text(self.text(
+                    if hint.topic == LearningTopic::Unrecognized {
+                        "A análise não reconheceu esta construção; não foi possível verificar problemas."
+                    } else {
+                        "Nenhum problema conhecido nesta linha."
+                    },
+                ));
             } else {
+                ui.debugger_learning.concept_section.set_visible(false);
+                ui.debugger_learning.experiment_section.set_visible(false);
                 ui.debugger_learning
                     .line_title
                     .set_text(self.text("Linha 1 · programa"));
@@ -5139,30 +5957,85 @@ impl SimpleComponent for MainWindow {
         }
         ui.run_button.set_sensitive(!self.debugging_active);
 
-        content_panel::update_line_numbers(&ui.code_buffer, &ui.line_numbers);
+        if let Some(target) = self.navigation_target
+            && target.serial != ui.displayed_navigation_serial
+            && self.active_document_id == Some(target.document_id)
+        {
+            let mut iter = ui.code_buffer.iter_at_offset(
+                target
+                    .offset
+                    .min(ui.code_buffer.char_count().max(0) as usize) as i32,
+            );
+            ui.code_buffer.place_cursor(&iter);
+            ui.code_view.scroll_to_iter(&mut iter, 0.2, false, 0.0, 0.0);
+            ui.code_view.grab_focus();
+            ui.displayed_navigation_serial = target.serial;
+        }
+
         content_panel::highlight_buffer(
             &ui.code_buffer,
             active_language.unwrap_or(self.new_file_language),
             &ui.syntax_tags,
         );
+        if active_document_changed || diagnostics_changed {
+            let active_diagnostics = editor_diagnostics
+                .iter()
+                .filter(|diagnostic| Some(diagnostic.document_id) == self.active_document_id)
+                .cloned()
+                .collect::<Vec<_>>();
+            content_panel::apply_diagnostics(
+                &ui.code_view,
+                &ui.code_buffer,
+                &active_diagnostics,
+                &ui.syntax_tags,
+                self.dark,
+            );
+        }
         update_cursor_position(&ui.code_buffer, &ui.status_position, self.ui_language);
         ui.status_position.set_visible(active_document.is_some());
     }
 }
 
-fn format_diagnostics(diagnostics: &[execution::ExecutionDiagnostic]) -> String {
+fn format_diagnostics(
+    diagnostics: &[execution::ExecutionDiagnostic],
+    source: Option<(Language, &str)>,
+) -> String {
     diagnostics
         .iter()
         .map(|diagnostic| {
-            let category = match diagnostic.kind {
-                execution::DiagnosticKind::Lexical => "Erro léxico",
-                execution::DiagnosticKind::Syntax => "Erro de sintaxe",
-                execution::DiagnosticKind::Type => "Erro de tipo",
-                execution::DiagnosticKind::Runtime => "Erro de execução",
+            let (category, diagnostic_category) = match diagnostic.kind {
+                execution::DiagnosticKind::Lexical => (
+                    "Erro léxico",
+                    crate::diagnostics::DiagnosticCategory::Lexical,
+                ),
+                execution::DiagnosticKind::Syntax => (
+                    "Erro de sintaxe",
+                    crate::diagnostics::DiagnosticCategory::Syntax,
+                ),
+                execution::DiagnosticKind::Type => {
+                    ("Erro de tipo", crate::diagnostics::DiagnosticCategory::Type)
+                }
+                execution::DiagnosticKind::Runtime => (
+                    "Erro de execução",
+                    crate::diagnostics::DiagnosticCategory::Runtime,
+                ),
             };
+            let message = source.map_or_else(
+                || diagnostic.message.clone(),
+                |(language, source)| {
+                    crate::diagnostics::adapt_diagnostic_message(
+                        language,
+                        source,
+                        diagnostic_category,
+                        &diagnostic.message,
+                        diagnostic.line,
+                        diagnostic.column,
+                    )
+                },
+            );
             format!(
-                "{category} · Linha {}, coluna {}: {}",
-                diagnostic.line, diagnostic.column, diagnostic.message
+                "{category} · Linha {}, coluna {}: {message}",
+                diagnostic.line, diagnostic.column
             )
         })
         .collect::<Vec<_>>()
@@ -5181,8 +6054,12 @@ fn learning_topic_label(topic: LearningTopic, language: UiLanguage) -> &'static 
             LearningTopic::Output => "saída",
             LearningTopic::Variable => "variável",
             LearningTopic::Assignment => "atribuição",
+            LearningTopic::Call => "chamada",
+            LearningTopic::LibraryCall => "chamada de biblioteca",
+            LearningTopic::Import => "importação",
             LearningTopic::Return => "retorno",
             LearningTopic::Program => "programa",
+            LearningTopic::Unrecognized => "não identificada",
         },
     )
 }
@@ -5199,7 +6076,29 @@ fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (String, String, 
         .map(|symbol| format_learning_symbol(symbol, hint.language, language, true))
         .collect::<Vec<_>>();
     let name = hint.name.as_deref().unwrap_or("?");
-    let mut explanation = match hint.topic {
+    if hint.topic == LearningTopic::LibraryCall
+        && let Some(knowledge) = hint
+            .call
+            .as_ref()
+            .and_then(|call| catalog::lookup_library_call(hint.language, call))
+    {
+        return (
+            text(knowledge.explanation),
+            text(knowledge.concept),
+            text(knowledge.experiment),
+        );
+    }
+    let call_name = hint.call.as_ref().map_or_else(
+        || name.to_owned(),
+        |call| {
+            let callee = call.receiver.as_ref().map_or_else(
+                || call.member.clone(),
+                |receiver| format!("{receiver}.{}", call.member),
+            );
+            format!("{callee}({})", call.arguments.join(", "))
+        },
+    );
+    let explanation = match hint.topic {
         LearningTopic::Function => {
             if has_syntax_error && hint.name.is_none() {
                 text(
@@ -5287,30 +6186,56 @@ fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (String, String, 
         LearningTopic::Loop => {
             text("Um laço repete instruções de acordo com uma condição ou faixa de valores.")
         }
-        LearningTopic::Input => text(
-            "leia solicita um valor e o armazena na variável informada antes de o programa continuar.",
-        ),
+        LearningTopic::Input => match hint.call.as_ref() {
+            Some(call) => format!(
+                "{} `{}` {}.",
+                text("A chamada"),
+                call.member,
+                text("obtém dados de entrada para o programa")
+            ),
+            None => text("A instrução de entrada fornece valores para o programa usar."),
+        },
         LearningTopic::Output => {
-            if hint.language == Language::GPortugol {
-                text("imprima mostra na saída os valores e textos informados.")
-            } else {
-                text("escreva e escreval mostram na saída os valores e textos informados.")
-            }
+            text("Esta instrução apresenta os dados informados na saída do programa.")
         }
         LearningTopic::Assignment => {
             text("A atribuição calcula o lado direito e atualiza o valor da variável à esquerda.")
         }
+        LearningTopic::Call => format!(
+            "{} `{call_name}` {}.",
+            text("A chamada"),
+            text("executa a função ou operação identificada nesta linha")
+        ),
+        LearningTopic::LibraryCall => format!(
+            "{} `{call_name}` {}.",
+            text("A chamada"),
+            text("executa uma operação disponível na biblioteca importada")
+        ),
+        LearningTopic::Import => match hint.name.as_deref() {
+            Some(library) => format!(
+                "{} `{library}` {}.",
+                text("A importação"),
+                text("disponibiliza os elementos dessa biblioteca ao programa")
+            ),
+            None => text("Esta linha importa elementos para uso no programa."),
+        },
         LearningTopic::Return => match hint.return_type.as_deref() {
-            Some("vazio") => text("Esta função não devolve valor; retorne encerra sua execução."),
+            Some("vazio") => text("Esta função termina sem devolver um valor."),
             Some(data_type) => format!(
                 "{} `{data_type}` {}.",
-                text("retorne encerra a função e entrega um valor do tipo"),
-                text("a quem a chamou")
+                text("O retorno entrega um valor do tipo"),
+                text("ao ponto que chamou a função")
             ),
-            None => text("retorne encerra a rotina e pode entregar um resultado a quem a chamou."),
+            None => text("O retorno devolve o controle ao ponto que chamou a rotina."),
         },
         LearningTopic::Program => text(
             "A linha selecionada participa do fluxo do algoritmo. Selecione outra linha para ver seu papel.",
+        ),
+        LearningTopic::Unrecognized if has_syntax_error => text(
+            "A análise não reconheceu esta linha; consulte a mensagem em Problemas nesta linha.",
+        ),
+        LearningTopic::Unrecognized => text(
+            "Esta linha não contém uma instrução reconhecida; comentários e linhas vazias não executam código.",
         ),
     };
 
@@ -5320,7 +6245,7 @@ fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (String, String, 
                 "Parâmetros são os dados recebidos pela função. `vazio` informa que nenhum resultado é devolvido.",
             ),
             Some("cadeia") => text(
-                "A função produz um valor de texto, representado pelo tipo `cadeia` em Portugol 2.0.",
+                "A função produz um valor de texto, representado pelo tipo `cadeia` em Portugol Studio 2.0.",
             ),
             Some("literal") if hint.language == Language::GPortugol => {
                 text("A função produz texto, representado pelo tipo `literal` no G-Portugol.")
@@ -5346,6 +6271,15 @@ fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (String, String, 
         LearningTopic::Assignment => text(
             "Atribuir associa um novo valor a uma variável; o operador determina como o valor é calculado.",
         ),
+        LearningTopic::Call => text(
+            "Uma chamada transfere a execução para uma função ou operação e depois continua no ponto seguinte.",
+        ),
+        LearningTopic::LibraryCall => {
+            text("Uma biblioteca fornece operações que o programa pode reutilizar.")
+        }
+        LearningTopic::Import => {
+            text("A importação torna disponíveis nomes e operações definidos em outra biblioteca.")
+        }
         LearningTopic::Return => {
             text("O retorno leva o resultado da função de volta ao ponto que a chamou.")
         }
@@ -5356,16 +6290,16 @@ fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (String, String, 
         LearningTopic::Program => {
             text("Uma instrução é executada na ordem definida pelo algoritmo.")
         }
+        LearningTopic::Unrecognized => String::new(),
     };
 
-    if hint.language == Language::Potigol {
-        explanation.push(' ');
-        explanation.push_str(&text(
-            "Esta análise do Potigol é heurística e pode não reconhecer todos os casos da linguagem.",
-        ));
-    }
-
     let experiment = match hint.topic {
+        LearningTopic::Function
+            if hint.return_type.as_deref() == Some("vazio")
+                || (hint.language == Language::GPortugol && hint.return_type.is_none()) =>
+        {
+            text("Chame a função e observe as ações que ela executa.")
+        }
         LearningTopic::Function if !hint.parameters.is_empty() => format!(
             "{} `{name}` {}.",
             text("Mude um argumento na chamada de"),
@@ -5395,18 +6329,23 @@ fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (String, String, 
             text("Digite outro valor e observe como o restante do programa reage.")
         }
         LearningTopic::Output => text("Altere o texto ou o valor exibido e execute novamente."),
+        LearningTopic::Variable if hint.variables.iter().any(|variable| variable.is_constant) => {
+            String::new()
+        }
         LearningTopic::Variable => {
             text("Altere o valor inicial ou um elemento do vetor e observe o efeito no resultado.")
         }
         LearningTopic::Assignment => {
             text("Troque o valor atribuído e acompanhe a próxima leitura da variável.")
         }
+        LearningTopic::Call | LearningTopic::Import | LearningTopic::LibraryCall => String::new(),
         LearningTopic::Return => {
             text("Altere o valor devolvido e veja como a chamada da função reage.")
         }
         LearningTopic::Program => {
             text("Selecione uma linha com entrada, saída, condição ou laço para experimentar.")
         }
+        LearningTopic::Unrecognized => String::new(),
     };
     (explanation, concept, experiment)
 }
@@ -5599,29 +6538,11 @@ fn build_window_content(
     content_panel::set_syntax_palette(&syntax_tags, initial_dark);
     content_panel::highlight_buffer(&code_buffer, Language::Portugol, &syntax_tags);
 
-    let line_numbers = gtk::Label::new(None);
-    line_numbers.set_xalign(1.0);
-    line_numbers.set_yalign(0.0);
-    line_numbers.add_css_class("dim-label");
-    line_numbers.add_css_class("monospace");
-    line_numbers.add_css_class("potoo-line-numbers");
-    line_numbers.add_css_class(&format!("potoo-font-{}", preferences.font_size));
-    line_numbers.set_visible(preferences.line_numbers_visible);
-    line_numbers.set_margin_top(14);
-    line_numbers.set_margin_bottom(14);
-    line_numbers.set_margin_start(12);
-    line_numbers.set_margin_end(12);
-    content_panel::update_line_numbers(&code_buffer, &line_numbers);
-
-    let line_number_gutter = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    line_number_gutter.add_css_class("potoo-line-number-gutter");
-    line_number_gutter.append(&line_numbers);
-    let line_numbers_separator = gtk::Separator::new(gtk::Orientation::Vertical);
-    line_numbers_separator.add_css_class("potoo-gutter-separator");
-    line_numbers_separator.set_visible(preferences.line_numbers_visible);
-    line_number_gutter.append(&line_numbers_separator);
-
     let code_view = sourceview5::View::with_buffer(&source_buffer);
+    code_view.set_show_line_numbers(preferences.line_numbers_visible);
+    sourceview5::prelude::ViewExt::gutter(&code_view, gtk::TextWindowType::Left)
+        .add_css_class("potoo-code-gutter");
+    content_panel::install_diagnostic_markers(&code_view, initial_dark);
     code_view.set_monospace(true);
     code_view.set_wrap_mode(if preferences.word_wrap {
         gtk::WrapMode::WordChar
@@ -5637,7 +6558,6 @@ fn build_window_content(
     code_view.set_tab_width(preferences.indent_width);
     code_view.set_insert_spaces_instead_of_tabs(true);
     code_view.set_indent_on_tab(true);
-    code_view.set_gutter(gtk::TextWindowType::Left, Some(&line_number_gutter));
     code_view.add_css_class("potoo-code-editor");
     code_view.add_css_class(&format!("potoo-font-{}", preferences.font_size));
     let completion_provider = content_panel::CompletionProvider::new();
@@ -5697,9 +6617,7 @@ fn build_window_content(
     let output_buffer = output_ui.output_buffer;
     let output_tab_output = output_ui.output_tab;
     let output_view = output_ui.output_view;
-    let problems_buffer = output_ui.problems_buffer;
-    let problems_view = output_ui.problems_view;
-    let problems_tab = output_ui.problems_tab;
+    let problems_list = output_ui.problems_list;
     let debugger_controls = output_ui.debugger_controls;
     let debugger_start = output_ui.debugger_start;
     let debugger_step = output_ui.debugger_step;
@@ -5907,7 +6825,7 @@ fn build_window_content(
         show_new_project_dialog(
             &window_for_start_portugol,
             language_for_start_portugol.get(),
-            ProjectTemplate::Portugol20,
+            ProjectTemplate::GPortugol,
             false,
             dark_for_start_portugol.get(),
             sender_for_start_portugol.clone(),
@@ -5926,6 +6844,21 @@ fn build_window_content(
             false,
             dark_for_start_potigol.get(),
             sender_for_start_potigol.clone(),
+        );
+    });
+
+    let sender_for_start_calango = sender.clone();
+    let window_for_start_calango = window.clone();
+    let dark_for_start_calango = dark_theme.clone();
+    let language_for_start_calango = ui_language_state.clone();
+    start_page.calango_button.connect_clicked(move |_| {
+        show_new_project_dialog(
+            &window_for_start_calango,
+            language_for_start_calango.get(),
+            ProjectTemplate::Calango,
+            false,
+            dark_for_start_calango.get(),
+            sender_for_start_calango.clone(),
         );
     });
 
@@ -6040,6 +6973,12 @@ fn build_window_content(
         entry.set_text("");
     });
 
+    let sender_for_character_input = sender.clone();
+    input_entry.connect_changed(move |entry| {
+        sender_for_character_input
+            .input(MainWindowMsg::ProgramInputChanged(entry.text().to_string()));
+    });
+
     let sender_for_input_cancel = sender.clone();
     input_entry.add_controller(input_cancel_controller(&input_entry, move || {
         sender_for_input_cancel.input(MainWindowMsg::StopDebug);
@@ -6111,13 +7050,9 @@ fn build_window_content(
         code_view,
         completion_provider,
         syntax_tags,
-        line_numbers,
-        line_numbers_separator,
         output_buffer,
         output_view,
-        problems_buffer,
-        problems_view,
-        problems_tab,
+        problems_list,
         input_entry,
         output_status,
         debugger_start,
@@ -6134,11 +7069,14 @@ fn build_window_content(
         game_preview_button: tools_ui.game_preview_button,
         game_preview_stack: tools_ui.game_preview_stack,
         game_preview_area: tools_ui.game_preview_area,
+        game_preview_open_button: tools_ui.game_preview_open_button,
         learning_spinner: learning_ui.spinner,
         learning_analysis_stack: learning_ui.analysis_stack,
         learning_line_title: learning_ui.line_title,
         learning_explanation: learning_ui.explanation,
         learning_experiment: learning_ui.experiment,
+        learning_concept_section: learning_ui.concept_section,
+        learning_experiment_section: learning_ui.experiment_section,
         learning_concept_title: learning_ui.concept_title,
         learning_concept_text: learning_ui.concept_text,
         learning_problem_list: learning_ui.problem_list,
@@ -6169,7 +7107,8 @@ fn build_window_content(
         displayed_settings_visible: false,
         displayed_output_text: tr(ui_language, "A saída aparecerá aqui após a execução.")
             .to_string(),
-        displayed_problem_text: tr(ui_language, "Nenhum problema detectado").to_string(),
+        displayed_diagnostics: Vec::new(),
+        displayed_navigation_serial: 0,
         displayed_input_requested: false,
         displayed_output_status: tr(ui_language, "Pronto para executar").to_string(),
         displayed_debugger_snapshot: None,
@@ -6662,12 +7601,15 @@ fn show_open_file_dialog(
     let filter = gtk::FileFilter::new();
     filter.set_name(Some(tr(
         language,
-        "Portugol, VisuAlg, Potigol e G-Portugol (*.por, *.alg, *.poti, *.gpt)",
+        "Arquivos Mapler e outros dialetos (*.mapler, *.clg, *.gpt, *.alg, *.por, *.poti, *.txt para Mapler)",
     )));
     filter.add_suffix("por");
     filter.add_suffix("alg");
     filter.add_suffix("poti");
     filter.add_suffix("gpt");
+    filter.add_suffix("clg");
+    filter.add_suffix("mapler");
+    filter.add_suffix("txt");
     let filters = gtk::gio::ListStore::new::<gtk::FileFilter>();
     filters.append(&filter);
     dialog.set_filters(Some(&filters));
@@ -6769,19 +7711,23 @@ fn update_project_template_selector(
     field: &gtk::Box,
     label: &gtk::Label,
     portugol_options: &gtk::Box,
-    portugol_buttons: [&gtk::Button; 3],
+    portugol_buttons: [&gtk::Button; 4],
     potigol_options: &gtk::Box,
     potigol_buttons: [&gtk::Button; 2],
 ) {
     match template {
-        ProjectTemplate::GPortugol | ProjectTemplate::Portugol20 | ProjectTemplate::Visualg => {
+        ProjectTemplate::GPortugol
+        | ProjectTemplate::Portugol20
+        | ProjectTemplate::Visualg
+        | ProjectTemplate::Mapler => {
             label.set_text(tr(ui_language, "Variante do Portugol"));
             portugol_options.set_visible(true);
             potigol_options.set_visible(false);
             let selected = match template {
                 ProjectTemplate::GPortugol => 0,
-                ProjectTemplate::Portugol20 => 1,
-                ProjectTemplate::Visualg => 2,
+                ProjectTemplate::Visualg => 1,
+                ProjectTemplate::Portugol20 => 2,
+                ProjectTemplate::Mapler => 3,
                 _ => unreachable!(),
             };
             set_selected_variant_button(&portugol_buttons, selected);
@@ -6803,15 +7749,27 @@ fn update_project_template_selector(
                 button.remove_css_class("selected");
             }
         }
+        ProjectTemplate::Calango => {
+            portugol_options.set_visible(false);
+            potigol_options.set_visible(false);
+            for button in portugol_buttons.into_iter().chain(potigol_buttons) {
+                button.remove_css_class("selected");
+            }
+            field.set_visible(false);
+        }
     }
-    field.set_visible(true);
+    if template != ProjectTemplate::Calango {
+        field.set_visible(true);
+    }
 }
 
 fn project_template_variant_index(template: ProjectTemplate) -> u32 {
     match template {
         ProjectTemplate::GPortugol | ProjectTemplate::PotigolClassic => 0,
-        ProjectTemplate::Portugol20 | ProjectTemplate::PotigolJerimum => 1,
-        ProjectTemplate::Visualg => 2,
+        ProjectTemplate::Visualg | ProjectTemplate::PotigolJerimum => 1,
+        ProjectTemplate::Portugol20 => 2,
+        ProjectTemplate::Mapler => 3,
+        ProjectTemplate::Calango => 0,
     }
 }
 
@@ -6820,9 +7778,11 @@ fn project_template_for_variant(language: Language, selected: u32) -> Option<Pro
         (Language::Potigol, 0) => Some(ProjectTemplate::PotigolClassic),
         (Language::Potigol, 1) => Some(ProjectTemplate::PotigolJerimum),
         (Language::Potigol, _) => None,
+        (Language::Calango, _) => None,
         (_, 0) => Some(ProjectTemplate::GPortugol),
-        (_, 1) => Some(ProjectTemplate::Portugol20),
-        (_, 2) => Some(ProjectTemplate::Visualg),
+        (_, 1) => Some(ProjectTemplate::Visualg),
+        (_, 2) => Some(ProjectTemplate::Portugol20),
+        (_, 3) => Some(ProjectTemplate::Mapler),
         (_, _) => None,
     }
 }
@@ -6926,19 +7886,22 @@ fn show_new_project_dialog(
     language_label.add_css_class("potoo-project-field-label");
     let language_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     language_row.set_margin_top(1);
-    let portugol_button = language_option_button("Portugol", tr(ui_language, "3 variantes"));
+    let portugol_button = language_option_button("Portugol", tr(ui_language, "4 variantes"));
+    let calango_button = language_option_button("Calango", ".clg");
     let potigol_button = language_option_button("Potigol", tr(ui_language, "2 variantes"));
-    for button in [&portugol_button, &potigol_button] {
+    for button in [&portugol_button, &calango_button, &potigol_button] {
         button.add_css_class("potoo-project-language-choice");
         button.set_hexpand(true);
     }
     match default_language {
-        Language::Portugol | Language::GPortugol | Language::Visualg => {
+        Language::Portugol | Language::GPortugol | Language::Visualg | Language::Mapler => {
             portugol_button.add_css_class("selected")
         }
         Language::Potigol => potigol_button.add_css_class("selected"),
+        Language::Calango => calango_button.add_css_class("selected"),
     }
     language_row.append(&portugol_button);
+    language_row.append(&calango_button);
     language_row.append(&potigol_button);
     language_field.append(&language_label);
     language_field.append(&language_row);
@@ -6950,8 +7913,9 @@ fn show_new_project_dialog(
     portugol_options.set_hexpand(true);
     let portugol_variant_buttons = [
         language_option_button("G-Portugol", ".gpt"),
-        language_option_button("Portugol 2.0", ".por"),
         language_option_button("VisuAlg", ".alg"),
+        language_option_button("Portugol Studio 2.0", ".por"),
+        language_option_button("Mapler", ".mapler"),
     ];
     let potigol_options = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     potigol_options.set_homogeneous(true);
@@ -6979,8 +7943,12 @@ fn show_new_project_dialog(
     let variant_label = gtk::Label::new(None);
     variant_label.set_xalign(0.0);
     variant_label.add_css_class("potoo-project-field-label");
-    let portugol_variant_picker =
-        gtk::DropDown::from_strings(&["G-Portugol", "Portugol 2.0", "VisuAlg"]);
+    let portugol_variant_picker = gtk::DropDown::from_strings(&[
+        "G-Portugol",
+        "VisuAlg",
+        "Portugol Studio 2.0",
+        "Mapler (.mapler)",
+    ]);
     portugol_variant_picker.add_css_class("potoo-settings-picker");
     portugol_variant_picker.set_hexpand(true);
     portugol_variant_picker.set_selected(project_template_variant_index(default_template));
@@ -7009,6 +7977,7 @@ fn show_new_project_dialog(
             &portugol_variant_buttons[0],
             &portugol_variant_buttons[1],
             &portugol_variant_buttons[2],
+            &portugol_variant_buttons[3],
         ],
         &potigol_options,
         [&potigol_variant_buttons[0], &potigol_variant_buttons[1]],
@@ -7019,18 +7988,20 @@ fn show_new_project_dialog(
         portugol_options.set_visible(false);
         potigol_options.set_visible(false);
         match default_language {
-            Language::Portugol | Language::GPortugol | Language::Visualg => {
+            Language::Portugol | Language::GPortugol | Language::Visualg | Language::Mapler => {
                 portugol_variant_picker.set_visible(true)
             }
             Language::Potigol => potigol_variant_picker.set_visible(true),
+            Language::Calango => variant_field.set_visible(false),
         }
     }
     connect_project_template_choices(
         &portugol_variant_buttons,
         &[
             ProjectTemplate::GPortugol,
-            ProjectTemplate::Portugol20,
             ProjectTemplate::Visualg,
+            ProjectTemplate::Portugol20,
+            ProjectTemplate::Mapler,
         ],
         selected_template.clone(),
     );
@@ -7062,6 +8033,7 @@ fn show_new_project_dialog(
     }
 
     let potigol_button_for_portugol = potigol_button.clone();
+    let calango_button_for_portugol = calango_button.clone();
     let selected_template_for_portugol = selected_template.clone();
     let variant_field_for_portugol = variant_field.clone();
     let variant_label_for_portugol = variant_label.clone();
@@ -7075,6 +8047,7 @@ fn show_new_project_dialog(
     portugol_button.connect_clicked(move |button| {
         button.add_css_class("selected");
         potigol_button_for_portugol.remove_css_class("selected");
+        calango_button_for_portugol.remove_css_class("selected");
         let template = ProjectTemplate::Portugol20;
         selected_template_for_portugol.set(template);
         update_project_template_selector(
@@ -7087,6 +8060,7 @@ fn show_new_project_dialog(
                 &portugol_buttons_for_portugol[0],
                 &portugol_buttons_for_portugol[1],
                 &portugol_buttons_for_portugol[2],
+                &portugol_buttons_for_portugol[3],
             ],
             &potigol_options_for_portugol,
             [
@@ -7103,6 +8077,7 @@ fn show_new_project_dialog(
         }
     });
     let portugol_button_for_potigol = portugol_button.clone();
+    let calango_button_for_potigol = calango_button.clone();
     let selected_template_for_potigol = selected_template.clone();
     let variant_field_for_potigol = variant_field.clone();
     let variant_label_for_potigol = variant_label.clone();
@@ -7116,6 +8091,7 @@ fn show_new_project_dialog(
     potigol_button.connect_clicked(move |button| {
         button.add_css_class("selected");
         portugol_button_for_potigol.remove_css_class("selected");
+        calango_button_for_potigol.remove_css_class("selected");
         let template = ProjectTemplate::PotigolClassic;
         selected_template_for_potigol.set(template);
         update_project_template_selector(
@@ -7128,6 +8104,7 @@ fn show_new_project_dialog(
                 &portugol_buttons_for_potigol[0],
                 &portugol_buttons_for_potigol[1],
                 &portugol_buttons_for_potigol[2],
+                &portugol_buttons_for_potigol[3],
             ],
             &potigol_options_for_potigol,
             [
@@ -7142,6 +8119,25 @@ fn show_new_project_dialog(
             potigol_picker_for_potigol.set_visible(true);
             potigol_picker_for_potigol.set_selected(0);
         }
+    });
+    let portugol_button_for_calango = portugol_button.clone();
+    let potigol_button_for_calango = potigol_button.clone();
+    let selected_template_for_calango = selected_template.clone();
+    let variant_field_for_calango = variant_field.clone();
+    let portugol_options_for_calango = portugol_options.clone();
+    let potigol_options_for_calango = potigol_options.clone();
+    let portugol_picker_for_calango = portugol_variant_picker.clone();
+    let potigol_picker_for_calango = potigol_variant_picker.clone();
+    calango_button.connect_clicked(move |button| {
+        button.add_css_class("selected");
+        portugol_button_for_calango.remove_css_class("selected");
+        potigol_button_for_calango.remove_css_class("selected");
+        selected_template_for_calango.set(ProjectTemplate::Calango);
+        variant_field_for_calango.set_visible(false);
+        portugol_options_for_calango.set_visible(false);
+        potigol_options_for_calango.set_visible(false);
+        portugol_picker_for_calango.set_visible(false);
+        potigol_picker_for_calango.set_visible(false);
     });
 
     let location_field = gtk::Box::new(gtk::Orientation::Vertical, 6);
@@ -7437,20 +8433,23 @@ fn show_new_file_dialog(
     language_label.add_css_class("potoo-project-field-label");
     let language_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     language_row.set_margin_top(1);
-    let portugol_button = language_option_button("Portugol", tr(ui_language, "3 variantes"));
+    let portugol_button = language_option_button("Portugol", tr(ui_language, "4 variantes"));
+    let calango_button = language_option_button("Calango", ".clg");
     let potigol_button = language_option_button("Potigol", tr(ui_language, "2 variantes"));
-    for button in [&portugol_button, &potigol_button] {
+    for button in [&portugol_button, &calango_button, &potigol_button] {
         button.add_css_class("potoo-project-language-choice");
         button.set_hexpand(true);
     }
     let default_template = ProjectTemplate::default_for_language(default_language);
     match default_template.language() {
-        Language::Portugol | Language::Visualg | Language::GPortugol => {
+        Language::Portugol | Language::Visualg | Language::GPortugol | Language::Mapler => {
             portugol_button.add_css_class("selected")
         }
         Language::Potigol => potigol_button.add_css_class("selected"),
+        Language::Calango => calango_button.add_css_class("selected"),
     }
     language_row.append(&portugol_button);
+    language_row.append(&calango_button);
     language_row.append(&potigol_button);
     language_field.append(&language_label);
     language_field.append(&language_row);
@@ -7463,15 +8462,15 @@ fn show_new_file_dialog(
     let variant_label = gtk::Label::new(None);
     variant_label.set_xalign(0.0);
     variant_label.add_css_class("potoo-project-field-label");
-    let portugol_variant_picker =
-        gtk::DropDown::from_strings(&["G-Portugol", "Portugol 2.0", "VisuAlg"]);
+    let portugol_variant_picker = gtk::DropDown::from_strings(&[
+        "G-Portugol",
+        "VisuAlg",
+        "Portugol Studio 2.0",
+        "Mapler (.mapler)",
+    ]);
     portugol_variant_picker.add_css_class("potoo-settings-picker");
     portugol_variant_picker.set_hexpand(true);
-    portugol_variant_picker.set_selected(match default_template {
-        ProjectTemplate::GPortugol => 0,
-        ProjectTemplate::Visualg => 2,
-        _ => 1,
-    });
+    portugol_variant_picker.set_selected(project_template_variant_index(default_template));
     let potigol_variant_picker =
         gtk::DropDown::from_strings(&["Potigol Clássico", "Potigol Jerimum (Jogo 2D)"]);
     potigol_variant_picker.add_css_class("potoo-settings-picker");
@@ -7486,13 +8485,18 @@ fn show_new_file_dialog(
     variant_field.append(&potigol_variant_picker);
     content.append(&variant_field);
     match default_template.language() {
-        Language::Portugol | Language::Visualg | Language::GPortugol => {
+        Language::Portugol | Language::Visualg | Language::GPortugol | Language::Mapler => {
             variant_label.set_text(tr(ui_language, "Variante do Portugol"));
             potigol_variant_picker.set_visible(false);
         }
         Language::Potigol => {
             variant_label.set_text(tr(ui_language, "Variante do Potigol"));
             portugol_variant_picker.set_visible(false);
+        }
+        Language::Calango => {
+            variant_field.set_visible(false);
+            portugol_variant_picker.set_visible(false);
+            potigol_variant_picker.set_visible(false);
         }
     }
     portugol_variant_picker.connect_selected_notify({
@@ -7517,6 +8521,7 @@ fn show_new_file_dialog(
     });
 
     let potigol_for_portugol = potigol_button.clone();
+    let calango_for_portugol = calango_button.clone();
     let selected_for_portugol = selected_template.clone();
     let variant_label_for_portugol = variant_label.clone();
     let portugol_picker_for_portugol = portugol_variant_picker.clone();
@@ -7524,6 +8529,7 @@ fn show_new_file_dialog(
     portugol_button.connect_clicked(move |button| {
         button.add_css_class("selected");
         potigol_for_portugol.remove_css_class("selected");
+        calango_for_portugol.remove_css_class("selected");
         let template = ProjectTemplate::Portugol20;
         selected_for_portugol.set(template);
         variant_label_for_portugol.set_text(tr(ui_language, "Variante do Portugol"));
@@ -7532,6 +8538,7 @@ fn show_new_file_dialog(
         portugol_picker_for_portugol.set_selected(1);
     });
     let portugol_for_potigol = portugol_button.clone();
+    let calango_for_potigol = calango_button.clone();
     let selected_for_potigol = selected_template.clone();
     let variant_label_for_potigol = variant_label.clone();
     let portugol_picker_for_potigol = portugol_variant_picker.clone();
@@ -7539,12 +8546,28 @@ fn show_new_file_dialog(
     potigol_button.connect_clicked(move |button| {
         button.add_css_class("selected");
         portugol_for_potigol.remove_css_class("selected");
+        calango_for_potigol.remove_css_class("selected");
         let template = ProjectTemplate::PotigolClassic;
         selected_for_potigol.set(template);
         variant_label_for_potigol.set_text(tr(ui_language, "Variante do Potigol"));
         portugol_picker_for_potigol.set_visible(false);
         potigol_picker_for_potigol.set_visible(true);
         potigol_picker_for_potigol.set_selected(0);
+    });
+    let portugol_for_calango = portugol_button.clone();
+    let potigol_for_calango = potigol_button.clone();
+    let selected_for_calango = selected_template.clone();
+    let variant_for_calango = variant_field.clone();
+    let portugol_picker_for_calango = portugol_variant_picker.clone();
+    let potigol_picker_for_calango = potigol_variant_picker.clone();
+    calango_button.connect_clicked(move |button| {
+        button.add_css_class("selected");
+        portugol_for_calango.remove_css_class("selected");
+        potigol_for_calango.remove_css_class("selected");
+        selected_for_calango.set(ProjectTemplate::Calango);
+        variant_for_calango.set_visible(false);
+        portugol_picker_for_calango.set_visible(false);
+        potigol_picker_for_calango.set_visible(false);
     });
 
     let folder_field = gtk::Box::new(gtk::Orientation::Vertical, 6);
@@ -7851,7 +8874,22 @@ fn show_save_dialog(
     let dialog = gtk::FileDialog::new();
     dialog.set_title(tr(language, "Salvar arquivo"));
     dialog.set_modal(true);
-    dialog.set_initial_name(Some(&document.name));
+    let initial_name = match document.path.as_deref() {
+        Some(path)
+            if document.language == Language::Mapler
+                && path
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("txt")) =>
+        {
+            path.with_extension("mapler")
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| document.name.clone())
+        }
+        _ => document.name.clone(),
+    };
+    dialog.set_initial_name(Some(&initial_name));
     if let Some(folder) = document
         .path
         .as_deref()
@@ -8080,7 +9118,11 @@ fn new_source_path(
     let requested_path = Path::new(name);
     let language = match requested_path.extension() {
         Some(_) => Language::from_path(requested_path).ok_or_else(|| {
-            tr(ui_language, "Use a extensão .por, .alg, .poti ou .gpt.").to_string()
+            tr(
+                ui_language,
+                "Use a extensão .por, .alg, .poti, .gpt, .clg ou .mapler.",
+            )
+            .to_string()
         })?,
         None => default_language,
     };
@@ -8164,9 +9206,11 @@ fn normalized_project_item_name(
         return match requested_path.extension() {
             None => Ok(format!("{name}.{}", language.extension())),
             Some(_) if Language::from_path(requested_path).is_some() => Ok(name.to_string()),
-            Some(_) => {
-                Err(tr(ui_language, "Use a extensão .por, .alg, .poti ou .gpt.").to_string())
-            }
+            Some(_) => Err(tr(
+                ui_language,
+                "Use a extensão .por, .alg, .poti, .gpt, .clg ou .mapler.",
+            )
+            .to_string()),
         };
     }
 
@@ -8178,13 +9222,21 @@ fn supported_save_path(
     default_language: Language,
     ui_language: UiLanguage,
 ) -> Result<(PathBuf, Language), String> {
+    if default_language == Language::Mapler
+        && path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("txt"))
+    {
+        return Ok((path.with_extension("mapler"), Language::Mapler));
+    }
     match path.extension() {
         Some(_) => Language::from_path(&path)
             .map(|language| (path, language))
             .ok_or_else(|| {
                 tr(
                     ui_language,
-                    "Salve o código com a extensão .por, .alg, .poti ou .gpt.",
+                    "Salve o código com a extensão .por, .alg, .poti, .gpt, .clg ou .mapler.",
                 )
                 .to_string()
             }),
@@ -8368,7 +9420,7 @@ mod ui_language_tests {
                 Language::GPortugol,
                 UiLanguage::Portuguese
             )
-            .expect("the .por extension must remain associated with Portugol 2.0")
+            .expect("the .por extension must remain associated with Portugol Studio 2.0")
             .1,
             Language::Portugol
         );
@@ -8449,12 +9501,63 @@ fim";
     }
 
     #[test]
-    fn learning_copy_discloses_potigol_heuristics_and_uses_neutral_procedure_concept() {
+    fn learning_copy_avoids_claims_for_unknown_lines_and_uses_neutral_procedure_concept() {
         let potigol = learning_copy(
             &learning_hint("soma = 1 + 2", 1, Language::Potigol),
             UiLanguage::Portuguese,
         );
-        assert!(potigol.0.contains("heurística"));
+        assert!(!potigol.0.contains("heurística"));
+
+        let unknown = learning_copy(
+            &learning_hint("??", 1, Language::Potigol),
+            UiLanguage::Portuguese,
+        );
+        assert!(unknown.0.contains("não reconheceu"));
+        assert!(unknown.1.is_empty());
+        assert!(unknown.2.is_empty());
+
+        let comment = learning_copy(
+            &learning_hint("# comentário", 1, Language::Potigol),
+            UiLanguage::Portuguese,
+        );
+        assert!(comment.0.contains("comentários e linhas vazias"));
+        assert!(comment.1.is_empty());
+        assert!(comment.2.is_empty());
+
+        let jerimum = learning_copy(
+            &learning_hint(
+                "use \"jerimum\"\ndesenhe_personagem(g: Graphics2D): Nada\n  g.setColor(Cor.VERDE.color)\nfim",
+                3,
+                Language::Potigol,
+            ),
+            UiLanguage::English,
+        );
+        assert!(jerimum.0.contains("sets the color"));
+        assert!(jerimum.1.contains("graphics context"));
+        assert!(jerimum.2.contains("another Cor constant"));
+
+        let fill_rect = learning_copy(
+            &learning_hint(
+                "use \"jerimum\"\ndesenhe(g: Graphics2D): Nada\n  g.fillRect(1, 2, 32, 32)\nfim",
+                3,
+                Language::Potigol,
+            ),
+            UiLanguage::English,
+        );
+        assert!(fill_rect.0.contains("filled rectangle"));
+        assert!(fill_rect.2.contains("last two arguments"));
+
+        let game_start = learning_copy(
+            &learning_hint(
+                "use \"jerimum\"\njogo.iniciar(\"Jogo\", 320, 200, atualize, desenhe, 60)",
+                2,
+                Language::Potigol,
+            ),
+            UiLanguage::English,
+        );
+        assert!(game_start.0.contains("opens the game window"));
+        assert!(game_start.1.contains("game loop"));
+        assert!(game_start.2.contains("width and height"));
 
         let procedure_hint = super::LearningHint {
             line: 1,
@@ -8467,6 +9570,7 @@ fim";
             variables: Vec::new(),
             expression: None,
             experiment_expression: None,
+            call: None,
             problems: Vec::new(),
         };
         let procedure = learning_copy(&procedure_hint, UiLanguage::Portuguese);

@@ -72,7 +72,7 @@ pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
         tr(language, "Novo arquivo"),
         tr(
             language,
-            "Criar um arquivo Portugol, VisuAlg, Potigol ou G-Portugol",
+            "Criar um arquivo Calango, G-Portugol, VisuAlg, Portugol Studio 2.0, Mapler ou Potigol",
         ),
         "potoo-sidebar-menu-item",
     );
@@ -103,7 +103,7 @@ pub(crate) fn build_file_sidebar(language: UiLanguage) -> SidebarUi {
         tr(language, "Novo projeto"),
         tr(
             language,
-            "Criar um projeto Portugol, VisuAlg, Potigol ou G-Portugol",
+            "Criar um projeto Calango, G-Portugol, VisuAlg, Portugol Studio 2.0, Mapler ou Potigol",
         ),
         "potoo-sidebar-create-project",
     );
@@ -211,7 +211,7 @@ pub(crate) fn rebuild_file_list(
     {
         let empty_label = gtk::Label::new(Some(tr(
             language,
-            "Nenhum programa .por, .alg, .poti ou .gpt nesta pasta. Os demais arquivos aparecem na lista.",
+            "Nenhum programa .por, .alg, .poti, .gpt, .clg ou .mapler nesta pasta. Os demais arquivos aparecem na lista.",
         )));
         empty_label.set_wrap(true);
         empty_label.set_xalign(0.0);

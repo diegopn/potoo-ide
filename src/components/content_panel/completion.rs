@@ -460,7 +460,11 @@ pub(crate) fn suggestions(
             Language::Potigol if potigol_jerimum_imported(source, cursor) => {
                 potigol_members(&owner)
             }
-            Language::Visualg | Language::GPortugol | Language::Potigol => &[],
+            Language::Visualg
+            | Language::GPortugol
+            | Language::Potigol
+            | Language::Calango
+            | Language::Mapler => &[],
         };
         if !members.is_empty() {
             for member in members {
@@ -483,6 +487,12 @@ pub(crate) fn suggestions(
 
     let (keywords, functions, snippets) = catalog(language);
     for keyword in language.keywords().iter().chain(keywords.iter()) {
+        if snippets
+            .iter()
+            .any(|snippet| snippet.label.eq_ignore_ascii_case(*keyword))
+        {
+            continue;
+        }
         let kind = if functions.contains(keyword) {
             CompletionKind::Function
         } else {
@@ -498,6 +508,12 @@ pub(crate) fn suggestions(
         );
     }
     for function in functions {
+        if snippets
+            .iter()
+            .any(|snippet| snippet.label.eq_ignore_ascii_case(*function))
+        {
+            continue;
+        }
         push_item(
             &mut candidates,
             function,
@@ -731,6 +747,70 @@ fn catalog(
             ],
             GPORTUGOL_SNIPPETS,
         ),
+        Language::Calango => (
+            &[
+                "algoritmo",
+                "principal",
+                "fimPrincipal",
+                "inteiro",
+                "real",
+                "logico",
+                "caracter",
+                "texto",
+                "funcao",
+                "procedimento",
+                "retorna",
+                "se",
+                "entao",
+                "senaoSe",
+                "senao",
+                "fimSe",
+                "escolha",
+                "caso",
+                "outroCaso",
+                "fimEscolha",
+                "enquanto",
+                "faca",
+                "fimEnquanto",
+                "para",
+                "de",
+                "ate",
+                "passo",
+                "fimPara",
+                "interrompa",
+                "verdadeiro",
+                "falso",
+                "e",
+                "ou",
+                "nao",
+            ],
+            &[
+                "escreva",
+                "escreval",
+                "leia",
+                "leiaCaracter",
+                "limpaTela",
+                "abs",
+                "aleatorio",
+                "asciiCaracter",
+                "caracterAscii",
+                "caracterTexto",
+                "comparaTexto",
+                "convCaractTexto",
+                "convTextoCaract",
+                "copia",
+                "exp",
+                "maiusculo",
+                "maiusculoCaracter",
+                "minusculo",
+                "minusculoCaracter",
+                "pi",
+                "raizQuadrada",
+                "tamanhoTexto",
+            ],
+            &[],
+        ),
+        Language::Mapler => (&[], &[], &[]),
     }
 }
 
@@ -766,7 +846,7 @@ const PORTUGOL_SNIPPETS: &[Snippet] = &[
         text: "enquanto (⟪cursor⟫) {\n  \n}",
     },
     Snippet {
-        label: "escreva · saída",
+        label: "escreva",
         text: "escreva(\"⟪cursor⟫\")",
     },
 ];
@@ -785,14 +865,14 @@ const VISUALG_SNIPPETS: &[Snippet] = &[
         text: "enquanto ⟪cursor⟫ faca\n  \nfimenquanto",
     },
     Snippet {
-        label: "escreval · saída",
+        label: "escreval",
         text: "escreval(\"⟪cursor⟫\")",
     },
 ];
 
 const POTIGOL_SNIPPETS: &[Snippet] = &[
     Snippet {
-        label: "escreva · saída",
+        label: "escreva",
         text: "escreva \"⟪cursor⟫\"",
     },
     Snippet {
@@ -823,7 +903,7 @@ const GPORTUGOL_SNIPPETS: &[Snippet] = &[
         text: "enquanto ⟪cursor⟫ faça\n  \nfim-enquanto",
     },
     Snippet {
-        label: "imprima · saída",
+        label: "imprima",
         text: "imprima(\"⟪cursor⟫\");",
     },
 ];
@@ -936,8 +1016,10 @@ fn is_in_comment(language: Language, chars: &[char], cursor: usize) -> bool {
             index += 1;
             continue;
         }
-        if matches!(language, Language::Portugol | Language::GPortugol)
-            && chars[index] == '/'
+        if matches!(
+            language,
+            Language::Portugol | Language::GPortugol | Language::Calango
+        ) && chars[index] == '/'
             && chars.get(index + 1) == Some(&'*')
         {
             index += 2;
@@ -998,8 +1080,10 @@ fn is_in_string(language: Language, chars: &[char], cursor: usize) -> bool {
             index += usize::from(index < cursor);
             continue;
         }
-        if matches!(language, Language::Portugol | Language::GPortugol)
-            && chars[index] == '/'
+        if matches!(
+            language,
+            Language::Portugol | Language::GPortugol | Language::Calango
+        ) && chars[index] == '/'
             && chars.get(index + 1) == Some(&'*')
         {
             index += 2;
@@ -1297,6 +1381,8 @@ fn declared_identifiers(language: Language, source: &str) -> Vec<String> {
             "lógico",
             "logico",
         ][..],
+        Language::Calango => &["inteiro", "real", "logico", "caracter", "texto"][..],
+        Language::Mapler => &[][..],
     };
     for line in source.lines() {
         let line = line
@@ -1319,6 +1405,18 @@ fn declared_identifiers(language: Language, source: &str) -> Vec<String> {
             Language::Visualg => line
                 .strip_prefix("funcao ")
                 .or_else(|| line.strip_prefix("procedimento ")),
+            Language::Mapler => line.split(':').next(),
+            Language::Calango => {
+                let mut parts = line.split_whitespace();
+                let first = parts.next().unwrap_or_default();
+                if types.contains(&first) {
+                    parts.next()
+                } else if first == "funcao" || first == "procedimento" {
+                    parts.find(|part| !types.contains(part))
+                } else {
+                    None
+                }
+            }
             Language::Portugol | Language::GPortugol => {
                 let mut parts = line.split_whitespace();
                 let first = parts.next().unwrap_or_default();

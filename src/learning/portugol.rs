@@ -40,6 +40,7 @@ pub(super) fn analyze_source_line_cancellable(
             return_type: None,
             parameters: Vec::new(),
             variables: Vec::new(),
+            call: None,
         }));
     }
 
@@ -128,6 +129,7 @@ fn analyze_function(function: &Function) -> SourceLineAnalysis {
             })
             .collect(),
         variables: Vec::new(),
+        call: None,
     }
 }
 
@@ -148,6 +150,7 @@ fn analyze_statement(statement: &Statement, line: usize) -> Option<SourceLineAna
                 return_type: None,
                 parameters: Vec::new(),
                 variables: variables.iter().map(source_variable).collect(),
+                call: None,
             });
         }
 
@@ -168,6 +171,7 @@ fn analyze_statement(statement: &Statement, line: usize) -> Option<SourceLineAna
             return_type: None,
             parameters: Vec::new(),
             variables: Vec::new(),
+            call: None,
         });
     }
 
@@ -225,7 +229,8 @@ fn expression_construct(expression: &Expression) -> SourceConstruct {
                     SourceConstruct::Output
                 }
             }
-            _ => SourceConstruct::Other,
+            ExpressionKind::Member { .. } => SourceConstruct::MethodCall,
+            _ => SourceConstruct::Call,
         },
         _ => SourceConstruct::Other,
     }

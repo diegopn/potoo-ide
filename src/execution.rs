@@ -7,7 +7,9 @@ use std::time::{Duration, Instant};
 
 use gtk::gio::prelude::*;
 use gtk::glib::{Regex, RegexCompileFlags, RegexMatchFlags};
+use potoo_calango_interpreter as calango;
 use potoo_gportugol_interpreter as gportugol;
+use potoo_mapler_interpreter as mapler;
 use potoo_portugol_interpreter as portugol;
 use potoo_potigol_interpreter as potigol;
 use potoo_visualg_interpreter as visualg;
@@ -697,6 +699,7 @@ pub(crate) struct ExecutionDiagnostic {
 pub(crate) struct InputPrompt {
     pub(crate) variable_name: Option<String>,
     pub(crate) data_type: Option<String>,
+    pub(crate) immediate_character: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1131,6 +1134,7 @@ impl portugol::RuntimeIo for WorkerIo {
         self.send_input_prompt(InputPrompt {
             variable_name: None,
             data_type: None,
+            immediate_character: false,
         })
     }
 
@@ -1689,6 +1693,7 @@ impl visualg::RuntimeIo for WorkerIo {
                 }
                 .to_owned(),
             ),
+            immediate_character: false,
         })
     }
 
@@ -1820,6 +1825,153 @@ impl visualg::RuntimeIo for WorkerIo {
     }
 }
 
+impl calango::RuntimeIo for WorkerIo {
+    fn write(&mut self, text: &str) {
+        self.write_limited(text);
+    }
+
+    fn read_line(&mut self, prompt: &calango::InputPrompt) -> Result<String, String> {
+        self.send_input_prompt(calango_input_prompt(prompt))
+    }
+
+    fn read_line_with_timeout(
+        &mut self,
+        prompt: &calango::InputPrompt,
+        timeout: Duration,
+    ) -> Result<String, String> {
+        self.send_input_prompt_with_timeout(calango_input_prompt(prompt), Some(timeout))
+    }
+
+    fn should_stop(&mut self) -> bool {
+        if self.poll_stop() {
+            self.stopped = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn clear_output(&mut self) {
+        self.output_pending.clear();
+        let _ = self.events.send(ExecutionEvent::ClearOutput);
+    }
+
+    fn clear_screen(&mut self) {
+        self.clear_output();
+    }
+
+    fn is_debugging(&self) -> bool {
+        self.debugging
+    }
+
+    fn on_execution_event(
+        &mut self,
+        event: &calango::ExecutionEvent,
+    ) -> Result<calango::ControlAction, String> {
+        let reason = event.pause_reason.map(|reason| match reason {
+            calango::PauseReason::Debugger => DebugPauseReason::Debug,
+            calango::PauseReason::Step => DebugPauseReason::Step,
+        });
+        let action = self.await_action(Self::execution_snapshot(
+            event.location.line,
+            event.location.column,
+            event
+                .variables
+                .iter()
+                .map(|variable| (variable.name.clone(), variable.value.clone())),
+            reason,
+        ))?;
+        if action == ControlAction::Continue {
+            self.debugging = false;
+        }
+        Ok(match action {
+            ControlAction::Continue => calango::ControlAction::Continue,
+            ControlAction::Step => calango::ControlAction::Step,
+            ControlAction::Stop => calango::ControlAction::Stop,
+        })
+    }
+}
+
+impl mapler::RuntimeIo for WorkerIo {
+    fn write(&mut self, text: &str) {
+        self.write_limited(text);
+    }
+
+    fn read_line(&mut self, prompt: &mapler::InputPrompt) -> Result<String, String> {
+        self.send_input_prompt(InputPrompt {
+            variable_name: Some(prompt.variable_name.clone()),
+            data_type: Some(
+                match prompt.data_type {
+                    mapler::DataType::Integer => "inteiro",
+                    mapler::DataType::Real => "real",
+                    mapler::DataType::Logical => "lógico",
+                    mapler::DataType::Chain => "cadeia",
+                    mapler::DataType::Character => "caractere",
+                }
+                .to_owned(),
+            ),
+            immediate_character: false,
+        })
+    }
+
+    fn should_stop(&mut self) -> bool {
+        if self.poll_stop() {
+            self.stopped = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn is_debugging(&self) -> bool {
+        self.debugging
+    }
+
+    fn on_execution_event(
+        &mut self,
+        event: &mapler::ExecutionEvent,
+    ) -> Result<mapler::ControlAction, String> {
+        let reason = event.pause_reason.map(|reason| match reason {
+            mapler::PauseReason::Debug => DebugPauseReason::Debug,
+            mapler::PauseReason::Step => DebugPauseReason::Step,
+        });
+        let action = self.await_action(Self::execution_snapshot(
+            event.location.line,
+            event.location.column,
+            event
+                .variables
+                .iter()
+                .map(|variable| (variable.name.clone(), variable.value.clone())),
+            reason,
+        ))?;
+        if action == ControlAction::Continue {
+            self.debugging = false;
+        }
+        Ok(match action {
+            ControlAction::Continue => mapler::ControlAction::Continue,
+            ControlAction::Step => mapler::ControlAction::Step,
+            ControlAction::Stop => mapler::ControlAction::Stop,
+        })
+    }
+}
+
+fn calango_input_prompt(prompt: &calango::InputPrompt) -> InputPrompt {
+    InputPrompt {
+        variable_name: prompt.variable_name.clone(),
+        data_type: Some(
+            match prompt.data_type {
+                calango::DataType::Integer => "inteiro",
+                calango::DataType::Real => "real",
+                calango::DataType::Logical => "lógico",
+                calango::DataType::Character => "caractere",
+                calango::DataType::Text => "texto",
+            }
+            .to_owned(),
+        ),
+        immediate_character: prompt.data_type == calango::DataType::Character,
+    }
+}
+
 impl potigol::RuntimeIo for WorkerIo {
     fn write(&mut self, text: &str) {
         self.write_limited(text);
@@ -1838,6 +1990,7 @@ impl potigol::RuntimeIo for WorkerIo {
                 }
                 .to_owned(),
             ),
+            immediate_character: false,
         })
     }
 
@@ -2015,6 +2168,7 @@ fn gportugol_input_prompt(prompt: &gportugol::InputPrompt) -> InputPrompt {
             }
             .to_owned(),
         ),
+        immediate_character: false,
     }
 }
 
@@ -2124,6 +2278,12 @@ pub(crate) fn start(
             Language::GPortugol => gportugol::execute(&source, &mut io)
                 .map(|_| ())
                 .map_err(convert_gportugol_diagnostics),
+            Language::Calango => {
+                calango::execute(&source, &mut io).map_err(convert_calango_diagnostics)
+            }
+            Language::Mapler => {
+                mapler::execute(&source, &mut io).map_err(convert_mapler_diagnostics)
+            }
         };
         io.flush_output();
         let stopped = io.stopped
@@ -2176,6 +2336,40 @@ fn convert_gportugol_diagnostics(
             message: diagnostic.message,
             line: diagnostic.span.start.line,
             column: diagnostic.span.start.column,
+        })
+        .collect()
+}
+
+fn convert_calango_diagnostics(diagnostics: Vec<calango::Diagnostic>) -> Vec<ExecutionDiagnostic> {
+    diagnostics
+        .into_iter()
+        .map(|diagnostic| ExecutionDiagnostic {
+            kind: match diagnostic.kind {
+                calango::DiagnosticKind::Lexical => DiagnosticKind::Lexical,
+                calango::DiagnosticKind::Syntax => DiagnosticKind::Syntax,
+                calango::DiagnosticKind::Type => DiagnosticKind::Type,
+                calango::DiagnosticKind::Runtime => DiagnosticKind::Runtime,
+            },
+            message: diagnostic.message,
+            line: diagnostic.line,
+            column: diagnostic.column,
+        })
+        .collect()
+}
+
+fn convert_mapler_diagnostics(diagnostics: Vec<mapler::Diagnostic>) -> Vec<ExecutionDiagnostic> {
+    diagnostics
+        .into_iter()
+        .map(|diagnostic| ExecutionDiagnostic {
+            kind: match diagnostic.kind {
+                mapler::DiagnosticKind::Lexical => DiagnosticKind::Lexical,
+                mapler::DiagnosticKind::Syntax => DiagnosticKind::Syntax,
+                mapler::DiagnosticKind::Type => DiagnosticKind::Type,
+                mapler::DiagnosticKind::Runtime => DiagnosticKind::Runtime,
+            },
+            message: diagnostic.message,
+            line: diagnostic.line,
+            column: diagnostic.column,
         })
         .collect()
 }
@@ -2954,6 +3148,16 @@ mod tests {
                 .iter()
                 .any(|event| matches!(event, ExecutionEvent::InputRequested(_)))
         );
+    }
+
+    #[test]
+    fn calango_character_input_is_marked_for_immediate_submission() {
+        let prompt = super::calango_input_prompt(&super::calango::InputPrompt {
+            variable_name: Some("letra".to_owned()),
+            data_type: super::calango::DataType::Character,
+        });
+
+        assert!(prompt.immediate_character);
     }
 
     #[test]

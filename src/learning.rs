@@ -5,8 +5,12 @@ use crate::{
     execution::{DiagnosticKind as ExecutionDiagnosticKind, ExecutionDiagnostic},
 };
 
+mod calango;
+pub(crate) mod catalog;
 mod gportugol;
+mod mapler;
 mod portugol;
+mod potigol;
 mod visualg;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -19,8 +23,12 @@ pub(crate) enum LearningTopic {
     Output,
     Variable,
     Assignment,
+    Call,
+    LibraryCall,
+    Import,
     Return,
     Program,
+    Unrecognized,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -91,6 +99,7 @@ pub(crate) struct LearningHint {
     pub(crate) variables: Vec<LearningSymbol>,
     pub(crate) expression: Option<String>,
     pub(crate) experiment_expression: Option<String>,
+    pub(crate) call: Option<SourceCall>,
     pub(crate) problems: Vec<LearningProblem>,
 }
 
@@ -101,12 +110,24 @@ pub(super) enum SourceConstruct {
     Procedure,
     VariableDeclaration,
     Assignment,
+    Call,
+    MethodCall,
+    Import,
     Input,
     Output,
     Decision,
     Loop,
     Return,
+    Unrecognized,
     Other,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SourceCall {
+    pub(crate) receiver: Option<String>,
+    pub(crate) member: String,
+    pub(crate) arguments: Vec<String>,
+    pub(crate) library: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -134,6 +155,7 @@ pub(super) struct SourceLineAnalysis {
     pub(super) return_type: Option<String>,
     pub(super) parameters: Vec<SourceSymbol>,
     pub(super) variables: Vec<SourceSymbol>,
+    pub(super) call: Option<SourceCall>,
 }
 
 struct LearningFacts {
@@ -142,6 +164,87 @@ struct LearningFacts {
     return_type: Option<String>,
     parameters: Vec<LearningSymbol>,
     variables: Vec<LearningSymbol>,
+    call: Option<SourceCall>,
+}
+
+pub(super) fn source_call(
+    source: &str,
+    line: usize,
+    column: usize,
+    receiver: Option<String>,
+    member: impl Into<String>,
+    library: Option<String>,
+) -> SourceCall {
+    SourceCall {
+        receiver,
+        member: member.into(),
+        arguments: call_arguments(source, line, column),
+        library,
+    }
+}
+
+fn call_arguments(source: &str, line: usize, column: usize) -> Vec<String> {
+    let line_start = source
+        .split_inclusive('\n')
+        .take(line.saturating_sub(1))
+        .map(str::len)
+        .sum::<usize>();
+    let Some(source_line) = source.lines().nth(line.saturating_sub(1)) else {
+        return Vec::new();
+    };
+    let char_offset = column.saturating_sub(1);
+    let byte_offset = source_line
+        .char_indices()
+        .nth(char_offset)
+        .map_or(source_line.len(), |(offset, _)| offset);
+    let Some(open_offset) = source.get(line_start + byte_offset..).and_then(|tail| {
+        tail.char_indices()
+            .find(|(_, character)| *character == '(')
+            .map(|(offset, _)| line_start + byte_offset + offset)
+    }) else {
+        return Vec::new();
+    };
+
+    let mut arguments = Vec::new();
+    let mut argument_start = open_offset + 1;
+    let mut delimiter_depth = 1usize;
+    let mut quote = None;
+    let mut escaped = false;
+    for (relative_offset, character) in source[open_offset + 1..].char_indices() {
+        let offset = open_offset + 1 + relative_offset;
+        if let Some(quote_character) = quote {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == quote_character {
+                quote = None;
+            }
+            continue;
+        }
+        if matches!(character, '"' | '\'') {
+            quote = Some(character);
+            continue;
+        }
+        match character {
+            '(' | '[' | '{' => delimiter_depth += 1,
+            ')' if delimiter_depth == 1 => {
+                let argument = source[argument_start..offset].trim();
+                if !argument.is_empty() {
+                    arguments.push(argument.to_owned());
+                }
+                return arguments;
+            }
+            ')' | ']' | '}' => delimiter_depth = delimiter_depth.saturating_sub(1),
+            ',' if delimiter_depth == 1 => {
+                arguments.push(source[argument_start..offset].trim().to_owned());
+                argument_start = offset + character.len_utf8();
+            }
+            '#' | '\n' if delimiter_depth == 1 => return arguments,
+            _ => {}
+        }
+    }
+    arguments
 }
 
 #[cfg(test)]
@@ -275,12 +378,119 @@ where
                 }
             }
         }
-        Language::Potigol => (None, 1, Vec::new()),
+        Language::Potigol => {
+            match potigol::analyze_source_line_cancellable(source, one_based_line, &is_cancelled) {
+                Ok(Some(analysis)) => {
+                    let column = analysis.column;
+                    (Some(potigol_facts(analysis)), column, Vec::new())
+                }
+                Ok(None) => (None, 1, Vec::new()),
+                Err(diagnostics) => {
+                    let problems = diagnostics
+                        .into_iter()
+                        .filter(|diagnostic| diagnostic.span.start.line == one_based_line)
+                        .map(|diagnostic| {
+                            let category = match diagnostic.kind {
+                                potoo_potigol_interpreter::DiagnosticKind::Lexical => {
+                                    crate::diagnostics::DiagnosticCategory::Lexical
+                                }
+                                potoo_potigol_interpreter::DiagnosticKind::Syntax => {
+                                    crate::diagnostics::DiagnosticCategory::Syntax
+                                }
+                                potoo_potigol_interpreter::DiagnosticKind::Type => {
+                                    crate::diagnostics::DiagnosticCategory::Type
+                                }
+                                potoo_potigol_interpreter::DiagnosticKind::Runtime => {
+                                    crate::diagnostics::DiagnosticCategory::Runtime
+                                }
+                            };
+                            let message = crate::diagnostics::adapt_diagnostic_message(
+                                Language::Potigol,
+                                source,
+                                category,
+                                &diagnostic.message,
+                                diagnostic.span.start.line,
+                                diagnostic.span.start.column,
+                            );
+                            diagnostic_problem(
+                                learning_problem_kind(category),
+                                diagnostic.span.start.line,
+                                diagnostic.span.start.column,
+                                message,
+                            )
+                        })
+                        .collect();
+                    (None, 1, problems)
+                }
+            }
+        }
+        Language::Calango => {
+            match calango::analyze_source_line_cancellable(source, one_based_line, &is_cancelled) {
+                Ok(Some(analysis)) => {
+                    let column = analysis.column;
+                    (Some(calango_facts(analysis)), column, Vec::new())
+                }
+                Ok(None) => (None, 1, Vec::new()),
+                Err(diagnostics) => {
+                    let problems = diagnostics
+                        .into_iter()
+                        .filter(|diagnostic| diagnostic.line == one_based_line)
+                        .map(|diagnostic| {
+                            let category = map_calango_diagnostic_kind(diagnostic.kind);
+                            diagnostic_problem(
+                                learning_problem_kind(category),
+                                diagnostic.line,
+                                diagnostic.column,
+                                diagnostic.message,
+                            )
+                        })
+                        .collect();
+                    (None, 1, problems)
+                }
+            }
+        }
+        Language::Mapler => {
+            match mapler::analyze_source_line_cancellable(source, one_based_line, &is_cancelled) {
+                Ok(Some(analysis)) => {
+                    let column = analysis.column;
+                    (Some(mapler_facts(analysis)), column, Vec::new())
+                }
+                Ok(None) => (None, 1, Vec::new()),
+                Err(diagnostics) => {
+                    let problems = diagnostics
+                        .into_iter()
+                        .filter(|diagnostic| diagnostic.line == one_based_line)
+                        .map(|diagnostic| {
+                            let category = map_mapler_diagnostic_kind(diagnostic.kind);
+                            diagnostic_problem(
+                                learning_problem_kind(category),
+                                diagnostic.line,
+                                diagnostic.column,
+                                diagnostic.message,
+                            )
+                        })
+                        .collect();
+                    (None, 1, problems)
+                }
+            }
+        }
     };
     if is_cancelled() {
         return None;
     }
-    let facts = facts.unwrap_or_else(|| fallback_facts(line, language));
+    let mut facts = facts.unwrap_or_else(unrecognized_facts);
+    if facts.topic == LearningTopic::Call && facts.call.is_none() {
+        facts.call = call_from_source(source, one_based_line, column);
+    }
+    if facts.topic == LearningTopic::Call
+        && facts
+            .call
+            .as_ref()
+            .and_then(|call| catalog::lookup_library_call(language, call))
+            .is_some()
+    {
+        facts.topic = LearningTopic::LibraryCall;
+    }
     let expression = (facts.topic == LearningTopic::Decision).then(|| extract_condition(line));
     let experiment_expression = expression.as_deref().and_then(suggest_condition_change);
     for diagnostic in runtime_diagnostics
@@ -312,10 +522,12 @@ where
             suggestion: None,
         });
     }
-    if let Some(problem) = constant_condition_problem(line, one_based_line) {
+    if facts.topic == LearningTopic::Decision
+        && let Some(problem) = constant_condition_problem(line, one_based_line)
+    {
         problems.push(problem);
     }
-    if facts.topic != LearningTopic::Variable {
+    if facts.topic != LearningTopic::Variable && facts.topic != LearningTopic::Unrecognized {
         let index_problems =
             constant_index_problems(source, line, one_based_line, language, &is_cancelled)?;
         problems.extend(index_problems);
@@ -334,6 +546,7 @@ where
         variables: facts.variables,
         expression,
         experiment_expression,
+        call: facts.call,
         problems,
     })
 }
@@ -349,7 +562,10 @@ fn portugol_facts(analysis: SourceLineAnalysis) -> LearningFacts {
         SourceConstruct::Decision => LearningTopic::Decision,
         SourceConstruct::Loop => LearningTopic::Loop,
         SourceConstruct::Return => LearningTopic::Return,
-        SourceConstruct::Program | SourceConstruct::Other => LearningTopic::Program,
+        SourceConstruct::Call | SourceConstruct::MethodCall => LearningTopic::Call,
+        SourceConstruct::Import => LearningTopic::Import,
+        SourceConstruct::Program => LearningTopic::Program,
+        SourceConstruct::Unrecognized | SourceConstruct::Other => LearningTopic::Unrecognized,
     };
     LearningFacts {
         topic,
@@ -365,6 +581,7 @@ fn portugol_facts(analysis: SourceLineAnalysis) -> LearningFacts {
             .into_iter()
             .map(learning_symbol)
             .collect(),
+        call: analysis.call,
     }
 }
 
@@ -379,7 +596,10 @@ fn visualg_facts(analysis: SourceLineAnalysis) -> LearningFacts {
         SourceConstruct::Decision => LearningTopic::Decision,
         SourceConstruct::Loop => LearningTopic::Loop,
         SourceConstruct::Return => LearningTopic::Return,
-        SourceConstruct::Program | SourceConstruct::Other => LearningTopic::Program,
+        SourceConstruct::Call | SourceConstruct::MethodCall => LearningTopic::Call,
+        SourceConstruct::Import => LearningTopic::Import,
+        SourceConstruct::Program => LearningTopic::Program,
+        SourceConstruct::Unrecognized | SourceConstruct::Other => LearningTopic::Unrecognized,
     };
     LearningFacts {
         topic,
@@ -395,6 +615,7 @@ fn visualg_facts(analysis: SourceLineAnalysis) -> LearningFacts {
             .into_iter()
             .map(learning_symbol)
             .collect(),
+        call: analysis.call,
     }
 }
 
@@ -409,7 +630,10 @@ fn gportugol_facts(analysis: SourceLineAnalysis) -> LearningFacts {
         SourceConstruct::Decision => LearningTopic::Decision,
         SourceConstruct::Loop => LearningTopic::Loop,
         SourceConstruct::Return => LearningTopic::Return,
-        SourceConstruct::Program | SourceConstruct::Other => LearningTopic::Program,
+        SourceConstruct::Call | SourceConstruct::MethodCall => LearningTopic::Call,
+        SourceConstruct::Import => LearningTopic::Import,
+        SourceConstruct::Program => LearningTopic::Program,
+        SourceConstruct::Unrecognized | SourceConstruct::Other => LearningTopic::Unrecognized,
     };
     LearningFacts {
         topic,
@@ -425,6 +649,53 @@ fn gportugol_facts(analysis: SourceLineAnalysis) -> LearningFacts {
             .into_iter()
             .map(learning_symbol)
             .collect(),
+        call: analysis.call,
+    }
+}
+
+fn potigol_facts(analysis: SourceLineAnalysis) -> LearningFacts {
+    basic_facts(analysis)
+}
+
+fn calango_facts(analysis: SourceLineAnalysis) -> LearningFacts {
+    basic_facts(analysis)
+}
+
+fn mapler_facts(analysis: SourceLineAnalysis) -> LearningFacts {
+    basic_facts(analysis)
+}
+
+fn basic_facts(analysis: SourceLineAnalysis) -> LearningFacts {
+    let topic = match analysis.construct {
+        SourceConstruct::Program => LearningTopic::Program,
+        SourceConstruct::Function => LearningTopic::Function,
+        SourceConstruct::Procedure => LearningTopic::Procedure,
+        SourceConstruct::VariableDeclaration => LearningTopic::Variable,
+        SourceConstruct::Assignment => LearningTopic::Assignment,
+        SourceConstruct::Input => LearningTopic::Input,
+        SourceConstruct::Output => LearningTopic::Output,
+        SourceConstruct::Decision => LearningTopic::Decision,
+        SourceConstruct::Loop => LearningTopic::Loop,
+        SourceConstruct::Return => LearningTopic::Return,
+        SourceConstruct::Call | SourceConstruct::MethodCall => LearningTopic::Call,
+        SourceConstruct::Import => LearningTopic::Import,
+        SourceConstruct::Unrecognized | SourceConstruct::Other => LearningTopic::Unrecognized,
+    };
+    LearningFacts {
+        topic,
+        name: analysis.name,
+        return_type: analysis.return_type,
+        parameters: analysis
+            .parameters
+            .into_iter()
+            .map(learning_symbol)
+            .collect(),
+        variables: analysis
+            .variables
+            .into_iter()
+            .map(learning_symbol)
+            .collect(),
+        call: analysis.call,
     }
 }
 
@@ -446,101 +717,98 @@ fn learning_symbol(symbol: SourceSymbol) -> LearningSymbol {
     }
 }
 
-fn fallback_facts(line: &str, language: Language) -> LearningFacts {
-    let normalized = line.to_lowercase();
-    let gportugol = language == Language::GPortugol;
-    let topic = if starts_with_any(
-        &normalized,
-        if gportugol {
-            &["função "]
-        } else {
-            &["funcao ", "procedimento "]
-        },
-    ) {
-        if normalized.starts_with("procedimento ") {
-            LearningTopic::Procedure
-        } else {
-            LearningTopic::Function
-        }
-    } else if starts_with_any(
-        &normalized,
-        if gportugol {
-            &["se ", "senão"]
-        } else {
-            &["se ", "senao", "caso ", "escolha "]
-        },
-    ) {
-        LearningTopic::Decision
-    } else if starts_with_any(
-        &normalized,
-        if gportugol {
-            &["para ", "enquanto ", "repita"]
-        } else {
-            &[
-                "para ",
-                "enquanto ",
-                "repita",
-                "fimenquanto",
-                "fimpara",
-                "fimrepita",
-            ]
-        },
-    ) {
-        LearningTopic::Loop
-    } else if starts_with_any(&normalized, &["leia", "input("])
-        || (gportugol && normalized.contains("leia("))
-    {
-        LearningTopic::Input
-    } else if starts_with_any(
-        &normalized,
-        if gportugol {
-            &["imprima("]
-        } else {
-            &["escreva", "escreval", "print("]
-        },
-    ) {
-        LearningTopic::Output
-    } else if normalized.contains(": inteiro")
-        || normalized.contains(": real")
-        || normalized.contains(": caractere")
-        || normalized.contains(": logico")
-        || (gportugol
-            && [": caractere", ": literal", ": lógico"]
-                .iter()
-                .any(|ty| normalized.contains(ty)))
-        || starts_with_any(
-            &normalized,
-            if gportugol {
-                &["inteiro ", "real ", "caractere ", "literal ", "lógico "]
-            } else {
-                &[
-                    "inteiro ",
-                    "real ",
-                    "caracter ",
-                    "caractere ",
-                    "logico ",
-                    "cadeia ",
-                ]
-            },
-        )
-    {
-        LearningTopic::Variable
-    } else if normalized.contains("<-")
-        || normalized.contains(" = ")
-        || (gportugol && normalized.contains(":="))
-    {
-        LearningTopic::Assignment
-    } else if normalized.starts_with("retorne") {
-        LearningTopic::Return
-    } else {
-        LearningTopic::Program
-    };
+fn unrecognized_facts() -> LearningFacts {
     LearningFacts {
-        topic,
+        topic: LearningTopic::Unrecognized,
         name: None,
         return_type: None,
         parameters: Vec::new(),
         variables: Vec::new(),
+        call: None,
+    }
+}
+
+fn call_from_source(source: &str, line: usize, column: usize) -> Option<SourceCall> {
+    let source_line = source.lines().nth(line.saturating_sub(1))?;
+    let start = source_line
+        .char_indices()
+        .nth(column.saturating_sub(1))
+        .map_or(source_line.len(), |(offset, _)| offset);
+    let remaining = source_line.get(start..)?;
+    let open = remaining.find('(')?;
+    let callee = remaining[..open].split_whitespace().last()?.trim();
+    let (receiver, member) = callee
+        .rsplit_once('.')
+        .map_or((None, callee), |(receiver, member)| {
+            (Some(receiver.to_owned()), member)
+        });
+    Some(source_call(source, line, column, receiver, member, None))
+}
+
+fn learning_problem_kind(category: crate::diagnostics::DiagnosticCategory) -> LearningProblemKind {
+    match category {
+        crate::diagnostics::DiagnosticCategory::Lexical
+        | crate::diagnostics::DiagnosticCategory::Syntax => LearningProblemKind::Syntax,
+        crate::diagnostics::DiagnosticCategory::Type => LearningProblemKind::Type,
+        crate::diagnostics::DiagnosticCategory::Runtime => LearningProblemKind::Runtime,
+        crate::diagnostics::DiagnosticCategory::StaticAnalysis => {
+            LearningProblemKind::PossibleLogic
+        }
+    }
+}
+
+fn diagnostic_problem(
+    kind: LearningProblemKind,
+    line: usize,
+    column: usize,
+    message: String,
+) -> LearningProblem {
+    LearningProblem {
+        kind,
+        severity: LearningSeverity::Error,
+        line,
+        column,
+        text: LearningProblemText::InterpreterDiagnostic,
+        message,
+        suggestion: None,
+    }
+}
+
+fn map_calango_diagnostic_kind(
+    kind: potoo_calango_interpreter::DiagnosticKind,
+) -> crate::diagnostics::DiagnosticCategory {
+    match kind {
+        potoo_calango_interpreter::DiagnosticKind::Lexical => {
+            crate::diagnostics::DiagnosticCategory::Lexical
+        }
+        potoo_calango_interpreter::DiagnosticKind::Syntax => {
+            crate::diagnostics::DiagnosticCategory::Syntax
+        }
+        potoo_calango_interpreter::DiagnosticKind::Type => {
+            crate::diagnostics::DiagnosticCategory::Type
+        }
+        potoo_calango_interpreter::DiagnosticKind::Runtime => {
+            crate::diagnostics::DiagnosticCategory::Runtime
+        }
+    }
+}
+
+fn map_mapler_diagnostic_kind(
+    kind: potoo_mapler_interpreter::DiagnosticKind,
+) -> crate::diagnostics::DiagnosticCategory {
+    match kind {
+        potoo_mapler_interpreter::DiagnosticKind::Lexical => {
+            crate::diagnostics::DiagnosticCategory::Lexical
+        }
+        potoo_mapler_interpreter::DiagnosticKind::Syntax => {
+            crate::diagnostics::DiagnosticCategory::Syntax
+        }
+        potoo_mapler_interpreter::DiagnosticKind::Type => {
+            crate::diagnostics::DiagnosticCategory::Type
+        }
+        potoo_mapler_interpreter::DiagnosticKind::Runtime => {
+            crate::diagnostics::DiagnosticCategory::Runtime
+        }
     }
 }
 
@@ -655,7 +923,7 @@ fn declared_array_bounds(
         let characters = code.trim().chars().collect::<Vec<_>>();
         let mut cursor = 0;
         match language {
-            Language::Portugol => {
+            Language::Portugol | Language::Calango => {
                 let Some(type_name) = read_identifier(&characters, &mut cursor) else {
                     continue;
                 };
@@ -708,7 +976,7 @@ fn declared_array_bounds(
                     );
                 }
             }
-            Language::Potigol | Language::GPortugol => continue,
+            Language::Potigol | Language::GPortugol | Language::Mapler => continue,
         }
     }
     Some(arrays)
@@ -917,10 +1185,6 @@ fn without_literals_and_comments(line: &str) -> String {
     result
 }
 
-fn starts_with_any(line: &str, prefixes: &[&str]) -> bool {
-    prefixes.iter().any(|prefix| line.starts_with(prefix))
-}
-
 fn extract_condition(line: &str) -> String {
     let mut condition = line.trim();
     let lowercase = condition.to_lowercase();
@@ -1018,8 +1282,56 @@ mod tests {
         );
         assert_eq!(
             learning_hint("fimse", 1, Language::Visualg).topic,
-            LearningTopic::Program
+            LearningTopic::Unrecognized
         );
+    }
+
+    #[test]
+    fn learning_hint_uses_ast_for_all_supported_languages_and_keeps_unknown_lines_unknown() {
+        let potigol = learning_hint("escreva \"Olá\"", 1, Language::Potigol);
+        assert_eq!(potigol.topic, LearningTopic::Output);
+
+        let calango = "algoritmo aula;\nprincipal\n  escreval(\"Olá\");\nfimPrincipal";
+        assert_eq!(
+            learning_hint(calango, 3, Language::Calango).topic,
+            LearningTopic::Output
+        );
+
+        let mapler = "variaveis\n  x: inteiro;\ninicio\n  escrever \"Olá\";\nfim.";
+        assert_eq!(
+            learning_hint(mapler, 4, Language::Mapler).topic,
+            LearningTopic::Output
+        );
+
+        let unknown = learning_hint("??", 1, Language::Potigol);
+        assert_eq!(unknown.topic, LearningTopic::Unrecognized);
+    }
+
+    #[test]
+    fn learning_hint_recognizes_jerimum_calls_only_when_the_library_is_imported() {
+        let imported = "use \"jerimum\"\ndesenhe_personagem(g: Graphics2D): Nada\n  g.setColor(Cor.VERDE.color)\nfim";
+        let hint = learning_hint(imported, 3, Language::Potigol);
+        assert_eq!(hint.topic, LearningTopic::LibraryCall);
+        let call = hint
+            .call
+            .expect("the method call should be recovered from the AST");
+        assert_eq!(call.receiver.as_deref(), Some("g"));
+        assert_eq!(call.member, "setColor");
+        assert_eq!(call.library.as_deref(), Some("jerimum"));
+        assert_eq!(call.arguments, ["Cor.VERDE.color"]);
+
+        let classic = learning_hint("g.setColor(Cor.VERDE.color)", 1, Language::Potigol);
+        assert_eq!(classic.topic, LearningTopic::Call);
+        assert_eq!(
+            classic.call.and_then(|call| call.library),
+            None,
+            "a Jerimum API must not be inferred without its import"
+        );
+
+        let imported_but_untyped = "use \"jerimum\"\ng.setColor(Cor.VERDE.color)";
+        let hint = learning_hint(imported_but_untyped, 2, Language::Potigol);
+        assert_eq!(hint.topic, LearningTopic::Call);
+        assert_eq!(hint.call.and_then(|call| call.library), None);
     }
 
     #[test]
