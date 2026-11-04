@@ -4,29 +4,26 @@
 
 # Potoo IDE
 
-A desktop IDE for students and teachers to practice programming logic with Portugol, VisuAlg, Potigol, and G-Portugol.
+A desktop IDE for students and teachers to practice programming logic with Portugol dialects, Calango, and Potigol.
 
 The project aims to provide a simple, intuitive space for students to practice and for teachers to support the concepts taught through code. The interface is built with Rust, GTK 4, and Relm4, with Potoo-owned components and inspiration from GNOME Builder. Teachers choose which tools fit their classes; the IDE does not impose one learning path.
 
 ## Languages
 
-**Runnable in the IDE; compatibility work is ongoing**
+The IDE has execution integrations for these languages. Compatibility work is ongoing; each interpreter repository documents its supported syntax and current limits.
 
 - **Portugol Studio 2.0** (`.por`)
-- **VisuAlg** (`.alg`; targets classic 3.0.5.2)
-- **Potigol** (`.poti`; independent Rust implementation targeting the documented 1.0.0-RC2 language)
+- **VisuAlg** (`.alg`; compatibility target: classic 3.0.5.2)
+- **Potigol** (`.poti`; independent Rust implementation targeting the documented 1.0.0-RC2 language core)
 - **G-Portugol** (`.gpt`; independent Rust implementation targeting the documented 1.4.0 language)
-
-**Integrations in development**
-
 - **Calango** (`.clg`)
-- **Portugol Mapler** (`.mapler`; Potoo-specific extension)
+- **Portugol Mapler** (`.mapler`)
 
-Each interpreter has a standalone repository so it can be installed and used outside Potoo IDE. Mapler is a separate Portugol dialect; its upstream manual describes structured Portuguese pseudocode and `.txt` files. See the [Mapler manual](https://portugol.sourceforge.io/manuais.html) and [syntax repository](https://github.com/Projeto-Mapler/portugol). Calango's upstream project is [available on GitHub](https://github.com/GeovanaRamos/calango).
+Mapler is a separate Portugol dialect. The original Mapler IDE uses `.txt`; Potoo adopts `.mapler` from [Design Liquido's Mapler implementation](https://github.com/DesignLiquido/mapler), which began as part of Delégua. See the [Mapler manual](https://portugol.sourceforge.io/manuais.html) and [syntax repository](https://github.com/Projeto-Mapler/portugol). Calango's upstream project is [available on GitHub](https://github.com/GeovanaRamos/calango).
 
 ## Independent interpreters
 
-Each interpreter repository contains its Rust library, a standalone command-line runner, GPL-3.0-or-later license, platform-specific installation instructions, and CI checks for Linux, Windows, and macOS. The IDE pins each library to a specific Git commit and bundles it into the application at build time. The installed IDE does not need network access to GitHub. Building the IDE from source may need network access the first time to fetch these dependencies, unless they are already cached.
+The IDE uses independent Rust interpreters maintained in separate repositories. Each repository includes a reusable library and a standalone command-line runner, and documents its compatibility target and limits. The IDE pins each interpreter to a Git commit in `Cargo.toml` and builds it with the application. The installed app does not need GitHub access; building from source may need to fetch dependencies that are not already cached.
 
 - [Calango](https://github.com/diegopn/potoo-calango-interpreter)
 - [G-Portugol](https://github.com/diegopn/potoo-gportugol-interpreter)
@@ -35,7 +32,7 @@ Each interpreter repository contains its Rust library, a standalone command-line
 - [Potigol](https://github.com/diegopn/potoo-potigol-interpreter)
 - [Portugol VisuAlg](https://github.com/diegopn/potoo-portugol-visualg-interpreter)
 
-The IDE includes a native compatibility layer for a supported subset of the Jerimum API through its GTK graphics and audio hosts. It provides native facades for selected `Color`, `BufferedImage`, `JFrame`, `Canvas`, and `Graphics2D` members without bundling the JVM or providing general Swing/AWT interop.
+The Potigol interpreter includes a compatibility layer for a supported subset of the Jerimum API. Potoo routes graphics and audio requests through GTK hosts and provides native facades for selected `Color`, `BufferedImage`, `JFrame`, `Canvas`, and `Graphics2D` members. It does not bundle the JVM or provide general Swing/AWT interoperability.
 
 **Future**
 
@@ -45,14 +42,6 @@ The IDE includes a native compatibility layer for a supported subset of the Jeri
 - Karel
 - [Égua](https://github.com/eguadev/egua)
 - Logic Basic
-
-The app runs Potigol through an independent Rust interpreter targeting the documented 1.0.0-RC2 language; it does not run or bundle the official Scala/JVM interpreter. See the [Potigol interpreter README](https://github.com/diegopn/potoo-potigol-interpreter#readme) for coverage and limits.
-
-The app also runs Portugol Studio 2.0 programs with variables, functions, constants, conditionals, loops, vectors and matrices, interactive input, and the Matematica, Texto, Tipos, Util, Calendario, Arquivos, and Objetos libraries. See the [Portugol Studio 2.0 interpreter README](https://github.com/diegopn/potoo-portugol-studio-2-interpreter#readme) for compatibility gaps.
-
-The app can also run classic VisuAlg `.alg` programs through the reusable [Portugol VisuAlg Rust library](https://github.com/diegopn/potoo-portugol-visualg-interpreter#readme), which targets VisuAlg 3.0.5.2 and has no third-party dependencies. The interpreters provide interactive input, source-located diagnostics, resource limits, and debugger control. Compatibility details and current limits are documented in each repository README.
-
-G-Portugol is a separate `.gpt` dialect, implemented in Rust by the [G-Portugol interpreter](https://github.com/diegopn/potoo-gportugol-interpreter#readme). It has no third-party runtime dependencies and does not bundle or invoke the upstream `gpt` executable. The implementation targets the documented G-Portugol 1.4.0 syntax and behavior.
 
 Project documentation is maintained in English. The app offers Portuguese, English, and Spanish UI languages. The project website is available in Brazilian Portuguese (default), English, and Spanish.
 

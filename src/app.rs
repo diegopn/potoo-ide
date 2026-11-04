@@ -8317,9 +8317,9 @@ fn show_new_project_dialog(
     variant_label.set_xalign(0.0);
     variant_label.add_css_class("potoo-project-field-label");
     let portugol_variant_picker = gtk::DropDown::from_strings(&[
-        "G-Portugol",
-        "VisuAlg",
-        "Portugol Studio 2.0",
+        "G-Portugol (.gpt)",
+        "VisuAlg (.alg)",
+        "Portugol Studio 2.0 (.por)",
         "Mapler (.mapler)",
     ]);
     portugol_variant_picker.add_css_class("potoo-settings-picker");
@@ -8836,9 +8836,9 @@ fn show_new_file_dialog(
     variant_label.set_xalign(0.0);
     variant_label.add_css_class("potoo-project-field-label");
     let portugol_variant_picker = gtk::DropDown::from_strings(&[
-        "G-Portugol",
-        "VisuAlg",
-        "Portugol Studio 2.0",
+        "G-Portugol (.gpt)",
+        "VisuAlg (.alg)",
+        "Portugol Studio 2.0 (.por)",
         "Mapler (.mapler)",
     ]);
     portugol_variant_picker.add_css_class("potoo-settings-picker");

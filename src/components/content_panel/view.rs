@@ -1195,10 +1195,11 @@ fn build_debugger_learning(language: UiLanguage) -> DebuggerLearningUi {
     concept_section.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
     content.append(&concept_section);
 
-    let problems = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    let problems = gtk::Box::new(gtk::Orientation::Vertical, 8);
     let problems_title = gtk::Label::new(Some(tr(language, "Problemas nesta linha")));
     problems_title.set_xalign(0.0);
     problems_title.add_css_class("heading");
+    problems_title.set_margin_top(4);
     problems.append(&problems_title);
     let problem_list = gtk::Box::new(gtk::Orientation::Vertical, 8);
     problems.append(&problem_list);
