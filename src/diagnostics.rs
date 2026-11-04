@@ -260,6 +260,8 @@ pub(crate) fn analyze(
         },
     };
 
+    normalize_parser_syntax_location(language, source, &mut diagnostics);
+
     if language == Language::GPortugol
         && let Some((start, line, column)) = unclosed_block_comment(source)
     {
@@ -278,6 +280,199 @@ pub(crate) fn analyze(
         });
     }
     diagnostics
+}
+
+#[derive(Clone, Debug)]
+struct ParserSyntaxDiagnostic {
+    message: String,
+    line: usize,
+    column: usize,
+}
+
+fn normalize_parser_syntax_location(
+    language: Language,
+    source: &str,
+    diagnostics: &mut [EditorDiagnostic],
+) {
+    if !diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.category == DiagnosticCategory::Syntax)
+    {
+        return;
+    }
+    let Some(original) = first_parser_syntax_diagnostic(language, source) else {
+        return;
+    };
+    let Some(editor_diagnostic) = diagnostics.iter_mut().find(|diagnostic| {
+        diagnostic.category == DiagnosticCategory::Syntax
+            && diagnostic.line == original.line
+            && diagnostic.column == original.column
+    }) else {
+        return;
+    };
+    let Some(line_count) = original.line.checked_sub(1) else {
+        return;
+    };
+    let lines = source.lines().collect::<Vec<_>>();
+    if line_count == 0 || line_count > lines.len() {
+        return;
+    }
+
+    let mut prefix = lines[..line_count].join("\n");
+    prefix.push('\n');
+    let Some(prefix_error) = first_parser_syntax_diagnostic(language, &prefix) else {
+        return;
+    };
+    if prefix_error.message != original.message {
+        return;
+    }
+
+    let location = if prefix_error.line <= line_count {
+        Some((prefix_error.line, prefix_error.column))
+    } else if prefix_error.line == line_count + 1 && prefix_error.column == 1 {
+        last_code_location(source, language, line_count)
+    } else {
+        None
+    };
+    let Some((line, column)) = location.filter(|(line, _)| *line < original.line) else {
+        return;
+    };
+
+    // The same parser error in the source prefix means later lines only moved its reported token.
+    editor_diagnostic.line = line;
+    editor_diagnostic.column = column;
+    editor_diagnostic.offset = line_column_to_char_offset(source, line, column);
+    editor_diagnostic.range = None;
+}
+
+fn first_parser_syntax_diagnostic(
+    language: Language,
+    source: &str,
+) -> Option<ParserSyntaxDiagnostic> {
+    match language {
+        Language::Portugol => potoo_portugol_interpreter::parse(source)
+            .err()?
+            .into_iter()
+            .find(|error| error.kind == potoo_portugol_interpreter::DiagnosticKind::Syntax)
+            .map(|error| ParserSyntaxDiagnostic {
+                message: error.message,
+                line: error.line,
+                column: error.column,
+            }),
+        Language::Visualg => potoo_visualg_interpreter::parse(source)
+            .err()?
+            .into_iter()
+            .find(|error| error.kind == potoo_visualg_interpreter::DiagnosticKind::Syntax)
+            .map(|error| ParserSyntaxDiagnostic {
+                message: error.message,
+                line: error.line,
+                column: error.column,
+            }),
+        Language::GPortugol => potoo_gportugol_interpreter::parse(source)
+            .err()?
+            .into_iter()
+            .find(|error| error.kind == potoo_gportugol_interpreter::DiagnosticKind::Syntax)
+            .map(|error| ParserSyntaxDiagnostic {
+                message: error.message,
+                line: error.span.start.line,
+                column: error.span.start.column,
+            }),
+        Language::Potigol => potoo_potigol_interpreter::parse(source)
+            .err()?
+            .into_iter()
+            .find(|error| error.kind == potoo_potigol_interpreter::DiagnosticKind::Syntax)
+            .map(|error| ParserSyntaxDiagnostic {
+                message: error.message,
+                line: error.span.start.line,
+                column: error.span.start.column,
+            }),
+        Language::Calango => potoo_calango_interpreter::parse(source)
+            .err()?
+            .into_iter()
+            .find(|error| error.kind == potoo_calango_interpreter::DiagnosticKind::Syntax)
+            .map(|error| ParserSyntaxDiagnostic {
+                message: error.message,
+                line: error.line,
+                column: error.column,
+            }),
+        Language::Mapler => potoo_mapler_interpreter::parse(source)
+            .err()?
+            .into_iter()
+            .find(|error| error.kind == potoo_mapler_interpreter::DiagnosticKind::Syntax)
+            .map(|error| ParserSyntaxDiagnostic {
+                message: error.message,
+                line: error.line,
+                column: error.column,
+            }),
+    }
+}
+
+fn last_code_location(
+    source: &str,
+    language: Language,
+    line_count: usize,
+) -> Option<(usize, usize)> {
+    let has_block_comments = matches!(
+        language,
+        Language::Portugol | Language::GPortugol | Language::Calango
+    );
+    let mut inside_block_comment = false;
+    let mut quote = None;
+    let mut escaped = false;
+    let mut last = None;
+
+    for (line_index, line) in source.lines().take(line_count).enumerate() {
+        let characters = line.chars().collect::<Vec<_>>();
+        let mut index = 0;
+        let mut first_code_column = None;
+        while index < characters.len() {
+            if inside_block_comment {
+                if characters[index] == '*' && characters.get(index + 1) == Some(&'/') {
+                    index += 2;
+                    inside_block_comment = false;
+                } else {
+                    index += 1;
+                }
+                continue;
+            }
+
+            let character = characters[index];
+            if let Some(delimiter) = quote {
+                if escaped {
+                    escaped = false;
+                } else if character == '\\' {
+                    escaped = true;
+                } else if character == delimiter {
+                    quote = None;
+                }
+                index += 1;
+                continue;
+            }
+
+            if (language == Language::Potigol && character == '#')
+                || (character == '/' && characters.get(index + 1) == Some(&'/'))
+            {
+                break;
+            }
+            if has_block_comments && character == '/' && characters.get(index + 1) == Some(&'*') {
+                index += 2;
+                inside_block_comment = true;
+                continue;
+            }
+            if matches!(character, '"' | '\'') {
+                first_code_column.get_or_insert(index + 1);
+                quote = Some(character);
+            } else if !character.is_whitespace() {
+                first_code_column.get_or_insert(index + 1);
+            }
+            index += 1;
+        }
+        if let Some(column) = first_code_column {
+            last = Some((line_index + 1, column));
+        }
+    }
+
+    last
 }
 
 pub(crate) fn from_execution(
@@ -359,20 +554,46 @@ pub(crate) fn adapt_diagnostic_message(
                 else {
                     return false;
                 };
-                source_line.get(dot_offset + 1..).is_some_and(|tail| {
-                    tail.match_indices('=').any(|(offset, _)| {
-                        !matches!(
-                            tail[..offset].chars().next_back(),
-                            Some(':' | '=' | '!' | '<' | '>')
-                        ) && tail[offset + 1..].chars().next() != Some('=')
-                    })
-                })
+                source_line
+                    .get(dot_offset + 1..)
+                    .is_some_and(has_potigol_assignment_operator)
             });
     if is_potigol_field_assignment {
         "A atribuição em Potigol usa ':='; substitua '=' por ':='.".to_owned()
     } else {
         message.to_owned()
     }
+}
+
+fn has_potigol_assignment_operator(source: &str) -> bool {
+    let mut quote = None;
+    let mut escaped = false;
+    let mut previous = None;
+    for (offset, character) in source.char_indices() {
+        if let Some(delimiter) = quote {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == delimiter {
+                quote = None;
+            }
+            continue;
+        }
+        if character == '#' || (character == '/' && source[offset..].starts_with("//")) {
+            break;
+        }
+        if matches!(character, '\'' | '"') {
+            quote = Some(character);
+        } else if character == '='
+            && !matches!(previous, Some(':' | '=' | '!' | '<' | '>'))
+            && source[offset + character.len_utf8()..].chars().next() != Some('=')
+        {
+            return true;
+        }
+        previous = Some(character);
+    }
+    false
 }
 
 fn from_gportugol(
@@ -569,8 +790,8 @@ fn unclosed_block_comment(source: &str) -> Option<(usize, usize, usize)> {
 #[cfg(test)]
 mod tests {
     use super::{
-        AnalysisIdentity, DiagnosticCategory, DiagnosticSeverity, analyze,
-        byte_offset_to_char_offset, is_current_analysis, line_column_to_char_offset,
+        AnalysisIdentity, DiagnosticCategory, DiagnosticSeverity, adapt_diagnostic_message,
+        analyze, byte_offset_to_char_offset, is_current_analysis, line_column_to_char_offset,
     };
     use crate::components::content_panel::Language;
 
@@ -639,6 +860,53 @@ mod tests {
         assert_eq!(diagnostic.column, 1);
         assert_eq!(diagnostic.offset, 0);
         assert!(diagnostic.range.is_none());
+    }
+
+    #[test]
+    fn assignment_guidance_respects_potigol_operators_and_ignores_strings_and_comments() {
+        let raw = "esperava '=' na declaração de valor";
+        let assignment = adapt_diagnostic_message(
+            Language::Potigol,
+            "jogo.titulo = \"teste\"",
+            DiagnosticCategory::Syntax,
+            raw,
+            1,
+            5,
+        );
+        assert!(assignment.contains("usa ':='"));
+
+        for source in [
+            "jogo.titulo := \"teste\"",
+            "jogo.titulo == \"teste\"",
+            "jogo.titulo >= 1",
+            "jogo.titulo \"texto = valor\"",
+            "jogo.titulo # comentário =",
+        ] {
+            assert_eq!(
+                adapt_diagnostic_message(
+                    Language::Potigol,
+                    source,
+                    DiagnosticCategory::Syntax,
+                    raw,
+                    1,
+                    5,
+                ),
+                raw,
+                "{source}"
+            );
+        }
+        assert_eq!(
+            adapt_diagnostic_message(
+                Language::Visualg,
+                "jogo.titulo = \"teste\"",
+                DiagnosticCategory::Syntax,
+                raw,
+                1,
+                5,
+            ),
+            raw,
+            "only Potigol gets Potigol-specific syntax advice"
+        );
     }
 
     #[test]

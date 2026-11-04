@@ -492,8 +492,87 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "imprima mostra na saída os valores e textos informados." => {
                 "imprima displays the given values and text in the output."
             }
+            "O comando" => "The command",
+            "O laço" => "The loop",
+            "exibe os valores e encerra a linha" => "displays the values and ends the line",
+            "exibe os valores sem encerrar a linha" => {
+                "displays the values without ending the line"
+            }
+            "A quebra de linha determina onde a próxima saída começa." => {
+                "A line break determines where the next output begins."
+            }
+            "Execute duas instruções de saída seguidas e compare em quais linhas aparecem." => {
+                "Run two output statements in a row and compare which lines they appear on."
+            }
+            "Execute duas instruções de saída seguidas e observe se ficam na mesma linha." => {
+                "Run two output statements in a row and see whether they stay on the same line."
+            }
+            "Altere o texto e execute novamente para observar a saída." => {
+                "Change the text and run the program again to observe the output."
+            }
+            "lê um inteiro" => "reads an integer",
+            "lê um número real" => "reads a real number",
+            "lê um texto" => "reads text",
+            "lê um caractere" => "reads a character",
+            "lê um valor lógico" => "reads a logical value",
+            "lê uma lista de inteiros" => "reads a list of integers",
+            "lê uma lista de números reais" => "reads a list of real numbers",
+            "lê uma lista de textos" => "reads a list of text values",
+            "A instrução" => "The instruction",
+            "armazena o valor informado na variável de destino" => {
+                "stores the entered value in the target variable"
+            }
+            "fornece um valor para a expressão que a utiliza" => {
+                "provides a value to the expression that uses it"
+            }
+            "O tipo solicitado define como o valor de entrada é interpretado." => {
+                "The requested type determines how the input value is interpreted."
+            }
+            "A seleção compara um valor com alternativas explícitas." => {
+                "Selection compares a value with explicit alternatives."
+            }
+            "O bloco é executado antes da verificação da condição." => {
+                "The block runs before the condition is checked."
+            }
             "A atribuição calcula o lado direito e atualiza o valor da variável à esquerda." => {
                 "An assignment evaluates the right side and updates the variable on the left."
+            }
+            "O operador" => "The operator",
+            "atribui o valor à variável" => "assigns the value to variable",
+            "A expressão à direita do operador produz o valor armazenado." => {
+                "The expression to the right of the operator produces the stored value."
+            }
+            "Altere o valor à direita do operador e observe a variável." => {
+                "Change the value to the right of the operator and observe the variable."
+            }
+            "Altere o valor à direita do operador e observe o valor de" => {
+                "Change the value to the right of the operator and observe"
+            }
+            "é testada por" => "is tested by",
+            "e determina qual bloco será executado." => "and determines which block runs.",
+            "compara o valor selecionado com cada caso e executa o bloco correspondente." => {
+                "compares the selected value with each case and runs the matching block."
+            }
+            "Troque o valor de `escolha` ou de um caso e observe qual bloco executa." => {
+                "Change the value in `escolha` or a case and observe which block runs."
+            }
+            "testa a condição antes de cada repetição" => {
+                "tests the condition before each iteration"
+            }
+            "verifica a condição depois de executar o bloco" => {
+                "checks the condition after running the block"
+            }
+            "percorre os valores definidos para a variável de controle" => {
+                "iterates over the values defined for the control variable"
+            }
+            "Altere a condição e observe quantas vezes o bloco se repete." => {
+                "Change the condition and observe how many times the block repeats."
+            }
+            "Altere a condição e confirme que o bloco executa antes da verificação." => {
+                "Change the condition and confirm the block runs before it is checked."
+            }
+            "Altere um limite do `para` e observe quantas vezes o bloco se repete." => {
+                "Change a `para` limit and observe how many times the block repeats."
             }
             "chamada" => "call",
             "importação" => "import",
@@ -1205,8 +1284,85 @@ pub(crate) fn tr(language: UiLanguage, portuguese: &'static str) -> &'static str
             "imprima mostra na saída os valores e textos informados." => {
                 "imprima muestra los valores y textos indicados en la salida."
             }
+            "O comando" => "El comando",
+            "O laço" => "El ciclo",
+            "exibe os valores e encerra a linha" => "muestra los valores y termina la línea",
+            "exibe os valores sem encerrar a linha" => "muestra los valores sin terminar la línea",
+            "A quebra de linha determina onde a próxima saída começa." => {
+                "El salto de línea determina dónde comienza la siguiente salida."
+            }
+            "Execute duas instruções de saída seguidas e compare em quais linhas aparecem." => {
+                "Ejecuta dos instrucciones de salida seguidas y compara en qué líneas aparecen."
+            }
+            "Execute duas instruções de saída seguidas e observe se ficam na mesma linha." => {
+                "Ejecuta dos instrucciones de salida seguidas y observa si quedan en la misma línea."
+            }
+            "Altere o texto e execute novamente para observar a saída." => {
+                "Cambia el texto y vuelve a ejecutar para observar la salida."
+            }
+            "lê um inteiro" => "lee un entero",
+            "lê um número real" => "lee un número real",
+            "lê um texto" => "lee texto",
+            "lê um caractere" => "lee un carácter",
+            "lê um valor lógico" => "lee un valor lógico",
+            "lê uma lista de inteiros" => "lee una lista de enteros",
+            "lê uma lista de números reais" => "lee una lista de números reales",
+            "lê uma lista de textos" => "lee una lista de textos",
+            "A instrução" => "La instrucción",
+            "armazena o valor informado na variável de destino" => {
+                "guarda el valor indicado en la variable de destino"
+            }
+            "fornece um valor para a expressão que a utiliza" => {
+                "proporciona un valor a la expresión que la utiliza"
+            }
+            "O tipo solicitado define como o valor de entrada é interpretado." => {
+                "El tipo solicitado determina cómo se interpreta el valor de entrada."
+            }
+            "A seleção compara um valor com alternativas explícitas." => {
+                "La selección compara un valor con alternativas explícitas."
+            }
+            "O bloco é executado antes da verificação da condição." => {
+                "El bloque se ejecuta antes de comprobar la condición."
+            }
             "A atribuição calcula o lado direito e atualiza o valor da variável à esquerda." => {
                 "La asignación evalúa el lado derecho y actualiza la variable de la izquierda."
+            }
+            "O operador" => "El operador",
+            "atribui o valor à variável" => "asigna el valor a la variable",
+            "A expressão à direita do operador produz o valor armazenado." => {
+                "La expresión a la derecha del operador produce el valor almacenado."
+            }
+            "Altere o valor à direita do operador e observe a variável." => {
+                "Cambia el valor a la derecha del operador y observa la variable."
+            }
+            "Altere o valor à direita do operador e observe o valor de" => {
+                "Cambia el valor a la derecha del operador y observa"
+            }
+            "é testada por" => "es probada por",
+            "e determina qual bloco será executado." => "y determina qué bloque se ejecuta.",
+            "compara o valor selecionado com cada caso e executa o bloco correspondente." => {
+                "compara el valor seleccionado con cada caso y ejecuta el bloque correspondiente."
+            }
+            "Troque o valor de `escolha` ou de um caso e observe qual bloco executa." => {
+                "Cambia el valor de `escolha` o de un caso y observa qué bloque se ejecuta."
+            }
+            "testa a condição antes de cada repetição" => {
+                "prueba la condición antes de cada repetición"
+            }
+            "verifica a condição depois de executar o bloco" => {
+                "comprueba la condición después de ejecutar el bloque"
+            }
+            "percorre os valores definidos para a variável de controle" => {
+                "recorre los valores definidos para la variable de control"
+            }
+            "Altere a condição e observe quantas vezes o bloco se repete." => {
+                "Cambia la condición y observa cuántas veces se repite el bloque."
+            }
+            "Altere a condição e confirme que o bloco executa antes da verificação." => {
+                "Cambia la condición y confirma que el bloque se ejecuta antes de comprobarla."
+            }
+            "Altere um limite do `para` e observe quantas vezes o bloco se repete." => {
+                "Cambia un límite de `para` y observa cuántas veces se repite el bloque."
             }
             "chamada" => "llamada",
             "importação" => "importación",
@@ -1837,7 +1993,44 @@ const UI_TRANSLATION_KEYS: &[&str] = &[
     "leia solicita um valor e o armazena na variável informada antes de o programa continuar.",
     "escreva e escreval mostram na saída os valores e textos informados.",
     "imprima mostra na saída os valores e textos informados.",
+    "O comando",
+    "O laço",
+    "exibe os valores e encerra a linha",
+    "exibe os valores sem encerrar a linha",
+    "A quebra de linha determina onde a próxima saída começa.",
+    "Execute duas instruções de saída seguidas e compare em quais linhas aparecem.",
+    "Execute duas instruções de saída seguidas e observe se ficam na mesma linha.",
+    "Altere o texto e execute novamente para observar a saída.",
+    "lê um inteiro",
+    "lê um número real",
+    "lê um texto",
+    "lê um caractere",
+    "lê um valor lógico",
+    "lê uma lista de inteiros",
+    "lê uma lista de números reais",
+    "lê uma lista de textos",
+    "A instrução",
+    "armazena o valor informado na variável de destino",
+    "fornece um valor para a expressão que a utiliza",
+    "O tipo solicitado define como o valor de entrada é interpretado.",
+    "A seleção compara um valor com alternativas explícitas.",
+    "O bloco é executado antes da verificação da condição.",
     "A atribuição calcula o lado direito e atualiza o valor da variável à esquerda.",
+    "O operador",
+    "atribui o valor à variável",
+    "A expressão à direita do operador produz o valor armazenado.",
+    "Altere o valor à direita do operador e observe a variável.",
+    "Altere o valor à direita do operador e observe o valor de",
+    "é testada por",
+    "e determina qual bloco será executado.",
+    "compara o valor selecionado com cada caso e executa o bloco correspondente.",
+    "Troque o valor de `escolha` ou de um caso e observe qual bloco executa.",
+    "testa a condição antes de cada repetição",
+    "verifica a condição depois de executar o bloco",
+    "percorre os valores definidos para a variável de controle",
+    "Altere a condição e observe quantas vezes o bloco se repete.",
+    "Altere a condição e confirme que o bloco executa antes da verificação.",
+    "Altere um limite do `para` e observe quantas vezes o bloco se repete.",
     "Esta função termina sem devolver um valor.",
     "O retorno entrega um valor do tipo",
     "ao ponto que chamou a função",
@@ -2206,6 +2399,18 @@ struct CurrentLearningAnalysis {
 }
 
 fn merge_editor_diagnostics(hint: &mut LearningHint, diagnostics: &[EditorDiagnostic]) {
+    if diagnostics.iter().any(|diagnostic| {
+        matches!(
+            diagnostic.category,
+            diagnostics::DiagnosticCategory::Lexical | diagnostics::DiagnosticCategory::Syntax
+        )
+    }) {
+        hint.problems.retain(|problem| {
+            !(problem.kind == crate::learning::LearningProblemKind::Syntax
+                && problem.text == crate::learning::LearningProblemText::InterpreterDiagnostic)
+        });
+    }
+
     for diagnostic in diagnostics
         .iter()
         .filter(|diagnostic| diagnostic.line == hint.line)
@@ -4019,6 +4224,7 @@ pub struct MainUi {
     syntax_tags: SyntaxTags,
     output_buffer: gtk::TextBuffer,
     output_view: gtk::TextView,
+    problems_tab: gtk::Button,
     problems_list: gtk::Box,
     input_entry: gtk::Entry,
     output_status: gtk::Label,
@@ -4074,6 +4280,7 @@ pub struct MainUi {
     displayed_settings_visible: bool,
     displayed_output_text: String,
     displayed_diagnostics: Vec<EditorDiagnostic>,
+    displayed_execution_diagnostics_document_id: Option<u64>,
     displayed_navigation_serial: u64,
     displayed_input_requested: bool,
     displayed_output_status: String,
@@ -5719,6 +5926,15 @@ impl SimpleComponent for MainWindow {
             );
             ui.displayed_diagnostics.clone_from(&editor_diagnostics);
         }
+        if ui.displayed_execution_diagnostics_document_id != self.execution_diagnostics_document_id
+        {
+            if self.execution_diagnostics_document_id.is_some()
+                && self.execution_diagnostics_document_id == self.active_document_id
+            {
+                ui.problems_tab.emit_clicked();
+            }
+            ui.displayed_execution_diagnostics_document_id = self.execution_diagnostics_document_id;
+        }
         if ui.displayed_input_requested != self.input_requested {
             ui.input_entry.set_visible(self.input_requested);
             if self.input_requested {
@@ -6064,6 +6280,41 @@ fn learning_topic_label(topic: LearningTopic, language: UiLanguage) -> &'static 
     )
 }
 
+fn assignment_operator(language: Language) -> Option<&'static str> {
+    match language {
+        Language::Portugol | Language::Calango => Some("="),
+        Language::Visualg | Language::Mapler => Some("<-"),
+        Language::Potigol | Language::GPortugol => Some(":="),
+    }
+}
+
+fn output_line_break(hint: &LearningHint) -> Option<bool> {
+    match (hint.language, hint.name.as_deref()) {
+        (Language::Potigol, Some("escreva"))
+        | (Language::Visualg | Language::Calango, Some("escreval"))
+        | (Language::GPortugol, Some("imprima"))
+        | (Language::Mapler, Some("escrever")) => Some(true),
+        (Language::Potigol, Some("imprima"))
+        | (Language::Visualg | Language::Calango, Some("escreva"))
+        | (Language::Portugol, Some("escreva")) => Some(false),
+        _ => None,
+    }
+}
+
+fn potigol_input_description(command: &str) -> Option<&'static str> {
+    match command {
+        "leia_inteiro" => Some("lê um inteiro"),
+        "leia_real" | "leia_numero" | "leia_número" => Some("lê um número real"),
+        "leia_texto" => Some("lê um texto"),
+        "leia_caractere" => Some("lê um caractere"),
+        "leia_logico" => Some("lê um valor lógico"),
+        "leia_inteiros" => Some("lê uma lista de inteiros"),
+        "leia_reais" | "leia_numeros" | "leia_números" => Some("lê uma lista de números reais"),
+        "leia_textos" => Some("lê uma lista de textos"),
+        _ => None,
+    }
+}
+
 fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (String, String, String) {
     let text = |portuguese| tr(language, portuguese).to_owned();
     let has_syntax_error = hint
@@ -6171,35 +6422,107 @@ fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (String, String, 
                     .join("\n")
             }
         }
-        LearningTopic::Decision => match hint.expression.as_deref() {
-            Some(expression) => format!(
+        LearningTopic::Decision if hint.name.as_deref() == Some("escolha") => format!(
+            "{} `{name}` {}.",
+            text("O comando"),
+            text("compara o valor selecionado com cada caso e executa o bloco correspondente")
+        ),
+        LearningTopic::Decision => match (hint.name.as_deref(), hint.expression.as_deref()) {
+            (Some(command), Some(expression)) => format!(
+                "{} “{expression}” {} `{command}` {}",
+                text("A condição"),
+                text("é testada por"),
+                text("e determina qual bloco será executado.")
+            ),
+            (_, Some(expression)) => format!(
                 "{} “{expression}” {}",
                 text("A condição"),
                 text(
                     "determina qual bloco será executado conforme resulte em verdadeiro ou falso."
                 )
             ),
-            None => {
-                text("Uma condição escolhe qual bloco executar com base em verdadeiro ou falso.")
-            }
+            _ => text("Uma condição escolhe qual bloco executar com base em verdadeiro ou falso."),
         },
-        LearningTopic::Loop => {
-            text("Um laço repete instruções de acordo com uma condição ou faixa de valores.")
-        }
-        LearningTopic::Input => match hint.call.as_ref() {
-            Some(call) => format!(
-                "{} `{}` {}.",
-                text("A chamada"),
-                call.member,
-                text("obtém dados de entrada para o programa")
+        LearningTopic::Loop => match hint
+            .name
+            .as_deref()
+            .and_then(|name| name.split_whitespace().next())
+        {
+            Some("enquanto") => format!(
+                "{} `{name}` {}.",
+                text("O laço"),
+                text("testa a condição antes de cada repetição")
             ),
-            None => text("A instrução de entrada fornece valores para o programa usar."),
+            Some("repita" | "faca") => format!(
+                "{} `{name}` {}.",
+                text("O laço"),
+                text("verifica a condição depois de executar o bloco")
+            ),
+            Some("para") => format!(
+                "{} `{name}` {}.",
+                text("O laço"),
+                text("percorre os valores definidos para a variável de controle")
+            ),
+            _ => text("Um laço repete instruções de acordo com uma condição ou faixa de valores."),
         },
-        LearningTopic::Output => {
-            text("Esta instrução apresenta os dados informados na saída do programa.")
+        LearningTopic::Input => {
+            let command = hint
+                .call
+                .as_ref()
+                .map(|call| call.member.as_str())
+                .or(hint.name.as_deref());
+            if hint.language == Language::Potigol
+                && let Some(description) = command.and_then(potigol_input_description)
+            {
+                format!(
+                    "{} `{}` {}.",
+                    text("A chamada"),
+                    command.unwrap_or("leia"),
+                    text(description)
+                )
+            } else if hint.language == Language::GPortugol {
+                format!(
+                    "{} `{}` {}.",
+                    text("A chamada"),
+                    command.unwrap_or("leia"),
+                    text("fornece um valor para a expressão que a utiliza")
+                )
+            } else if let Some(command) = command {
+                format!(
+                    "{} `{command}` {}.",
+                    text("A instrução"),
+                    text("armazena o valor informado na variável de destino")
+                )
+            } else {
+                text("A instrução de entrada fornece valores para o programa usar.")
+            }
         }
+        LearningTopic::Output => match output_line_break(hint) {
+            Some(line_break) => format!(
+                "{} `{name}` {}.",
+                text("O comando"),
+                text(if line_break {
+                    "exibe os valores e encerra a linha"
+                } else {
+                    "exibe os valores sem encerrar a linha"
+                })
+            ),
+            None => text("Esta instrução apresenta os dados informados na saída do programa."),
+        },
         LearningTopic::Assignment => {
-            text("A atribuição calcula o lado direito e atualiza o valor da variável à esquerda.")
+            if let (Some(operator), Some(target)) =
+                (assignment_operator(hint.language), hint.name.as_deref())
+            {
+                format!(
+                    "{} `{operator}` {} `{target}`.",
+                    text("O operador"),
+                    text("atribui o valor à variável")
+                )
+            } else {
+                text(
+                    "A atribuição calcula o lado direito e atualiza o valor da variável à esquerda.",
+                )
+            }
         }
         LearningTopic::Call => format!(
             "{} `{call_name}` {}.",
@@ -6268,9 +6591,9 @@ fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (String, String, 
         LearningTopic::Variable => text(
             "O tipo define quais valores podem ser guardados; o formato indica se há um valor, um vetor ou uma matriz.",
         ),
-        LearningTopic::Assignment => text(
-            "Atribuir associa um novo valor a uma variável; o operador determina como o valor é calculado.",
-        ),
+        LearningTopic::Assignment => {
+            text("A expressão à direita do operador produz o valor armazenado.")
+        }
         LearningTopic::Call => text(
             "Uma chamada transfere a execução para uma função ou operação e depois continua no ponto seguinte.",
         ),
@@ -6283,10 +6606,24 @@ fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (String, String, 
         LearningTopic::Return => {
             text("O retorno leva o resultado da função de volta ao ponto que a chamou.")
         }
+        LearningTopic::Decision if hint.name.as_deref() == Some("escolha") => {
+            text("A seleção compara um valor com alternativas explícitas.")
+        }
         LearningTopic::Decision => text("A condição é avaliada como verdadeira ou falsa."),
+        LearningTopic::Loop
+            if hint
+                .name
+                .as_deref()
+                .and_then(|name| name.split_whitespace().next())
+                .is_some_and(|name| matches!(name, "repita" | "faca")) =>
+        {
+            text("O bloco é executado antes da verificação da condição.")
+        }
         LearningTopic::Loop => text("Cada repetição executa novamente as instruções do bloco."),
-        LearningTopic::Input => text("A entrada é convertida para o tipo da variável solicitada."),
-        LearningTopic::Output => text("A saída permite observar valores calculados pelo programa."),
+        LearningTopic::Input => {
+            text("O tipo solicitado define como o valor de entrada é interpretado.")
+        }
+        LearningTopic::Output => text("A quebra de linha determina onde a próxima saída começa."),
         LearningTopic::Program => {
             text("Uma instrução é executada na ordem definida pelo algoritmo.")
         }
@@ -6313,6 +6650,9 @@ fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (String, String, 
         LearningTopic::Function => {
             text("Chame a função em outro ponto do programa e compare o valor que ela devolve.")
         }
+        LearningTopic::Decision if hint.name.as_deref() == Some("escolha") => {
+            text("Troque o valor de `escolha` ou de um caso e observe qual bloco executa.")
+        }
         LearningTopic::Decision => match (&hint.expression, &hint.experiment_expression) {
             (Some(current), Some(changed)) => format!(
                 "{} “{current}” {} “{changed}” {}",
@@ -6322,22 +6662,52 @@ fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (String, String, 
             ),
             _ => text("Mude a condição e execute novamente. O resultado muda?"),
         },
-        LearningTopic::Loop => {
-            text("Mude a condição ou os limites do laço e observe quantas vezes ele repete.")
+        LearningTopic::Loop
+            if hint
+                .name
+                .as_deref()
+                .and_then(|name| name.split_whitespace().next())
+                == Some("repita") =>
+        {
+            text("Altere a condição e confirme que o bloco executa antes da verificação.")
         }
+        LearningTopic::Loop
+            if hint
+                .name
+                .as_deref()
+                .and_then(|name| name.split_whitespace().next())
+                == Some("para") =>
+        {
+            text("Altere um limite do `para` e observe quantas vezes o bloco se repete.")
+        }
+        LearningTopic::Loop => text("Altere a condição e observe quantas vezes o bloco se repete."),
         LearningTopic::Input => {
             text("Digite outro valor e observe como o restante do programa reage.")
         }
-        LearningTopic::Output => text("Altere o texto ou o valor exibido e execute novamente."),
+        LearningTopic::Output => match output_line_break(hint) {
+            Some(true) => text(
+                "Execute duas instruções de saída seguidas e compare em quais linhas aparecem.",
+            ),
+            Some(false) => {
+                text("Execute duas instruções de saída seguidas e observe se ficam na mesma linha.")
+            }
+            None => text("Altere o texto e execute novamente para observar a saída."),
+        },
         LearningTopic::Variable if hint.variables.iter().any(|variable| variable.is_constant) => {
             String::new()
         }
         LearningTopic::Variable => {
             text("Altere o valor inicial ou um elemento do vetor e observe o efeito no resultado.")
         }
-        LearningTopic::Assignment => {
-            text("Troque o valor atribuído e acompanhe a próxima leitura da variável.")
-        }
+        LearningTopic::Assignment => hint.name.as_deref().map_or_else(
+            || text("Altere o valor à direita do operador e observe a variável."),
+            |target| {
+                format!(
+                    "{} `{target}`.",
+                    text("Altere o valor à direita do operador e observe o valor de")
+                )
+            },
+        ),
         LearningTopic::Call | LearningTopic::Import | LearningTopic::LibraryCall => String::new(),
         LearningTopic::Return => {
             text("Altere o valor devolvido e veja como a chamada da função reage.")
@@ -6616,6 +6986,7 @@ fn build_window_content(
     let debugger_page = output_ui.debugger_page;
     let output_buffer = output_ui.output_buffer;
     let output_tab_output = output_ui.output_tab;
+    let problems_tab = output_ui.problems_tab;
     let output_view = output_ui.output_view;
     let problems_list = output_ui.problems_list;
     let debugger_controls = output_ui.debugger_controls;
@@ -7052,6 +7423,7 @@ fn build_window_content(
         syntax_tags,
         output_buffer,
         output_view,
+        problems_tab,
         problems_list,
         input_entry,
         output_status,
@@ -7108,6 +7480,7 @@ fn build_window_content(
         displayed_output_text: tr(ui_language, "A saída aparecerá aqui após a execução.")
             .to_string(),
         displayed_diagnostics: Vec::new(),
+        displayed_execution_diagnostics_document_id: None,
         displayed_navigation_serial: 0,
         displayed_input_requested: false,
         displayed_output_status: tr(ui_language, "Pronto para executar").to_string(),
@@ -8523,6 +8896,7 @@ fn show_new_file_dialog(
     let potigol_for_portugol = potigol_button.clone();
     let calango_for_portugol = calango_button.clone();
     let selected_for_portugol = selected_template.clone();
+    let variant_for_portugol = variant_field.clone();
     let variant_label_for_portugol = variant_label.clone();
     let portugol_picker_for_portugol = portugol_variant_picker.clone();
     let potigol_picker_for_portugol = potigol_variant_picker.clone();
@@ -8532,6 +8906,7 @@ fn show_new_file_dialog(
         calango_for_portugol.remove_css_class("selected");
         let template = ProjectTemplate::Portugol20;
         selected_for_portugol.set(template);
+        variant_for_portugol.set_visible(true);
         variant_label_for_portugol.set_text(tr(ui_language, "Variante do Portugol"));
         portugol_picker_for_portugol.set_visible(true);
         potigol_picker_for_portugol.set_visible(false);
@@ -8540,6 +8915,7 @@ fn show_new_file_dialog(
     let portugol_for_potigol = portugol_button.clone();
     let calango_for_potigol = calango_button.clone();
     let selected_for_potigol = selected_template.clone();
+    let variant_for_potigol = variant_field.clone();
     let variant_label_for_potigol = variant_label.clone();
     let portugol_picker_for_potigol = portugol_variant_picker.clone();
     let potigol_picker_for_potigol = potigol_variant_picker.clone();
@@ -8549,6 +8925,7 @@ fn show_new_file_dialog(
         calango_for_potigol.remove_css_class("selected");
         let template = ProjectTemplate::PotigolClassic;
         selected_for_potigol.set(template);
+        variant_for_potigol.set_visible(true);
         variant_label_for_potigol.set_text(tr(ui_language, "Variante do Potigol"));
         portugol_picker_for_potigol.set_visible(false);
         potigol_picker_for_potigol.set_visible(true);
@@ -9308,7 +9685,7 @@ fn scan_source_directory(
 #[cfg(test)]
 mod ui_language_tests {
     use super::{
-        UI_TRANSLATION_KEYS, UiLanguage, learning_copy, new_source_path,
+        UI_TRANSLATION_KEYS, UiLanguage, learning_copy, merge_editor_diagnostics, new_source_path,
         normalized_project_item_name, project_scan_is_current, supported_save_path, tr,
         translate_known_text,
     };
@@ -9378,9 +9755,14 @@ mod ui_language_tests {
                     UiLanguage::English,
                     UiLanguage::Spanish,
                 ] {
+                    let source_text = tr(from, key);
+                    let canonical_key = UI_TRANSLATION_KEYS
+                        .iter()
+                        .find(|candidate| tr(from, candidate) == source_text)
+                        .expect("every source translation must have a catalog key");
                     assert_eq!(
-                        translate_known_text(from, to, tr(from, key)),
-                        Some(tr(to, key).to_string()),
+                        translate_known_text(from, to, source_text),
+                        Some(tr(to, canonical_key).to_string()),
                         "failed translating {key:?} from {from:?} to {to:?}"
                     );
                 }
@@ -9501,6 +9883,276 @@ fim";
     }
 
     #[test]
+    fn learning_copy_explains_output_line_behavior_in_each_dialect() {
+        let cases = [
+            ("escreva \"Olá\"", 1, Language::Potigol, "escreva", true),
+            ("imprima \"Olá\"", 1, Language::Potigol, "imprima", false),
+            (
+                "algoritmo \"aula\"\ninicio\nescreva(\"Olá\")\nfimalgoritmo",
+                3,
+                Language::Visualg,
+                "escreva",
+                false,
+            ),
+            (
+                "algoritmo \"aula\"\ninicio\nescreval(\"Olá\")\nfimalgoritmo",
+                3,
+                Language::Visualg,
+                "escreval",
+                true,
+            ),
+            (
+                "programa {\n funcao inicio() {\n  escreva(\"Olá\")\n }\n}",
+                3,
+                Language::Portugol,
+                "escreva",
+                false,
+            ),
+            (
+                "algoritmo aula;\ninício\n imprima(\"Olá\");\nfim",
+                3,
+                Language::GPortugol,
+                "imprima",
+                true,
+            ),
+            (
+                "algoritmo aula;\nprincipal\n escreva(\"Olá\");\nfimPrincipal",
+                3,
+                Language::Calango,
+                "escreva",
+                false,
+            ),
+            (
+                "variaveis\n x: inteiro;\ninicio\n escrever \"Olá\";\nfim.",
+                4,
+                Language::Mapler,
+                "escrever",
+                true,
+            ),
+        ];
+
+        for (source, line, dialect, command, newline) in cases {
+            let hint = learning_hint(source, line, dialect);
+            assert_eq!(hint.topic, LearningTopic::Output, "{dialect:?}: {source}");
+            assert_eq!(hint.name.as_deref(), Some(command), "{dialect:?}: {source}");
+            let (explanation, concept, experiment) = learning_copy(&hint, UiLanguage::Portuguese);
+            assert!(explanation.contains(command), "{dialect:?}: {explanation}");
+            assert!(
+                explanation.contains(if newline {
+                    "encerra a linha"
+                } else {
+                    "sem encerrar a linha"
+                }),
+                "{dialect:?}: {explanation}"
+            );
+            assert!(concept.contains("quebra de linha"));
+            assert!(experiment.contains("instruções de saída"));
+        }
+    }
+
+    #[test]
+    fn learning_copy_uses_each_dialects_assignment_operator_and_target() {
+        let cases = [
+            (
+                "var pontos := 0\npontos := 1",
+                2,
+                Language::Potigol,
+                ":=",
+                "pontos",
+            ),
+            (
+                "programa {\n funcao inicio() {\n  inteiro pontos\n  pontos = 1\n }\n}",
+                4,
+                Language::Portugol,
+                "=",
+                "pontos",
+            ),
+            (
+                "algoritmo \"aula\"\nvar\npontos: inteiro\ninicio\npontos <- 1\nfimalgoritmo",
+                5,
+                Language::Visualg,
+                "<-",
+                "pontos",
+            ),
+            (
+                "algoritmo aula;\nvariáveis pontos: inteiro; fim-variáveis\ninício\npontos := 1;\nfim",
+                4,
+                Language::GPortugol,
+                ":=",
+                "pontos",
+            ),
+            (
+                "algoritmo aula;\nprincipal\ninteiro pontos;\npontos = 1;\nfimPrincipal",
+                4,
+                Language::Calango,
+                "=",
+                "pontos",
+            ),
+            (
+                "variaveis\npontos: inteiro;\ninicio\npontos <- 1;\nfim.",
+                4,
+                Language::Mapler,
+                "<-",
+                "pontos",
+            ),
+        ];
+
+        for (source, line, dialect, operator, target) in cases {
+            let hint = learning_hint(source, line, dialect);
+            assert_eq!(
+                hint.topic,
+                LearningTopic::Assignment,
+                "{dialect:?}: {source}"
+            );
+            assert_eq!(hint.name.as_deref(), Some(target), "{dialect:?}: {source}");
+            let (explanation, concept, experiment) = learning_copy(&hint, UiLanguage::Portuguese);
+            assert!(explanation.contains(&format!("`{operator}`")));
+            assert!(explanation.contains(target));
+            assert!(!concept.is_empty());
+            assert!(experiment.contains(target));
+        }
+    }
+
+    #[test]
+    fn learning_copy_explains_potigol_input_types_and_dialects() {
+        for (command, description) in [
+            ("leia_inteiro", "inteiro"),
+            ("leia_real", "número real"),
+            ("leia_texto", "texto"),
+            ("leia_caractere", "caractere"),
+            ("leia_logico", "valor lógico"),
+            ("leia_inteiros", "lista de inteiros"),
+            ("leia_reais", "lista de números reais"),
+            ("leia_textos", "lista de textos"),
+        ] {
+            let source = format!("var valor := {command}()\n");
+            let hint = learning_hint(&source, 1, Language::Potigol);
+            assert_eq!(hint.topic, LearningTopic::Input, "{command}");
+            let (explanation, concept, experiment) = learning_copy(&hint, UiLanguage::Portuguese);
+            assert!(explanation.contains(command));
+            assert!(explanation.contains(description));
+            assert!(concept.contains("tipo solicitado"));
+            assert!(experiment.contains("Digite outro valor"));
+        }
+
+        let cases = [
+            (
+                "programa {\n funcao inicio() {\n  inteiro valor\n  leia(valor)\n }\n}",
+                4,
+                Language::Portugol,
+                "leia",
+            ),
+            (
+                "algoritmo \"aula\"\nvar\nvalor: inteiro\ninicio\nleia(valor)\nfimalgoritmo",
+                5,
+                Language::Visualg,
+                "leia",
+            ),
+            (
+                "algoritmo aula;\nvariáveis valor: inteiro; fim-variáveis\ninício\nvalor := leia();\nfim",
+                4,
+                Language::GPortugol,
+                "leia",
+            ),
+            (
+                "algoritmo aula;\nprincipal\ninteiro valor;\nleia(valor);\nfimPrincipal",
+                4,
+                Language::Calango,
+                "leia",
+            ),
+            (
+                "variaveis valor: inteiro;\ninicio\nler valor;\nfim.",
+                3,
+                Language::Mapler,
+                "ler",
+            ),
+        ];
+        for (source, line, dialect, command) in cases {
+            let hint = learning_hint(source, line, dialect);
+            assert_eq!(hint.topic, LearningTopic::Input, "{dialect:?}: {source}");
+            let (explanation, _, _) = learning_copy(&hint, UiLanguage::Portuguese);
+            assert!(explanation.contains(command), "{dialect:?}: {explanation}");
+        }
+    }
+
+    #[test]
+    fn learning_copy_uses_each_dialects_condition_and_loop_kind() {
+        let cases = [
+            (
+                "var idade := 18\nse idade >= 18 então\n  escreva \"maior\"\nsenão\n  escreva \"menor\"\nfim\nenquanto idade > 0 faça\n  idade := idade - 1\nfim",
+                2,
+                7,
+                Language::Potigol,
+            ),
+            (
+                "programa {\n funcao inicio() {\n  inteiro idade = 18\n  se (idade >= 18) {\n   escreva(\"maior\")\n  } senao {\n   escreva(\"menor\")\n  }\n  enquanto (idade > 0) {\n   idade--\n  }\n }\n}",
+                4,
+                9,
+                Language::Portugol,
+            ),
+            (
+                "algoritmo \"aula\"\nvar\nidade: inteiro\ninicio\nse idade >= 18 entao\n escreval(\"maior\")\nsenao\n escreval(\"menor\")\nfimse\nenquanto idade > 0 faca\n idade <- idade - 1\nfimenquanto\nfimalgoritmo",
+                5,
+                10,
+                Language::Visualg,
+            ),
+            (
+                "algoritmo aula;\nvariáveis idade: inteiro; fim-variáveis\ninício\nse idade >= 18 então imprima(\"maior\"); senão imprima(\"menor\"); fim-se\nenquanto idade > 0 faça idade := idade - 1; fim-enquanto\nfim",
+                4,
+                5,
+                Language::GPortugol,
+            ),
+            (
+                "algoritmo aula;\nprincipal\ninteiro idade;\nse (idade >= 18) entao\nescreva(\"maior\");\nsenao\nescreva(\"menor\");\nfimSe\nenquanto (idade > 0) faca\nidade = idade - 1;\nfimEnquanto\nfimPrincipal",
+                4,
+                9,
+                Language::Calango,
+            ),
+            (
+                "variaveis idade: inteiro;\ninicio\nse idade >= 18 entao\nescrever \"maior\";\nsenao\nescrever \"menor\";\nfim se;\nenquanto idade > 0 faca\n idade <- idade - 1;\nfim enquanto;\nfim.",
+                3,
+                8,
+                Language::Mapler,
+            ),
+        ];
+
+        for (source, decision_line, loop_line, dialect) in cases {
+            let decision = learning_hint(source, decision_line, dialect);
+            assert_eq!(
+                decision.topic,
+                LearningTopic::Decision,
+                "{dialect:?}: {:?}",
+                decision.problems
+            );
+            assert!(
+                decision
+                    .expression
+                    .as_deref()
+                    .is_some_and(|condition| condition.contains(">=")),
+                "{dialect:?}: {:?}",
+                decision.expression
+            );
+            let (decision_text, _, decision_experiment) =
+                learning_copy(&decision, UiLanguage::Portuguese);
+            assert!(
+                decision_text.contains(">= 18"),
+                "{dialect:?}: {decision_text}"
+            );
+            assert!(!decision_experiment.is_empty(), "{dialect:?}");
+
+            let loop_hint = learning_hint(source, loop_line, dialect);
+            assert_eq!(loop_hint.topic, LearningTopic::Loop, "{dialect:?}");
+            assert_eq!(loop_hint.name.as_deref(), Some("enquanto"), "{dialect:?}");
+            let (loop_text, _, loop_experiment) = learning_copy(&loop_hint, UiLanguage::Portuguese);
+            assert!(
+                loop_text.contains("testa a condição"),
+                "{dialect:?}: {loop_text}"
+            );
+            assert!(!loop_experiment.is_empty(), "{dialect:?}");
+        }
+    }
+
+    #[test]
     fn learning_copy_avoids_claims_for_unknown_lines_and_uses_neutral_procedure_concept() {
         let potigol = learning_copy(
             &learning_hint("soma = 1 + 2", 1, Language::Potigol),
@@ -9517,10 +10169,10 @@ fim";
         assert!(unknown.2.is_empty());
 
         let comment = learning_copy(
-            &learning_hint("# comentário", 1, Language::Potigol),
+            &learning_hint("# comentário\n", 1, Language::Potigol),
             UiLanguage::Portuguese,
         );
-        assert!(comment.0.contains("comentários e linhas vazias"));
+        assert!(comment.0.contains("não contém uma instrução reconhecida"));
         assert!(comment.1.is_empty());
         assert!(comment.2.is_empty());
 
@@ -9576,6 +10228,25 @@ fim";
         let procedure = learning_copy(&procedure_hint, UiLanguage::Portuguese);
         assert!(procedure.1.contains("rotina"));
         assert!(!procedure.1.contains("VisuAlg"));
+    }
+
+    #[test]
+    fn learning_panel_receives_only_editor_errors_on_the_selected_line() {
+        let source = "use \"jerimum\"\njogo.titulo = \"teste\"\n";
+        let diagnostics =
+            crate::diagnostics::analyze(1, "principal.poti", None, Language::Potigol, source);
+
+        let mut selected = learning_hint(source, 2, Language::Potigol);
+        merge_editor_diagnostics(&mut selected, &diagnostics);
+        assert!(selected.problems.iter().any(|problem| {
+            problem.line == 2
+                && problem.kind == crate::learning::LearningProblemKind::Syntax
+                && problem.message.contains("usa ':='")
+        }));
+
+        let mut other_line = learning_hint(source, 1, Language::Potigol);
+        merge_editor_diagnostics(&mut other_line, &diagnostics);
+        assert!(other_line.problems.is_empty());
     }
 
     #[test]

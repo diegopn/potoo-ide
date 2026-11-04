@@ -286,10 +286,27 @@ where
     if is_cancelled() {
         return None;
     }
-    let line = source
+    let source_line = source
         .lines()
         .nth(one_based_line.saturating_sub(1))
         .unwrap_or("");
+    if is_blank_or_line_comment(source, one_based_line, language) {
+        return Some(LearningHint {
+            line: one_based_line.max(1),
+            column: 1,
+            language,
+            topic: LearningTopic::Unrecognized,
+            name: None,
+            return_type: None,
+            parameters: Vec::new(),
+            variables: Vec::new(),
+            expression: None,
+            experiment_expression: None,
+            call: None,
+            problems: Vec::new(),
+        });
+    }
+    let line = source_line;
     let cleaned_gportugol_line;
     let line = if language == Language::GPortugol {
         cleaned_gportugol_line = gportugol::source_line_code(source, one_based_line);
@@ -497,18 +514,26 @@ where
         .iter()
         .filter(|diagnostic| diagnostic.line == one_based_line)
     {
-        let kind = match diagnostic.kind {
-            ExecutionDiagnosticKind::Lexical | ExecutionDiagnosticKind::Syntax => {
-                LearningProblemKind::Syntax
-            }
-            ExecutionDiagnosticKind::Type => LearningProblemKind::Type,
-            ExecutionDiagnosticKind::Runtime => LearningProblemKind::Runtime,
+        let category = match diagnostic.kind {
+            ExecutionDiagnosticKind::Lexical => crate::diagnostics::DiagnosticCategory::Lexical,
+            ExecutionDiagnosticKind::Syntax => crate::diagnostics::DiagnosticCategory::Syntax,
+            ExecutionDiagnosticKind::Type => crate::diagnostics::DiagnosticCategory::Type,
+            ExecutionDiagnosticKind::Runtime => crate::diagnostics::DiagnosticCategory::Runtime,
         };
+        let kind = learning_problem_kind(category);
+        let message = crate::diagnostics::adapt_diagnostic_message(
+            language,
+            source,
+            category,
+            &diagnostic.message,
+            diagnostic.line,
+            diagnostic.column,
+        );
         if problems.iter().any(|problem: &LearningProblem| {
             problem.kind == kind
                 && problem.line == diagnostic.line
                 && problem.column == diagnostic.column
-                && problem.message == diagnostic.message
+                && problem.message == message
         }) {
             continue;
         }
@@ -518,7 +543,7 @@ where
             line: diagnostic.line,
             column: diagnostic.column,
             text: LearningProblemText::InterpreterDiagnostic,
-            message: diagnostic.message.clone(),
+            message,
             suggestion: None,
         });
     }
@@ -549,6 +574,27 @@ where
         call: facts.call,
         problems,
     })
+}
+
+fn is_blank_or_line_comment(source: &str, line_number: usize, language: Language) -> bool {
+    let line = source
+        .lines()
+        .nth(line_number.saturating_sub(1))
+        .unwrap_or("")
+        .trim_start();
+    if line.is_empty() {
+        return true;
+    }
+    match language {
+        Language::Potigol => {
+            line.starts_with('#')
+                && source
+                    .split_inclusive('\n')
+                    .nth(line_number.saturating_sub(1))
+                    .is_some_and(|line| line.ends_with('\n'))
+        }
+        _ => line.starts_with("//"),
+    }
 }
 
 fn portugol_facts(analysis: SourceLineAnalysis) -> LearningFacts {
@@ -1269,15 +1315,30 @@ mod tests {
     #[test]
     fn learning_hint_recognizes_output_loops_and_unclassified_lines() {
         assert_eq!(
-            learning_hint("escreval(1)", 1, Language::Visualg).topic,
+            learning_hint(
+                "algoritmo \"aula\"\ninicio\nescreval(1)\nfimalgoritmo",
+                3,
+                Language::Visualg
+            )
+            .topic,
             LearningTopic::Output
         );
         assert_eq!(
-            learning_hint("enquanto x < 3 faca", 1, Language::Visualg).topic,
+            learning_hint(
+                "algoritmo \"aula\"\ninicio\nenquanto x < 3 faca\n escreval(x)\nfimenquanto\nfimalgoritmo",
+                3,
+                Language::Visualg
+            )
+            .topic,
             LearningTopic::Loop
         );
         assert_eq!(
-            learning_hint("escreva(1)", 1, Language::Portugol).topic,
+            learning_hint(
+                "programa {\n funcao inicio() {\n  escreva(1)\n }\n}",
+                3,
+                Language::Portugol
+            )
+            .topic,
             LearningTopic::Output
         );
         assert_eq!(
@@ -1308,6 +1369,30 @@ mod tests {
     }
 
     #[test]
+    fn blank_and_comment_lines_have_no_construct_or_problem_in_every_dialect() {
+        let cases = [
+            ("# comentário\n", Language::Potigol),
+            ("// comentário\n", Language::Portugol),
+            ("// comentário\n", Language::Visualg),
+            ("// comentário\n", Language::GPortugol),
+            ("// comentário\n", Language::Calango),
+            ("// comentário\n", Language::Mapler),
+        ];
+        for (source, language) in cases {
+            let hint = learning_hint(source, 1, language);
+            assert_eq!(hint.topic, LearningTopic::Unrecognized, "{language:?}");
+            assert!(hint.problems.is_empty(), "{language:?}: {source}");
+            assert!(hint.call.is_none(), "{language:?}: {source}");
+        }
+
+        let incomplete_potigol_comment = learning_hint("# comentário", 1, Language::Potigol);
+        assert!(
+            !incomplete_potigol_comment.problems.is_empty(),
+            "keep the Potigol parser's EOF diagnostic for an unterminated comment"
+        );
+    }
+
+    #[test]
     fn learning_hint_recognizes_jerimum_calls_only_when_the_library_is_imported() {
         let imported = "use \"jerimum\"\ndesenhe_personagem(g: Graphics2D): Nada\n  g.setColor(Cor.VERDE.color)\nfim";
         let hint = learning_hint(imported, 3, Language::Potigol);
@@ -1332,6 +1417,86 @@ mod tests {
         let hint = learning_hint(imported_but_untyped, 2, Language::Potigol);
         assert_eq!(hint.topic, LearningTopic::Call);
         assert_eq!(hint.call.and_then(|call| call.library), None);
+    }
+
+    #[test]
+    fn potigol_input_builtins_are_all_explained_as_input() {
+        for name in [
+            "leia_inteiro",
+            "leia_real",
+            "leia_numero",
+            "leia_número",
+            "leia_texto",
+            "leia_caractere",
+            "leia_logico",
+            "leia_inteiros",
+            "leia_reais",
+            "leia_numeros",
+            "leia_números",
+            "leia_textos",
+        ] {
+            let source = format!("var valor := {name}()\n");
+            let hint = learning_hint(&source, 1, Language::Potigol);
+            assert_eq!(hint.topic, LearningTopic::Input, "{name}");
+            assert_eq!(
+                hint.call.as_ref().map(|call| call.member.as_str()),
+                Some(name)
+            );
+        }
+    }
+
+    #[test]
+    fn output_hints_preserve_the_dialect_command_name() {
+        let cases = [
+            ("escreva \"Olá\"", 1, Language::Potigol, "escreva"),
+            ("imprima \"Olá\"", 1, Language::Potigol, "imprima"),
+            (
+                "algoritmo \"aula\"\ninicio\nescreva(\"Olá\")\nfimalgoritmo",
+                3,
+                Language::Visualg,
+                "escreva",
+            ),
+            (
+                "algoritmo \"aula\"\ninicio\nescreval(\"Olá\")\nfimalgoritmo",
+                3,
+                Language::Visualg,
+                "escreval",
+            ),
+            (
+                "programa {\n funcao inicio() {\n escreva(\"Olá\")\n }\n}",
+                3,
+                Language::Portugol,
+                "escreva",
+            ),
+            (
+                "algoritmo aula;\ninício\n imprima(\"Olá\");\nfim",
+                3,
+                Language::GPortugol,
+                "imprima",
+            ),
+            (
+                "algoritmo aula;\nprincipal\n escreval(\"Olá\");\nfimPrincipal",
+                3,
+                Language::Calango,
+                "escreval",
+            ),
+            (
+                "variaveis\n x: inteiro;\ninicio\n escrever \"Olá\";\nfim.",
+                4,
+                Language::Mapler,
+                "escrever",
+            ),
+        ];
+
+        for (source, line, language, command) in cases {
+            let hint = learning_hint(source, line, language);
+            assert_eq!(hint.topic, LearningTopic::Output, "{language:?}: {source}");
+            assert_eq!(
+                hint.name.as_deref(),
+                Some(command),
+                "{language:?}: {source}"
+            );
+        }
     }
 
     #[test]
@@ -1430,7 +1595,7 @@ fim";
             "algoritmo aula;\ninício\n  se idade >= então\n    imprima(\"ok\");\n  fim-se\nfim";
         let hint = learning_hint(source, 3, Language::GPortugol);
 
-        assert_eq!(hint.topic, LearningTopic::Decision);
+        assert_eq!(hint.topic, LearningTopic::Unrecognized);
         assert!(hint.problems.iter().any(|problem| {
             problem.kind == LearningProblemKind::Syntax && problem.line == 3 && problem.column > 0
         }));
@@ -1439,7 +1604,7 @@ fim";
     #[test]
     fn learning_hint_reports_line_specific_syntax_and_possible_logic_problems() {
         let source =
-            "programa {\n funcao inicio() {\n  se verdadeiro {\n   escreva(\"ok\")\n  }\n }\n}";
+            "programa {\n funcao inicio() {\n  se (verdadeiro) {\n   escreva(\"ok\")\n  }\n }\n}";
         let hint = learning_hint(source, 3, Language::Portugol);
         assert!(hint.problems.iter().any(|problem| {
             problem.kind == LearningProblemKind::PossibleLogic
@@ -1447,7 +1612,7 @@ fim";
                 && problem.line == 3
         }));
         let incomplete = learning_hint("programa {\n funcao inicio( {\n}", 2, Language::Portugol);
-        assert_eq!(incomplete.topic, LearningTopic::Function);
+        assert_eq!(incomplete.topic, LearningTopic::Unrecognized);
         assert_eq!(incomplete.name, None);
         assert!(incomplete.parameters.is_empty());
         assert!(
@@ -1456,6 +1621,60 @@ fim";
                 .iter()
                 .any(|problem| problem.kind == LearningProblemKind::Syntax)
         );
+    }
+
+    #[test]
+    fn parser_errors_stay_on_their_line_across_all_supported_dialects() {
+        let cases = [
+            ("escreva \"ok\"\n@\n", 2, Language::Potigol),
+            ("programa {\n @\n}", 2, Language::Portugol),
+            (
+                "algoritmo \"aula\"\ninicio\n@\nfimalgoritmo",
+                3,
+                Language::Visualg,
+            ),
+            ("algoritmo aula;\ninício\n@\nfim", 3, Language::GPortugol),
+            (
+                "algoritmo aula;\nprincipal\n@\nfimPrincipal",
+                3,
+                Language::Calango,
+            ),
+            (
+                "variaveis\n x: inteiro;\ninicio\n@\nfim.",
+                4,
+                Language::Mapler,
+            ),
+        ];
+        for (source, error_line, language) in cases {
+            let error = learning_hint(source, error_line, language);
+            assert_eq!(error.topic, LearningTopic::Unrecognized, "{language:?}");
+            assert!(
+                error
+                    .problems
+                    .iter()
+                    .any(|problem| problem.line == error_line),
+                "{language:?}: {source}"
+            );
+            let valid = learning_hint(source, 1, language);
+            assert!(
+                valid.problems.is_empty(),
+                "an error on another line leaked into {language:?}: {source}"
+            );
+        }
+    }
+
+    #[test]
+    fn potigol_field_assignment_advice_uses_potigol_syntax_in_the_learning_panel() {
+        let source = "use \"jerimum\"\njogo.titulo = \"teste\"\n";
+        let error = learning_hint(source, 2, Language::Potigol);
+        assert!(error.problems.iter().any(|problem| {
+            problem.line == 2
+                && problem.kind == LearningProblemKind::Syntax
+                && problem.message.contains("usa ':='")
+        }));
+
+        let import_line = learning_hint(source, 1, Language::Potigol);
+        assert!(import_line.problems.is_empty());
     }
 
     #[test]

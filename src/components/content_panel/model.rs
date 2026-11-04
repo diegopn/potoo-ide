@@ -462,7 +462,7 @@ mod tests {
         let language = Language::GPortugol;
         assert_eq!(language.file_name(), "principal.gpt");
         assert_eq!(language.extension(), "gpt");
-        assert!(language.sample().contains("algoritmo exemplo;"));
+        assert!(language.sample().contains("algoritmo contagem;"));
         assert_eq!(
             Language::from_path(Path::new(language.file_name())),
             Some(language)

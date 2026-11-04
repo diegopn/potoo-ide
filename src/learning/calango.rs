@@ -111,22 +111,61 @@ fn analyze_statements(
                     analysis.construct = SourceConstruct::VariableDeclaration;
                     analysis.variables = variables.iter().map(source_variable).collect();
                 }
-                StatementKind::Assign { value, .. } => {
-                    analysis.construct = if expression_calls_input(value) {
+                StatementKind::Assign { target, value } => {
+                    let is_input = expression_calls_input(value);
+                    analysis.construct = if is_input {
                         SourceConstruct::Input
                     } else {
                         SourceConstruct::Assignment
                     };
+                    analysis.name = if is_input {
+                        match &value.kind {
+                            ExpressionKind::Call { name, .. } if expression_calls_input(value) => {
+                                Some(name.clone())
+                            }
+                            _ => None,
+                        }
+                    } else {
+                        expression_name(target)
+                    };
                     analysis.call = expression_call(source, value);
                 }
-                StatementKind::Write { .. } => analysis.construct = SourceConstruct::Output,
-                StatementKind::Read { .. } => analysis.construct = SourceConstruct::Input,
-                StatementKind::If { .. } | StatementKind::Choose { .. } => {
-                    analysis.construct = SourceConstruct::Decision
+                StatementKind::Write { newline, .. } => {
+                    analysis.construct = SourceConstruct::Output;
+                    analysis.name = Some(if *newline { "escreval" } else { "escreva" }.to_owned());
+                }
+                StatementKind::Read { character_only, .. } => {
+                    analysis.construct = SourceConstruct::Input;
+                    analysis.name = Some(
+                        if *character_only {
+                            "leiaCaracter"
+                        } else {
+                            "leia"
+                        }
+                        .to_owned(),
+                    );
+                }
+                StatementKind::If { .. } => {
+                    analysis.construct = SourceConstruct::Decision;
+                    analysis.name = Some("se".to_owned());
+                }
+                StatementKind::Choose { .. } => {
+                    analysis.construct = SourceConstruct::Decision;
+                    analysis.name = Some("escolha".to_owned());
                 }
                 StatementKind::While { .. }
                 | StatementKind::DoWhile { .. }
-                | StatementKind::For { .. } => analysis.construct = SourceConstruct::Loop,
+                | StatementKind::For { .. } => {
+                    analysis.construct = SourceConstruct::Loop;
+                    analysis.name = Some(
+                        match &statement.kind {
+                            StatementKind::While { .. } => "enquanto",
+                            StatementKind::DoWhile { .. } => "faca",
+                            _ => "para",
+                        }
+                        .to_owned(),
+                    );
+                }
                 StatementKind::Call { name, .. } => {
                     analysis.construct = SourceConstruct::Call;
                     analysis.call = Some(source_call(
@@ -222,6 +261,14 @@ fn source_parameter(parameter: &Parameter) -> SourceSymbol {
 
 fn expression_calls_input(expression: &Expression) -> bool {
     matches!(&expression.kind, ExpressionKind::Call { name, .. } if matches!(name.as_str(), "leia" | "leiaCaracter"))
+}
+
+fn expression_name(expression: &Expression) -> Option<String> {
+    match &expression.kind {
+        ExpressionKind::Variable(name) => Some(name.clone()),
+        ExpressionKind::Index(target, _) => expression_name(target),
+        _ => None,
+    }
 }
 
 fn expression_call(source: &str, expression: &Expression) -> Option<SourceCall> {

@@ -167,7 +167,23 @@ fn analyze_statement(statement: &Statement, line: usize) -> Option<SourceLineAna
             line,
             column: statement.column,
             construct,
-            name: None,
+            name: match &statement.kind {
+                StatementKind::Expression(expression)
+                    if matches!(construct, SourceConstruct::Input | SourceConstruct::Output) =>
+                {
+                    expression_command(expression)
+                }
+                StatementKind::Expression(Expression {
+                    kind: ExpressionKind::Assign { target, .. },
+                    ..
+                }) => expression_name(target),
+                StatementKind::If { .. } => Some("se".to_owned()),
+                StatementKind::Switch { .. } => Some("escolha".to_owned()),
+                StatementKind::While { .. } => Some("enquanto".to_owned()),
+                StatementKind::DoWhile { .. } => Some("faca".to_owned()),
+                StatementKind::For { .. } => Some("para".to_owned()),
+                _ => None,
+            },
             return_type: None,
             parameters: Vec::new(),
             variables: Vec::new(),
@@ -233,6 +249,27 @@ fn expression_construct(expression: &Expression) -> SourceConstruct {
             _ => SourceConstruct::Call,
         },
         _ => SourceConstruct::Other,
+    }
+}
+
+fn expression_command(expression: &Expression) -> Option<String> {
+    let ExpressionKind::Call { callee, .. } = &expression.kind else {
+        return None;
+    };
+    match &callee.kind {
+        ExpressionKind::Variable(name) | ExpressionKind::Member { name, .. } => Some(name.clone()),
+        _ => None,
+    }
+}
+
+fn expression_name(expression: &Expression) -> Option<String> {
+    match &expression.kind {
+        ExpressionKind::Variable(name) => Some(name.clone()),
+        ExpressionKind::Member { target, name } => {
+            Some(format!("{}.{}", expression_name(target)?, name))
+        }
+        ExpressionKind::Index { target, .. } => expression_name(target),
+        _ => None,
     }
 }
 

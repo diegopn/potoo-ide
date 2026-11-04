@@ -2265,25 +2265,52 @@ pub(crate) fn start(
             last_visualg_line: None,
             open_portugol_files: HashMap::new(),
         };
-        let result = match language {
-            Language::Portugol => {
-                portugol::execute(&source, &mut io).map_err(convert_portugol_diagnostics)
+        let result = execute_source(language, &source, &mut io);
+        let result = match result {
+            Err(diagnostics)
+                if debugging
+                    && diagnostics
+                        .iter()
+                        .any(|diagnostic| diagnostic.kind != DiagnosticKind::Runtime) =>
+            {
+                let location = diagnostics
+                    .iter()
+                    .find(|diagnostic| diagnostic.kind != DiagnosticKind::Runtime)
+                    .map_or((1, 1), |diagnostic| {
+                        (diagnostic.line.max(1), diagnostic.column.max(1))
+                    });
+                let prefix = crate::debugging::prefix(language, &source, location.0);
+                match execute_source(language, &prefix, &mut io) {
+                    Ok(()) => {
+                        let pause = WorkerIo::execution_snapshot(
+                            location.0,
+                            location.1,
+                            [],
+                            Some(DebugPauseReason::Debug),
+                        );
+                        match io.await_action(pause) {
+                            Ok(ControlAction::Stop) => Ok(()),
+                            Ok(_) => Err(diagnostics),
+                            Err(message) => Err(vec![ExecutionDiagnostic {
+                                kind: DiagnosticKind::Runtime,
+                                message,
+                                line: location.0,
+                                column: location.1,
+                            }]),
+                        }
+                    }
+                    Err(prefix_diagnostics)
+                        if prefix_diagnostics.iter().any(|diagnostic| {
+                            diagnostic.kind == DiagnosticKind::Runtime
+                                && diagnostic.line < location.0
+                        }) =>
+                    {
+                        Err(prefix_diagnostics)
+                    }
+                    Err(_) => Err(diagnostics),
+                }
             }
-            Language::Visualg => {
-                visualg::execute(&source, &mut io).map_err(convert_visualg_diagnostics)
-            }
-            Language::Potigol => {
-                potigol::execute(&source, &mut io).map_err(convert_potigol_diagnostics)
-            }
-            Language::GPortugol => gportugol::execute(&source, &mut io)
-                .map(|_| ())
-                .map_err(convert_gportugol_diagnostics),
-            Language::Calango => {
-                calango::execute(&source, &mut io).map_err(convert_calango_diagnostics)
-            }
-            Language::Mapler => {
-                mapler::execute(&source, &mut io).map_err(convert_mapler_diagnostics)
-            }
+            result => result,
         };
         io.flush_output();
         let stopped = io.stopped
@@ -2301,6 +2328,23 @@ pub(crate) fn start(
         input,
         control,
         cancellable,
+    }
+}
+
+fn execute_source(
+    language: Language,
+    source: &str,
+    io: &mut WorkerIo,
+) -> Result<(), Vec<ExecutionDiagnostic>> {
+    match language {
+        Language::Portugol => portugol::execute(source, io).map_err(convert_portugol_diagnostics),
+        Language::Visualg => visualg::execute(source, io).map_err(convert_visualg_diagnostics),
+        Language::Potigol => potigol::execute(source, io).map_err(convert_potigol_diagnostics),
+        Language::GPortugol => gportugol::execute(source, io)
+            .map(|_| ())
+            .map_err(convert_gportugol_diagnostics),
+        Language::Calango => calango::execute(source, io).map_err(convert_calango_diagnostics),
+        Language::Mapler => mapler::execute(source, io).map_err(convert_mapler_diagnostics),
     }
 }
 
@@ -2430,6 +2474,7 @@ mod tests {
         visualg,
     };
     use crate::components::content_panel::Language;
+    use crate::execution::ExecutionDiagnostic;
 
     const PORTUGOL_VOTING_SAMPLE: &str = r#"programa {
   funcao inicio() {
@@ -3126,6 +3171,120 @@ mod tests {
             events.push(event);
         }
         (output, events)
+    }
+
+    fn collect_debug_error(
+        program: RunningProgram,
+    ) -> (String, Vec<usize>, Vec<ExecutionDiagnostic>, bool) {
+        let mut output = String::new();
+        let mut debugger_lines = Vec::new();
+        loop {
+            match program
+                .events
+                .recv_timeout(Duration::from_secs(2))
+                .expect("debugging should produce an event")
+            {
+                ExecutionEvent::Output(text) => output.push_str(&text),
+                ExecutionEvent::ClearOutput => output.clear(),
+                ExecutionEvent::Debugger(snapshot) => {
+                    debugger_lines.push(snapshot.line);
+                    program.control.send(ControlAction::Step).unwrap();
+                }
+                ExecutionEvent::InputRequested(_) => {
+                    program.input.send(String::new()).unwrap();
+                }
+                ExecutionEvent::FileSelectionRequested { .. } => {
+                    program.input.send(String::new()).unwrap();
+                }
+                ExecutionEvent::HostRequest { response, .. } => {
+                    let _ = response.send(Err("host de teste sem suporte".to_owned()));
+                }
+                ExecutionEvent::LineChanged(_) => {}
+                ExecutionEvent::Finished { result, stopped } => {
+                    let diagnostics =
+                        result.expect_err("the malformed source should retain its diagnostic");
+                    return (output, debugger_lines, diagnostics, stopped);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn debugger_reaches_nested_lexical_errors_in_every_language_profile() {
+        let cases = [
+            (
+                "Portugol Studio 2.0",
+                Language::Portugol,
+                r#"programa {
+  funcao inicio() {
+    se (verdadeiro) {
+      escreva("antes")
+    @
+      escreva("depois")
+    }
+  }
+}"#,
+                5,
+            ),
+            (
+                "VisuAlg",
+                Language::Visualg,
+                "algoritmo \"depura\"\ninicio\n  se verdadeiro entao\n    escreval(\"antes\")\n    @\n    escreval(\"depois\")\n  fimse\nfimalgoritmo\n",
+                5,
+            ),
+            (
+                "Potigol clássico",
+                Language::Potigol,
+                "se verdadeiro entao\n escreva \"antes\"\n@\n escreva \"depois\"\nfim",
+                3,
+            ),
+            (
+                "Potigol Jerimum",
+                Language::Potigol,
+                "use \"jerimum\"\nse verdadeiro entao\n escreva \"antes\"\n@\n escreva \"depois\"\nfim",
+                4,
+            ),
+            (
+                "G-Portugol",
+                Language::GPortugol,
+                "algoritmo erro;\ninício\n se verdadeiro então\n  imprima(\"antes\");\n  @\n  imprima(\"depois\");\n fim-se\nfim",
+                5,
+            ),
+            (
+                "Calango",
+                Language::Calango,
+                "algoritmo erro;\nprincipal\n se verdadeiro entao\n  escreval(\"antes\");\n  @\n  escreval(\"depois\");\n fimSe\nfimPrincipal",
+                5,
+            ),
+            (
+                "Mapler",
+                Language::Mapler,
+                "variaveis\ninicio\n se verdadeiro entao\n  escrever \"antes\";\n  @\n  escrever \"depois\";\n fim se;\nfim.",
+                5,
+            ),
+        ];
+
+        for (profile, language, source, error_line) in cases {
+            let (output, debugger_lines, diagnostics, stopped) =
+                collect_debug_error(start(source.to_owned(), language, None, None, true));
+
+            assert!(!stopped, "{profile}: debugging stopped unexpectedly");
+            assert!(
+                output.contains("antes"),
+                "{profile}: valid prefix did not run"
+            );
+            assert!(
+                !output.contains("depois"),
+                "{profile}: ran beyond the error"
+            );
+            assert_eq!(debugger_lines.last(), Some(&error_line), "{profile}");
+            assert_eq!(diagnostics[0].line, error_line, "{profile}");
+            assert_ne!(
+                diagnostics[0].kind,
+                ExecutionDiagnosticKind::Runtime,
+                "{profile}"
+            );
+        }
     }
 
     #[test]

@@ -203,7 +203,20 @@ fn analyze_statements(statements: &[Statement], line: usize) -> Option<SourceLin
                 column: statement.column,
                 construct,
                 name: match &statement.kind {
-                    StatementKind::For { variable, .. } => Some(variable.clone()),
+                    StatementKind::Write { newline, .. } => {
+                        Some(if *newline { "escreval" } else { "escreva" }.to_owned())
+                    }
+                    StatementKind::Read(_) => Some("leia".to_owned()),
+                    StatementKind::If { .. } => Some("se".to_owned()),
+                    StatementKind::Choice { .. } => Some("escolha".to_owned()),
+                    StatementKind::While { .. } => Some("enquanto".to_owned()),
+                    StatementKind::Repeat { .. } => Some("repita".to_owned()),
+                    StatementKind::For { variable, .. } => Some(format!("para {variable}")),
+                    StatementKind::Expression(expression) => match &expression.kind {
+                        ExpressionKind::Call { name, .. } => Some(name.clone()),
+                        ExpressionKind::Assign { target, .. } => expression_name(target),
+                        _ => None,
+                    },
                     _ => None,
                 },
                 return_type: None,
@@ -235,6 +248,13 @@ fn analyze_statements(statements: &[Statement], line: usize) -> Option<SourceLin
         }
     }
     None
+}
+
+fn expression_name(expression: &Expression) -> Option<String> {
+    match &expression.kind {
+        ExpressionKind::Identifier(name) | ExpressionKind::Index { name, .. } => Some(name.clone()),
+        _ => None,
+    }
 }
 
 fn source_variable(variable: &Variable) -> SourceSymbol {

@@ -247,28 +247,44 @@ fn analyze_statement(
     let span = statement.span();
     if span.start.line == line {
         let (construct, name) = match statement {
-            Statement::Assign { target, value, .. } => (
-                if is_call_named(value, "leia") {
-                    SourceConstruct::Input
-                } else {
-                    SourceConstruct::Assignment
-                },
-                Some(target.name.clone()),
-            ),
-            Statement::Call { call, .. } => (
-                if is_call_named(call, "imprima") {
+            Statement::Assign { target, value, .. } => {
+                let is_input = is_call_named(value, "leia");
+                (
+                    if is_input {
+                        SourceConstruct::Input
+                    } else {
+                        SourceConstruct::Assignment
+                    },
+                    Some(if is_input {
+                        "leia".to_owned()
+                    } else {
+                        target.name.clone()
+                    }),
+                )
+            }
+            Statement::Call { call, .. } => {
+                let command = match &call.kind {
+                    ExprKind::Call { name, .. } => Some(name.clone()),
+                    _ => None,
+                };
+                let construct = if is_call_named(call, "imprima") {
                     SourceConstruct::Output
                 } else if is_call_named(call, "leia") {
                     SourceConstruct::Input
                 } else {
                     SourceConstruct::Call
-                },
-                None,
-            ),
+                };
+                (
+                    construct,
+                    (matches!(construct, SourceConstruct::Input | SourceConstruct::Output))
+                        .then(|| command.unwrap_or_default()),
+                )
+            }
             Statement::Return { .. } => (SourceConstruct::Return, None),
-            Statement::If { .. } => (SourceConstruct::Decision, None),
-            Statement::While { .. } | Statement::Repeat { .. } => (SourceConstruct::Loop, None),
-            Statement::For { target, .. } => (SourceConstruct::Loop, Some(target.name.clone())),
+            Statement::If { .. } => (SourceConstruct::Decision, Some("se".to_owned())),
+            Statement::While { .. } => (SourceConstruct::Loop, Some("enquanto".to_owned())),
+            Statement::Repeat { .. } => (SourceConstruct::Loop, Some("repita".to_owned())),
+            Statement::For { .. } => (SourceConstruct::Loop, Some("para".to_owned())),
             Statement::Sequence { .. } => (SourceConstruct::Other, None),
         };
         return Some(SourceLineAnalysis {

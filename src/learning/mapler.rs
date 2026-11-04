@@ -131,7 +131,16 @@ fn analyze_statements(statements: &[Statement], line: usize) -> Option<SourceLin
                     line,
                     column: statement.column,
                     construct,
-                    name: None,
+                    name: match &statement.kind {
+                        StatementKind::Write(_) => Some("escrever".to_owned()),
+                        StatementKind::Read(_) => Some("ler".to_owned()),
+                        StatementKind::If { .. } => Some("se".to_owned()),
+                        StatementKind::While { .. } => Some("enquanto".to_owned()),
+                        StatementKind::Repeat { .. } => Some("repita".to_owned()),
+                        StatementKind::For { .. } => Some("para".to_owned()),
+                        StatementKind::CallModule(name) => Some(name.clone()),
+                        StatementKind::Assign { target, .. } => expression_name(target),
+                    },
                     return_type: None,
                     parameters: Vec::new(),
                     variables: Vec::new(),
@@ -157,6 +166,13 @@ fn analyze_statements(statements: &[Statement], line: usize) -> Option<SourceLin
         }
     }
     None
+}
+
+fn expression_name(expression: &Expression) -> Option<String> {
+    match &expression.kind {
+        ExpressionKind::Identifier(name) | ExpressionKind::Index { name, .. } => Some(name.clone()),
+        _ => None,
+    }
 }
 
 fn source_variable(variable: &VariableDeclaration) -> SourceSymbol {
