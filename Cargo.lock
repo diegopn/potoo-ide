@@ -592,10 +592,12 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 [[package]]
 name = "potoo-calango-interpreter"
 version = "0.1.0"
+source = "git+https://github.com/diegopn/potoo-calango-interpreter.git?rev=e81b43757d77c8bd59a39163c76003d76d7e0761#e81b43757d77c8bd59a39163c76003d76d7e0761"
 
 [[package]]
 name = "potoo-gportugol-interpreter"
 version = "0.1.0"
+source = "git+https://github.com/diegopn/potoo-gportugol-interpreter.git?rev=795e262f4ac160b720266e149d8fc3e2cd916a1c#795e262f4ac160b720266e149d8fc3e2cd916a1c"
 
 [[package]]
 name = "potoo-ide"
@@ -615,10 +617,12 @@ dependencies = [
 [[package]]
 name = "potoo-mapler-interpreter"
 version = "0.1.0"
+source = "git+https://github.com/diegopn/potoo-portugol-mapler-interpreter.git?rev=147b5b88bd4aa8833bc7966e048d6f835fc3c7ce#147b5b88bd4aa8833bc7966e048d6f835fc3c7ce"
 
 [[package]]
 name = "potoo-portugol-interpreter"
 version = "0.1.0"
+source = "git+https://github.com/diegopn/potoo-portugol-studio-2-interpreter.git?rev=0e7e799b83daa80a3e8189327d5d7f9126ae69ef#0e7e799b83daa80a3e8189327d5d7f9126ae69ef"
 dependencies = [
  "indexmap",
 ]
@@ -626,6 +630,7 @@ dependencies = [
 [[package]]
 name = "potoo-potigol-interpreter"
 version = "0.1.0"
+source = "git+https://github.com/diegopn/potoo-potigol-interpreter.git?rev=ab2c74af7cec16f5dd2a5bff2391a01f0b61001f#ab2c74af7cec16f5dd2a5bff2391a01f0b61001f"
 dependencies = [
  "fancy-regex",
 ]
@@ -633,6 +638,7 @@ dependencies = [
 [[package]]
 name = "potoo-visualg-interpreter"
 version = "0.1.0"
+source = "git+https://github.com/diegopn/potoo-portugol-visualg-interpreter.git?rev=515d415298a4ce336338584177b7905d263dfe76#515d415298a4ce336338584177b7905d263dfe76"
 
 [[package]]
 name = "proc-macro-crate"

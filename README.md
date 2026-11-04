@@ -22,7 +22,18 @@ The project aims to provide a simple, intuitive space for students to practice a
 - **Calango** (`.clg`)
 - **Portugol Mapler** (`.mapler`; Potoo-specific extension)
 
-These two options are being integrated and are not yet listed as runnable. Mapler is a separate Portugol dialect; its upstream manual describes structured Portuguese pseudocode and `.txt` files. See the [Mapler manual](https://portugol.sourceforge.io/manuais.html) and [syntax repository](https://github.com/Projeto-Mapler/portugol). Calango's upstream project is [available on GitHub](https://github.com/GeovanaRamos/calango).
+Each interpreter has a standalone repository so it can be installed and used outside Potoo IDE. Mapler is a separate Portugol dialect; its upstream manual describes structured Portuguese pseudocode and `.txt` files. See the [Mapler manual](https://portugol.sourceforge.io/manuais.html) and [syntax repository](https://github.com/Projeto-Mapler/portugol). Calango's upstream project is [available on GitHub](https://github.com/GeovanaRamos/calango).
+
+## Independent interpreters
+
+Each interpreter repository contains its Rust library, a standalone command-line runner, GPL-3.0-or-later license, platform-specific installation instructions, and CI checks for Linux, Windows, and macOS. The IDE pins each library to a specific Git commit and bundles it into the application at build time. The installed IDE does not need network access to GitHub. Building the IDE from source may need network access the first time to fetch these dependencies, unless they are already cached.
+
+- [Calango](https://github.com/diegopn/potoo-calango-interpreter)
+- [G-Portugol](https://github.com/diegopn/potoo-gportugol-interpreter)
+- [Portugol Mapler](https://github.com/diegopn/potoo-portugol-mapler-interpreter)
+- [Portugol Studio 2.0](https://github.com/diegopn/potoo-portugol-studio-2-interpreter)
+- [Potigol](https://github.com/diegopn/potoo-potigol-interpreter)
+- [Portugol VisuAlg](https://github.com/diegopn/potoo-portugol-visualg-interpreter)
 
 The IDE includes a native compatibility layer for a supported subset of the Jerimum API through its GTK graphics and audio hosts. It provides native facades for selected `Color`, `BufferedImage`, `JFrame`, `Canvas`, and `Graphics2D` members without bundling the JVM or providing general Swing/AWT interop.
 
@@ -35,13 +46,13 @@ The IDE includes a native compatibility layer for a supported subset of the Jeri
 - [Égua](https://github.com/eguadev/egua)
 - Logic Basic
 
-The app runs Potigol through an independent Rust interpreter targeting the documented 1.0.0-RC2 language; it does not run or bundle the official Scala/JVM interpreter. See [crates/potoo-potigol-interpreter](crates/potoo-potigol-interpreter/README.md) for coverage and limits.
+The app runs Potigol through an independent Rust interpreter targeting the documented 1.0.0-RC2 language; it does not run or bundle the official Scala/JVM interpreter. See the [Potigol interpreter README](https://github.com/diegopn/potoo-potigol-interpreter#readme) for coverage and limits.
 
-The app also runs Portugol programs with variables, functions, constants, conditionals, loops, vectors and matrices, interactive input, and the Matematica, Texto, Tipos, Util, Calendario, Arquivos, and Objetos libraries. Its reusable interpreter is in [crates/potoo-portugol-studio-interpreter](crates/potoo-portugol-studio-interpreter/README.md), which lists compatibility gaps.
+The app also runs Portugol Studio 2.0 programs with variables, functions, constants, conditionals, loops, vectors and matrices, interactive input, and the Matematica, Texto, Tipos, Util, Calendario, Arquivos, and Objetos libraries. See the [Portugol Studio 2.0 interpreter README](https://github.com/diegopn/potoo-portugol-studio-2-interpreter#readme) for compatibility gaps.
 
-The app can also run classic VisuAlg .alg programs through the reusable [potoo-visualg-interpreter](crates/potoo-visualg-interpreter/README.md) Rust library, which targets VisuAlg 3.0.5.2 and has no third-party dependencies. The interpreters provide interactive input, source-located diagnostics, resource limits, and debugger control. Compatibility details and current limits are documented in each crate README.
+The app can also run classic VisuAlg `.alg` programs through the reusable [Portugol VisuAlg Rust library](https://github.com/diegopn/potoo-portugol-visualg-interpreter#readme), which targets VisuAlg 3.0.5.2 and has no third-party dependencies. The interpreters provide interactive input, source-located diagnostics, resource limits, and debugger control. Compatibility details and current limits are documented in each repository README.
 
-G-Portugol is a separate `.gpt` dialect, implemented in Rust by [potoo-gportugol-interpreter](crates/potoo-gportugol-interpreter/README.md). It has no third-party runtime dependencies and does not bundle or invoke the upstream `gpt` executable. The implementation targets the documented G-Portugol 1.4.0 syntax and behavior; native Windows and macOS builds have not yet been validated.
+G-Portugol is a separate `.gpt` dialect, implemented in Rust by the [G-Portugol interpreter](https://github.com/diegopn/potoo-gportugol-interpreter#readme). It has no third-party runtime dependencies and does not bundle or invoke the upstream `gpt` executable. The implementation targets the documented G-Portugol 1.4.0 syntax and behavior.
 
 Project documentation is maintained in English. The app offers Portuguese, English, and Spanish UI languages. The project website is available in Brazilian Portuguese (default), English, and Spanish.
 

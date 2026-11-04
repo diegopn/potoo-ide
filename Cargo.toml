@@ -18,12 +18,12 @@ path = "src/main.rs"
 gtk = { package = "gtk4", version = "=0.11.3", features = ["v4_20"] }
 sourceview5 = "=0.11.2"
 relm4 = { version = "=0.11.0", default-features = false }
-potoo-portugol-interpreter = { path = "crates/potoo-portugol-studio-interpreter" }
-potoo-gportugol-interpreter = { path = "crates/potoo-gportugol-interpreter" }
-potoo-visualg-interpreter = { path = "crates/potoo-visualg-interpreter" }
-potoo-potigol-interpreter = { path = "crates/potoo-potigol-interpreter" }
-potoo-calango-interpreter = { path = "crates/potoo-calango-interpreter" }
-potoo-mapler-interpreter = { path = "crates/potoo-mapler-interpreter" }
+potoo-portugol-interpreter = { git = "https://github.com/diegopn/potoo-portugol-studio-2-interpreter.git", rev = "0e7e799b83daa80a3e8189327d5d7f9126ae69ef" }
+potoo-gportugol-interpreter = { git = "https://github.com/diegopn/potoo-gportugol-interpreter.git", rev = "795e262f4ac160b720266e149d8fc3e2cd916a1c" }
+potoo-visualg-interpreter = { git = "https://github.com/diegopn/potoo-portugol-visualg-interpreter.git", rev = "515d415298a4ce336338584177b7905d263dfe76" }
+potoo-potigol-interpreter = { git = "https://github.com/diegopn/potoo-potigol-interpreter.git", rev = "ab2c74af7cec16f5dd2a5bff2391a01f0b61001f" }
+potoo-calango-interpreter = { git = "https://github.com/diegopn/potoo-calango-interpreter.git", rev = "e81b43757d77c8bd59a39163c76003d76d7e0761" }
+potoo-mapler-interpreter = { git = "https://github.com/diegopn/potoo-portugol-mapler-interpreter.git", rev = "147b5b88bd4aa8833bc7966e048d6f835fc3c7ce" }
 
 [profile.release]
 lto = "thin"
@@ -31,12 +31,4 @@ codegen-units = 1
 strip = "symbols"
 
 [workspace]
-members = [
-    "crates/potoo-gportugol-interpreter",
-    "crates/potoo-portugol-studio-interpreter",
-    "crates/potoo-visualg-interpreter",
-    "crates/potoo-potigol-interpreter",
-    "crates/potoo-calango-interpreter",
-    "crates/potoo-mapler-interpreter",
-]
 resolver = "3"
