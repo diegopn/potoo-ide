@@ -143,7 +143,8 @@ jobs:
           retention-days: 14
 
   macos-installer:
-    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    # Re-enable by setting BUILD_MACOS_INSTALLER=true after the Apple packaging issue is resolved.
+    if: vars.BUILD_MACOS_INSTALLER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.merged == true)
     name: macOS Intel installer
     runs-on: macos-15-intel
     steps:
@@ -166,8 +167,37 @@ jobs:
       - name: Validate Intel app bundle
         run: |
           app="target/packages/macos-x86_64/stage/Potoo IDE.app"
+          contents="$app/Contents"
+          frameworks="$contents/Frameworks"
+          resources="$contents/Resources"
+          executable="$contents/MacOS/PotooIDE"
           plutil -lint "$app/Contents/Info.plist"
-          test "$(lipo -archs "$app/Contents/MacOS/PotooIDE")" = "x86_64"
+          test "$(lipo -archs "$executable")" = "x86_64"
+          otool -l "$executable" | grep -Fq 'path @executable_path/../Frameworks '
+          while IFS= read -r -d '' binary; do
+            file "$binary" | grep -q 'Mach-O' || continue
+            while IFS= read -r dependency; do
+              case "$dependency" in
+                /System/Library/*|/usr/lib/*|/Library/Apple/System/*) ;;
+                @rpath/*)
+                  library="${dependency#@rpath/}"
+                  test -f "$frameworks/$library" || {
+                    echo "Bundled macOS dependency not found: $dependency (from $binary)" >&2
+                    exit 1
+                  }
+                  ;;
+                *)
+                  echo "Non-relocatable macOS dependency: $dependency (from $binary)" >&2
+                  exit 1
+                  ;;
+              esac
+            done < <(otool -L "$binary" | tail -n +2 | awk '{print $1}')
+          done < <(find "$contents" -type f -print0)
+          shopt -s nullglob
+          loaders=("$resources/lib/gdk-pixbuf-2.0/2.10.0/loaders/"*.so)
+          test "${#loaders[@]}" -gt 0
+          DYLD_LIBRARY_PATH="$frameworks${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" \
+            "$contents/MacOS/gdk-pixbuf-query-loaders" "${loaders[@]}" >/dev/null
           hdiutil verify target/packages/macos-x86_64/Potoo-IDE-*-macos-x86_64.dmg
           test -x "$app/Contents/MacOS/PotooIDE"
       - uses: actions/upload-artifact@v7
@@ -178,6 +208,7 @@ jobs:
           retention-days: 14
 
   assemble:
+    if: always() && needs.linux-flatpak.result == 'success' && needs.windows-installer.result == 'success'
     name: Assemble release archive
     needs:
       - linux-flatpak
@@ -195,6 +226,23 @@ jobs:
         run: |
           set -euo pipefail
           version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
+          platforms=()
+          macos_note=""
+          for package in package-files/Potoo-IDE-*; do
+            case "$package" in
+              *-windows-x64-setup.exe) platforms+=("Windows x64") ;;
+              *-macos-x86_64.dmg)
+                platforms+=("Intel macOS")
+                macos_note="The Intel macOS build is not signed or notarized."
+                ;;
+              *-linux-x86_64.flatpak) platforms+=("Linux x86_64 (Flatpak)") ;;
+            esac
+          done
+          if ((${#platforms[@]} == 0)); then
+            echo "No installer packages were downloaded." >&2
+            exit 1
+          fi
+          platform_list="$(IFS=', '; printf '%s' "${platforms[*]}")"
           archive_root="figshare-package"
           release_root="release-assets"
           mkdir -p "$archive_root" "$release_root"
@@ -212,9 +260,10 @@ jobs:
             cd "$release_root"
             sha256sum Potoo-IDE-* > SHA256SUMS
             cat > RELEASE_NOTES.md <<EOF
-          Potoo IDE ${version} installers for Windows x64, Intel macOS, and Linux x86_64 (Flatpak).
+          Potoo IDE ${version} installers for ${platform_list}.
 
-          The macOS build is not signed or notarized. The Windows installer is not code-signed. The Flatpak single-file bundle downloads its GNOME 51 runtime from Flathub if it is not already installed.
+          ${macos_note}
+          The Windows installer is not code-signed. The Flatpak single-file bundle downloads its GNOME 51 runtime from Flathub if it is not already installed.
 
           See README.md in this release for installation steps and SHA256SUMS for download verification.
           EOF
@@ -228,7 +277,7 @@ jobs:
 
   publish:
     name: Publish GitHub release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: always() && startsWith(github.ref, 'refs/tags/v') && needs.assemble.result == 'success'
     needs: assemble
     runs-on: ubuntu-24.04
     permissions:
