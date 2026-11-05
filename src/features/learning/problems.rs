@@ -31,44 +31,6 @@ pub(super) fn diagnostic_problem(
     }
 }
 
-pub(super) fn map_calango_diagnostic_kind(
-    kind: potoo_calango_interpreter::DiagnosticKind,
-) -> crate::features::diagnostics::DiagnosticCategory {
-    match kind {
-        potoo_calango_interpreter::DiagnosticKind::Lexical => {
-            crate::features::diagnostics::DiagnosticCategory::Lexical
-        }
-        potoo_calango_interpreter::DiagnosticKind::Syntax => {
-            crate::features::diagnostics::DiagnosticCategory::Syntax
-        }
-        potoo_calango_interpreter::DiagnosticKind::Type => {
-            crate::features::diagnostics::DiagnosticCategory::Type
-        }
-        potoo_calango_interpreter::DiagnosticKind::Runtime => {
-            crate::features::diagnostics::DiagnosticCategory::Runtime
-        }
-    }
-}
-
-pub(super) fn map_mapler_diagnostic_kind(
-    kind: potoo_mapler_interpreter::DiagnosticKind,
-) -> crate::features::diagnostics::DiagnosticCategory {
-    match kind {
-        potoo_mapler_interpreter::DiagnosticKind::Lexical => {
-            crate::features::diagnostics::DiagnosticCategory::Lexical
-        }
-        potoo_mapler_interpreter::DiagnosticKind::Syntax => {
-            crate::features::diagnostics::DiagnosticCategory::Syntax
-        }
-        potoo_mapler_interpreter::DiagnosticKind::Type => {
-            crate::features::diagnostics::DiagnosticCategory::Type
-        }
-        potoo_mapler_interpreter::DiagnosticKind::Runtime => {
-            crate::features::diagnostics::DiagnosticCategory::Runtime
-        }
-    }
-}
-
 pub(super) fn constant_condition_problem(
     line: &str,
     line_number: usize,
@@ -106,7 +68,7 @@ pub(super) fn constant_index_problems(
     language: Language,
     is_cancelled: &impl Fn() -> bool,
 ) -> Option<Vec<LearningProblem>> {
-    let source_code = without_literals_and_comments(source, language);
+    let source_code = (language.profile().without_literals_and_comments)(source);
     let arrays = declared_array_bounds(&source_code, language, is_cancelled)?;
     let code = source_code
         .lines()
@@ -177,44 +139,9 @@ fn declared_array_bounds(
     language: Language,
     is_cancelled: &impl Fn() -> bool,
 ) -> Option<HashMap<String, Vec<SourceDimension>>> {
-    match language {
-        Language::Portugol => {
-            crate::languages::portugol::studio_20::learning::declared_array_bounds(
-                source,
-                is_cancelled,
-            )
-        }
-        Language::Visualg => crate::languages::portugol::visualg::learning::declared_array_bounds(
-            source,
-            is_cancelled,
-        ),
-        Language::Calango => {
-            crate::languages::calango::learning::declared_array_bounds(source, is_cancelled)
-        }
-        Language::Potigol | Language::GPortugol | Language::Mapler => Some(HashMap::new()),
-    }
-}
-
-fn without_literals_and_comments(source: &str, language: Language) -> String {
-    match language {
-        Language::Portugol => {
-            crate::languages::portugol::studio_20::syntax_analysis::views::without_literals_and_comments(source)
-        }
-        Language::Visualg => {
-            crate::languages::portugol::visualg::syntax_analysis::views::without_literals_and_comments(source)
-        }
-        Language::GPortugol => {
-            crate::languages::portugol::g_portugol::syntax_analysis::views::without_literals_and_comments(source)
-        }
-        Language::Potigol => {
-            crate::languages::potigol::syntax_analysis::views::without_literals_and_comments(source)
-        }
-        Language::Calango => {
-            crate::languages::calango::syntax_analysis::views::without_literals_and_comments(source)
-        }
-        Language::Mapler => {
-            crate::languages::portugol::mapler::syntax_analysis::views::without_literals_and_comments(source)
-        }
+    match language.profile().declared_array_bounds {
+        Some(adapter) => adapter(source, is_cancelled),
+        None => Some(HashMap::new()),
     }
 }
 

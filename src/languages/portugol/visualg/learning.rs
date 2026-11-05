@@ -52,6 +52,26 @@ pub(crate) fn analyze_source_line_cancellable(
     Ok(analyze_program_line(&program, one_based_line))
 }
 
+pub(crate) fn profile_adapter(
+    source: &str,
+    one_based_line: usize,
+    is_cancelled: &dyn Fn() -> bool,
+) -> Result<Option<SourceLineAnalysis>, Vec<crate::languages::model::SourceDiagnostic>> {
+    analyze_source_line_cancellable(source, one_based_line, is_cancelled).map_err(|diagnostics| {
+        diagnostics
+            .into_iter()
+            .map(|diagnostic| {
+                crate::languages::model::SourceDiagnostic::at_line(
+                    crate::languages::model::SourceDiagnosticKind::Syntax,
+                    diagnostic.message,
+                    diagnostic.line,
+                    diagnostic.column,
+                )
+            })
+            .collect()
+    })
+}
+
 fn parse_recovering<F>(source: &str, is_cancelled: &F) -> (Option<Program>, Vec<Diagnostic>)
 where
     F: Fn() -> bool,
@@ -398,4 +418,11 @@ fn insert_unique_array_bounds(
     } else {
         arrays.insert(name, dimensions);
     }
+}
+
+pub(crate) fn profile_declared_array_bounds(
+    source: &str,
+    is_cancelled: &dyn Fn() -> bool,
+) -> Option<HashMap<String, Vec<SourceDimension>>> {
+    declared_array_bounds(source, &|| is_cancelled())
 }

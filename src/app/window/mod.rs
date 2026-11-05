@@ -5,6 +5,7 @@ mod documents;
 mod execution_events;
 mod learning;
 mod localization;
+mod messages;
 mod persistence;
 mod project;
 mod settings;
@@ -16,13 +17,13 @@ use self::analysis::{
     DiagnosticNavigation, DiagnosticsAnalysisWorker, LearningAnalysisWorker,
     invalidate_learning_hint, project_scan_is_current,
 };
-pub(crate) use self::analysis::{MainWindowMsg, RightPanelSection};
 use self::dialogs::*;
 use self::learning::*;
 use self::localization::{ThemePreference, theme_is_dark};
 #[cfg(test)]
 use self::localization::{UI_TRANSLATION_KEYS, translate_known_text};
 pub(crate) use self::localization::{UiLanguage, tr};
+pub(crate) use self::messages::{MainWindowMsg, RightPanelSection};
 use self::persistence::*;
 use self::project::*;
 #[cfg(test)]

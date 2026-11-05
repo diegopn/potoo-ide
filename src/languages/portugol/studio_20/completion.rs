@@ -1,8 +1,12 @@
 use crate::languages::completion::{
-    CompletionCatalog, CompletionSnippet, CompletionSyntax, CursorLexicalContext,
-    LibraryImportContext, current_word, cursor_lexical_context_for, identifier_at_start,
-    line_bounds,
+    CompletionAdapter, CompletionCatalog, CompletionSnippet, CompletionSyntax,
+    CursorLexicalContext, LibraryImportContext, current_word, cursor_lexical_context_for,
+    identifier_at_start, line_bounds,
 };
+
+pub(crate) const LANGUAGE_KEYWORDS: &[&str] = &[
+    "programa", "funcao", "inicio", "inteiro", "escreva", "leia", "se", "senao",
+];
 
 pub(crate) fn catalog() -> CompletionCatalog {
     let (keywords, functions, snippets) = (
@@ -335,3 +339,12 @@ fn portugol_library_members(library: &str) -> &'static [&'static str] {
         _ => &[],
     }
 }
+
+pub(crate) static ADAPTER: CompletionAdapter = CompletionAdapter {
+    catalog,
+    cursor_lexical_context,
+    library_import_context: Some(library_import_context),
+    libraries: Some(libraries),
+    library_members: Some(library_members),
+    declared_identifiers,
+};

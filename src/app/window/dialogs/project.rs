@@ -1,4 +1,5 @@
 use super::*;
+use crate::languages::project_templates::ProjectTemplateGroup;
 
 pub(in crate::app::window) fn show_open_project_dialog(
     parent: &impl IsA<gtk::Window>,
@@ -33,93 +34,127 @@ pub(in crate::app::window) fn show_open_project_dialog(
     );
 }
 
+struct ProjectTemplateLabels {
+    name: &'static str,
+    detail: &'static str,
+    selector: &'static str,
+}
+
+fn project_template_labels(template: ProjectTemplate) -> ProjectTemplateLabels {
+    match template {
+        ProjectTemplate::GPortugol => ProjectTemplateLabels {
+            name: "G-Portugol",
+            detail: ".gpt",
+            selector: "G-Portugol (.gpt)",
+        },
+        ProjectTemplate::Visualg => ProjectTemplateLabels {
+            name: "VisuAlg",
+            detail: ".alg",
+            selector: "VisuAlg (.alg)",
+        },
+        ProjectTemplate::Portugol20 => ProjectTemplateLabels {
+            name: "Portugol Studio 2.0",
+            detail: ".por",
+            selector: "Portugol Studio 2.0 (.por)",
+        },
+        ProjectTemplate::Mapler => ProjectTemplateLabels {
+            name: "Mapler",
+            detail: ".mapler",
+            selector: "Mapler (.mapler)",
+        },
+        ProjectTemplate::PotigolClassic => ProjectTemplateLabels {
+            name: "Potigol Clássico",
+            detail: ".poti",
+            selector: "Potigol Clássico",
+        },
+        ProjectTemplate::PotigolJerimum => ProjectTemplateLabels {
+            name: "Potigol Jerimum (Jogo 2D)",
+            detail: ".poti",
+            selector: "Potigol Jerimum (Jogo 2D)",
+        },
+        ProjectTemplate::Calango => ProjectTemplateLabels {
+            name: "Calango",
+            detail: ".clg",
+            selector: "Calango (.clg)",
+        },
+    }
+}
+
+pub(in crate::app::window) fn project_template_variant_labels(
+    group: ProjectTemplateGroup,
+) -> Vec<&'static str> {
+    ProjectTemplate::in_group(group)
+        .into_iter()
+        .map(|template| project_template_labels(template).selector)
+        .collect()
+}
+
+fn project_template_buttons(templates: &[ProjectTemplate]) -> Vec<gtk::Button> {
+    templates
+        .iter()
+        .map(|template| {
+            let labels = project_template_labels(*template);
+            language_option_button(labels.name, labels.detail)
+        })
+        .collect()
+}
+
 pub(in crate::app::window) fn update_project_template_selector(
     template: ProjectTemplate,
     ui_language: UiLanguage,
     field: &gtk::Box,
     label: &gtk::Label,
     portugol_options: &gtk::Box,
-    portugol_buttons: [&gtk::Button; 4],
+    portugol_buttons: &[gtk::Button],
     potigol_options: &gtk::Box,
-    potigol_buttons: [&gtk::Button; 2],
+    potigol_buttons: &[gtk::Button],
 ) {
-    match template {
-        ProjectTemplate::GPortugol
-        | ProjectTemplate::Portugol20
-        | ProjectTemplate::Visualg
-        | ProjectTemplate::Mapler => {
+    match template.group() {
+        ProjectTemplateGroup::Portugol => {
             label.set_text(tr(ui_language, "Variante do Portugol"));
             portugol_options.set_visible(true);
             potigol_options.set_visible(false);
-            let selected = match template {
-                ProjectTemplate::GPortugol => 0,
-                ProjectTemplate::Visualg => 1,
-                ProjectTemplate::Portugol20 => 2,
-                ProjectTemplate::Mapler => 3,
-                _ => unreachable!(),
-            };
-            set_selected_variant_button(&portugol_buttons, selected);
+            set_selected_variant_button(portugol_buttons, template.order() as usize);
             for button in potigol_buttons {
                 button.remove_css_class("selected");
             }
         }
-        ProjectTemplate::PotigolClassic | ProjectTemplate::PotigolJerimum => {
+        ProjectTemplateGroup::Potigol => {
             label.set_text(tr(ui_language, "Variante do Potigol"));
             portugol_options.set_visible(false);
             potigol_options.set_visible(true);
-            let selected = if template == ProjectTemplate::PotigolJerimum {
-                1
-            } else {
-                0
-            };
-            set_selected_variant_button(&potigol_buttons, selected);
+            set_selected_variant_button(potigol_buttons, template.order() as usize);
             for button in portugol_buttons {
                 button.remove_css_class("selected");
             }
         }
-        ProjectTemplate::Calango => {
+        ProjectTemplateGroup::Calango => {
             portugol_options.set_visible(false);
             potigol_options.set_visible(false);
-            for button in portugol_buttons.into_iter().chain(potigol_buttons) {
+            for button in portugol_buttons.iter().chain(potigol_buttons.iter()) {
                 button.remove_css_class("selected");
             }
             field.set_visible(false);
         }
     }
-    if template != ProjectTemplate::Calango {
+    if template.group() != ProjectTemplateGroup::Calango {
         field.set_visible(true);
     }
 }
 
 pub(in crate::app::window) fn project_template_variant_index(template: ProjectTemplate) -> u32 {
-    match template {
-        ProjectTemplate::GPortugol | ProjectTemplate::PotigolClassic => 0,
-        ProjectTemplate::Visualg | ProjectTemplate::PotigolJerimum => 1,
-        ProjectTemplate::Portugol20 => 2,
-        ProjectTemplate::Mapler => 3,
-        ProjectTemplate::Calango => 0,
-    }
+    template.order()
 }
 
 pub(in crate::app::window) fn project_template_for_variant(
     language: Language,
     selected: u32,
 ) -> Option<ProjectTemplate> {
-    match (language, selected) {
-        (Language::Potigol, 0) => Some(ProjectTemplate::PotigolClassic),
-        (Language::Potigol, 1) => Some(ProjectTemplate::PotigolJerimum),
-        (Language::Potigol, _) => None,
-        (Language::Calango, _) => None,
-        (_, 0) => Some(ProjectTemplate::GPortugol),
-        (_, 1) => Some(ProjectTemplate::Visualg),
-        (_, 2) => Some(ProjectTemplate::Portugol20),
-        (_, 3) => Some(ProjectTemplate::Mapler),
-        (_, _) => None,
-    }
+    ProjectTemplate::for_group_order(ProjectTemplateGroup::for_language(language), selected)
 }
 
 pub(in crate::app::window) fn set_selected_variant_button(
-    buttons: &[&gtk::Button],
+    buttons: &[gtk::Button],
     selected: usize,
 ) {
     for (index, button) in buttons.iter().enumerate() {
@@ -162,7 +197,6 @@ pub(in crate::app::window) fn show_new_project_dialog(
 ) {
     let dialog = gtk::Window::new();
     dialog.set_title(Some(tr(ui_language, "Criar projeto")));
-    let default_language = default_template.language();
     dialog.set_default_size(680, if show_language_selector { 520 } else { 430 });
     dialog.set_resizable(false);
     dialog.set_transient_for(Some(parent));
@@ -227,12 +261,10 @@ pub(in crate::app::window) fn show_new_project_dialog(
         button.add_css_class("potoo-project-language-choice");
         button.set_hexpand(true);
     }
-    match default_language {
-        Language::Portugol | Language::GPortugol | Language::Visualg | Language::Mapler => {
-            portugol_button.add_css_class("selected")
-        }
-        Language::Potigol => potigol_button.add_css_class("selected"),
-        Language::Calango => calango_button.add_css_class("selected"),
+    match default_template.group() {
+        ProjectTemplateGroup::Portugol => portugol_button.add_css_class("selected"),
+        ProjectTemplateGroup::Potigol => potigol_button.add_css_class("selected"),
+        ProjectTemplateGroup::Calango => calango_button.add_css_class("selected"),
     }
     language_row.append(&portugol_button);
     language_row.append(&calango_button);
@@ -245,19 +277,13 @@ pub(in crate::app::window) fn show_new_project_dialog(
     let portugol_options = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     portugol_options.set_homogeneous(true);
     portugol_options.set_hexpand(true);
-    let portugol_variant_buttons = [
-        language_option_button("G-Portugol", ".gpt"),
-        language_option_button("VisuAlg", ".alg"),
-        language_option_button("Portugol Studio 2.0", ".por"),
-        language_option_button("Mapler", ".mapler"),
-    ];
+    let portugol_templates = ProjectTemplate::in_group(ProjectTemplateGroup::Portugol);
+    let portugol_variant_buttons = project_template_buttons(&portugol_templates);
     let potigol_options = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     potigol_options.set_homogeneous(true);
     potigol_options.set_hexpand(true);
-    let potigol_variant_buttons = [
-        language_option_button("Potigol Clássico", ".poti"),
-        language_option_button("Potigol Jerimum (Jogo 2D)", ".poti"),
-    ];
+    let potigol_templates = ProjectTemplate::in_group(ProjectTemplateGroup::Potigol);
+    let potigol_variant_buttons = project_template_buttons(&potigol_templates);
     for button in portugol_variant_buttons
         .iter()
         .chain(potigol_variant_buttons.iter())
@@ -277,24 +303,18 @@ pub(in crate::app::window) fn show_new_project_dialog(
     let variant_label = gtk::Label::new(None);
     variant_label.set_xalign(0.0);
     variant_label.add_css_class("potoo-project-field-label");
-    let portugol_variant_picker = gtk::DropDown::from_strings(&[
-        "G-Portugol (.gpt)",
-        "VisuAlg (.alg)",
-        "Portugol Studio 2.0 (.por)",
-        "Mapler (.mapler)",
-    ]);
+    let portugol_variant_picker = gtk::DropDown::from_strings(&project_template_variant_labels(
+        ProjectTemplateGroup::Portugol,
+    ));
     portugol_variant_picker.add_css_class("potoo-settings-picker");
     portugol_variant_picker.set_hexpand(true);
     portugol_variant_picker.set_selected(project_template_variant_index(default_template));
-    let potigol_variant_picker =
-        gtk::DropDown::from_strings(&["Potigol Clássico", "Potigol Jerimum (Jogo 2D)"]);
+    let potigol_variant_picker = gtk::DropDown::from_strings(&project_template_variant_labels(
+        ProjectTemplateGroup::Potigol,
+    ));
     potigol_variant_picker.add_css_class("potoo-settings-picker");
     potigol_variant_picker.set_hexpand(true);
-    potigol_variant_picker.set_selected(if default_template == ProjectTemplate::PotigolJerimum {
-        1
-    } else {
-        0
-    });
+    potigol_variant_picker.set_selected(project_template_variant_index(default_template));
     variant_field.append(&variant_label);
     variant_field.append(&portugol_options);
     variant_field.append(&potigol_options);
@@ -307,44 +327,29 @@ pub(in crate::app::window) fn show_new_project_dialog(
         &variant_field,
         &variant_label,
         &portugol_options,
-        [
-            &portugol_variant_buttons[0],
-            &portugol_variant_buttons[1],
-            &portugol_variant_buttons[2],
-            &portugol_variant_buttons[3],
-        ],
+        &portugol_variant_buttons,
         &potigol_options,
-        [&potigol_variant_buttons[0], &potigol_variant_buttons[1]],
+        &potigol_variant_buttons,
     );
     portugol_variant_picker.set_visible(false);
     potigol_variant_picker.set_visible(false);
     if show_language_selector {
         portugol_options.set_visible(false);
         potigol_options.set_visible(false);
-        match default_language {
-            Language::Portugol | Language::GPortugol | Language::Visualg | Language::Mapler => {
-                portugol_variant_picker.set_visible(true)
-            }
-            Language::Potigol => potigol_variant_picker.set_visible(true),
-            Language::Calango => variant_field.set_visible(false),
+        match default_template.group() {
+            ProjectTemplateGroup::Portugol => portugol_variant_picker.set_visible(true),
+            ProjectTemplateGroup::Potigol => potigol_variant_picker.set_visible(true),
+            ProjectTemplateGroup::Calango => variant_field.set_visible(false),
         }
     }
     connect_project_template_choices(
         &portugol_variant_buttons,
-        &[
-            ProjectTemplate::GPortugol,
-            ProjectTemplate::Visualg,
-            ProjectTemplate::Portugol20,
-            ProjectTemplate::Mapler,
-        ],
+        &portugol_templates,
         selected_template.clone(),
     );
     connect_project_template_choices(
         &potigol_variant_buttons,
-        &[
-            ProjectTemplate::PotigolClassic,
-            ProjectTemplate::PotigolJerimum,
-        ],
+        &potigol_templates,
         selected_template.clone(),
     );
     if show_language_selector {
@@ -390,24 +395,17 @@ pub(in crate::app::window) fn show_new_project_dialog(
             &variant_field_for_portugol,
             &variant_label_for_portugol,
             &portugol_options_for_portugol,
-            [
-                &portugol_buttons_for_portugol[0],
-                &portugol_buttons_for_portugol[1],
-                &portugol_buttons_for_portugol[2],
-                &portugol_buttons_for_portugol[3],
-            ],
+            &portugol_buttons_for_portugol,
             &potigol_options_for_portugol,
-            [
-                &potigol_buttons_for_portugol[0],
-                &potigol_buttons_for_portugol[1],
-            ],
+            &potigol_buttons_for_portugol,
         );
         if show_variant_picker_for_portugol {
             portugol_options_for_portugol.set_visible(false);
             potigol_options_for_portugol.set_visible(false);
             portugol_picker_for_portugol.set_visible(true);
             potigol_picker_for_portugol.set_visible(false);
-            portugol_picker_for_portugol.set_selected(1);
+            portugol_picker_for_portugol
+                .set_selected(project_template_variant_index(ProjectTemplate::Visualg));
         }
     });
     let portugol_button_for_potigol = portugol_button.clone();
@@ -434,24 +432,18 @@ pub(in crate::app::window) fn show_new_project_dialog(
             &variant_field_for_potigol,
             &variant_label_for_potigol,
             &portugol_options_for_potigol,
-            [
-                &portugol_buttons_for_potigol[0],
-                &portugol_buttons_for_potigol[1],
-                &portugol_buttons_for_potigol[2],
-                &portugol_buttons_for_potigol[3],
-            ],
+            &portugol_buttons_for_potigol,
             &potigol_options_for_potigol,
-            [
-                &potigol_buttons_for_potigol[0],
-                &potigol_buttons_for_potigol[1],
-            ],
+            &potigol_buttons_for_potigol,
         );
         if show_variant_picker_for_potigol {
             portugol_options_for_potigol.set_visible(false);
             potigol_options_for_potigol.set_visible(false);
             portugol_picker_for_potigol.set_visible(false);
             potigol_picker_for_potigol.set_visible(true);
-            potigol_picker_for_potigol.set_selected(0);
+            potigol_picker_for_potigol.set_selected(project_template_variant_index(
+                ProjectTemplate::PotigolClassic,
+            ));
         }
     });
     let portugol_button_for_calango = portugol_button.clone();
@@ -647,4 +639,27 @@ pub(in crate::app::window) fn project_directory_options(
         )
     }));
     folders
+}
+
+#[cfg(test)]
+mod template_selector_tests {
+    use super::project_template_variant_labels;
+    use crate::languages::project_templates::ProjectTemplateGroup;
+
+    #[test]
+    fn variant_labels_follow_the_catalog_order() {
+        assert_eq!(
+            project_template_variant_labels(ProjectTemplateGroup::Portugol),
+            [
+                "G-Portugol (.gpt)",
+                "VisuAlg (.alg)",
+                "Portugol Studio 2.0 (.por)",
+                "Mapler (.mapler)",
+            ]
+        );
+        assert_eq!(
+            project_template_variant_labels(ProjectTemplateGroup::Potigol),
+            ["Potigol Clássico", "Potigol Jerimum (Jogo 2D)"]
+        );
+    }
 }

@@ -106,14 +106,7 @@ pub(crate) fn analyze(
 }
 
 fn language_diagnostics(language: Language, source: &str) -> Vec<SourceDiagnostic> {
-    match language {
-        Language::Portugol => crate::languages::portugol::studio_20::diagnostics::analyze(source),
-        Language::Visualg => crate::languages::portugol::visualg::diagnostics::analyze(source),
-        Language::GPortugol => crate::languages::portugol::g_portugol::diagnostics::analyze(source),
-        Language::Potigol => crate::languages::potigol::diagnostics::analyze(source),
-        Language::Calango => crate::languages::calango::diagnostics::analyze(source),
-        Language::Mapler => crate::languages::portugol::mapler::diagnostics::analyze(source),
-    }
+    (language.profile().diagnostics)(source)
 }
 
 fn from_source_diagnostic(
@@ -238,7 +231,7 @@ fn last_code_location(
 ) -> Option<(usize, usize)> {
     let mut last = None;
     for line in 1..=line_count {
-        let code = source_line_code(language, source, line);
+        let code = (language.profile().source_line_code)(source, line);
         if let Some(column) = code
             .chars()
             .position(|character| !character.is_whitespace())
@@ -248,37 +241,6 @@ fn last_code_location(
         }
     }
     last
-}
-
-fn source_line_code(language: Language, source: &str, line: usize) -> String {
-    match language {
-        Language::Portugol => {
-            crate::languages::portugol::studio_20::syntax_analysis::views::source_line_code(
-                source, line,
-            )
-        }
-        Language::Visualg => {
-            crate::languages::portugol::visualg::syntax_analysis::views::source_line_code(
-                source, line,
-            )
-        }
-        Language::GPortugol => {
-            crate::languages::portugol::g_portugol::syntax_analysis::views::source_line_code(
-                source, line,
-            )
-        }
-        Language::Potigol => {
-            crate::languages::potigol::syntax_analysis::views::source_line_code(source, line)
-        }
-        Language::Calango => {
-            crate::languages::calango::syntax_analysis::views::source_line_code(source, line)
-        }
-        Language::Mapler => {
-            crate::languages::portugol::mapler::syntax_analysis::views::source_line_code(
-                source, line,
-            )
-        }
-    }
 }
 
 pub(crate) fn from_execution(

@@ -11,295 +11,59 @@ pub(crate) enum Language {
 }
 
 impl Language {
+    pub(crate) const ALL: [Self; 6] = [
+        Self::Portugol,
+        Self::Visualg,
+        Self::Potigol,
+        Self::GPortugol,
+        Self::Calango,
+        Self::Mapler,
+    ];
+
+    pub(crate) fn profile(self) -> &'static crate::languages::profile::LanguageProfile {
+        crate::languages::profile::for_language(self)
+    }
+
     pub(crate) fn label(self) -> &'static str {
-        match self {
-            Self::Portugol => "Portugol Studio 2.0",
-            Self::Visualg => "VisuAlg",
-            Self::Potigol => "Potigol",
-            Self::GPortugol => "G-Portugol",
-            Self::Calango => "Calango",
-            Self::Mapler => "Mapler",
-        }
+        self.profile().display_name
     }
 
     pub(crate) fn key(self) -> &'static str {
-        match self {
-            Self::Portugol => "portugol",
-            Self::Visualg => "visualg",
-            Self::Potigol => "potigol",
-            Self::GPortugol => "gportugol",
-            Self::Calango => "calango",
-            Self::Mapler => "mapler",
-        }
+        self.profile().key
     }
 
     pub(crate) fn from_key(key: &str) -> Self {
-        match key {
-            "visualg" => Self::Visualg,
-            "potigol" => Self::Potigol,
-            "gportugol" => Self::GPortugol,
-            "calango" => Self::Calango,
-            "mapler" => Self::Mapler,
-            _ => Self::Portugol,
-        }
+        Self::ALL
+            .into_iter()
+            .find(|language| language.key() == key)
+            .unwrap_or(Self::Portugol)
     }
 
     pub(crate) fn file_name(self) -> &'static str {
-        match self {
-            Self::Portugol => "principal.por",
-            Self::Visualg => "principal.alg",
-            Self::Potigol => "principal.poti",
-            Self::GPortugol => "principal.gpt",
-            Self::Calango => "principal.clg",
-            Self::Mapler => "principal.mapler",
-        }
+        self.profile().file_name
     }
 
     pub(crate) fn sample(self) -> &'static str {
-        match self {
-            Self::Portugol => crate::languages::portugol::studio_20::examples::SAMPLE,
-            Self::Visualg => crate::languages::portugol::visualg::examples::SAMPLE,
-            Self::Potigol => crate::languages::potigol::classic::examples::SAMPLE,
-            Self::GPortugol => crate::languages::portugol::g_portugol::examples::SAMPLE,
-            Self::Calango => crate::languages::calango::examples::SAMPLE,
-            Self::Mapler => crate::languages::portugol::mapler::examples::SAMPLE,
-        }
+        self.profile().sample
     }
 
     pub(crate) fn extension(self) -> &'static str {
-        match self {
-            Self::Portugol => "por",
-            Self::Visualg => "alg",
-            Self::Potigol => "poti",
-            Self::GPortugol => "gpt",
-            Self::Calango => "clg",
-            // The original Mapler IDE saves `.txt`; `.mapler` is Potoo's extension.
-            Self::Mapler => "mapler",
-        }
+        self.profile().extension
     }
 
     pub(crate) fn from_path(path: &Path) -> Option<Self> {
-        match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
-            "por" => Some(Self::Portugol),
-            "alg" => Some(Self::Visualg),
-            "poti" => Some(Self::Potigol),
-            "gpt" => Some(Self::GPortugol),
-            "clg" => Some(Self::Calango),
-            "mapler" => Some(Self::Mapler),
-            _ => None,
-        }
+        let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+        Self::ALL
+            .into_iter()
+            .find(|language| language.extension() == extension)
     }
 
     pub(crate) fn keywords(self) -> &'static [&'static str] {
-        match self {
-            Self::Portugol => &[
-                "programa", "funcao", "inicio", "inteiro", "escreva", "leia", "se", "senao",
-            ],
-            Self::Visualg => &[
-                "algoritmo",
-                "var",
-                "inteiro",
-                "inicio",
-                "escreva",
-                "escreval",
-                "leia",
-                "se",
-                "entao",
-                "senao",
-                "fimse",
-                "fimalgoritmo",
-            ],
-            Self::Potigol => &[
-                "def",
-                "var",
-                "tipo",
-                "escreva",
-                "imprima",
-                "retorne",
-                "enquanto",
-                "para",
-                "faça",
-                "faca",
-                "de",
-                "até",
-                "ate",
-                "passo",
-                "em",
-                "se",
-                "então",
-                "entao",
-                "senãose",
-                "senaose",
-                "senão",
-                "senao",
-                "escolha",
-                "caso",
-                "gere",
-                "fim",
-                "verdadeiro",
-                "falso",
-                "e",
-                "ou",
-                "não",
-                "nao",
-                "div",
-                "mod",
-            ],
-            Self::GPortugol => &[
-                "algoritmo",
-                "variáveis",
-                "fim-variáveis",
-                "início",
-                "fim",
-                "função",
-                "retorne",
-                "se",
-                "então",
-                "senão",
-                "fim-se",
-                "enquanto",
-                "faça",
-                "fim-enquanto",
-                "repita",
-                "até",
-                "para",
-                "de",
-                "passo",
-                "imprima",
-                "leia",
-                "inteiro",
-                "reais",
-                "caractere",
-                "literais",
-                "lógico",
-                "verdadeiro",
-                "falso",
-            ],
-            Self::Calango => &[
-                "algoritmo",
-                "principal",
-                "fimPrincipal",
-                "inteiro",
-                "real",
-                "logico",
-                "caracter",
-                "texto",
-                "funcao",
-                "procedimento",
-                "retorna",
-                "se",
-                "entao",
-                "senao",
-                "senaoSe",
-                "fimSe",
-                "escolha",
-                "caso",
-                "outroCaso",
-                "fimEscolha",
-                "para",
-                "de",
-                "ate",
-                "passo",
-                "faca",
-                "fimPara",
-                "enquanto",
-                "fimEnquanto",
-                "interrompa",
-                "escreva",
-                "escreval",
-                "leia",
-                "leiaCaracter",
-                "verdadeiro",
-                "falso",
-                "e",
-                "ou",
-                "nao",
-            ],
-            Self::Mapler => &[
-                "variaveis",
-                "inicio",
-                "fim",
-                "inteiro",
-                "real",
-                "logico",
-                "cadeia",
-                "caractere",
-                "vetor",
-                "de",
-                "modulo",
-                "escrever",
-                "ler",
-                "se",
-                "entao",
-                "senao",
-                "enquanto",
-                "para",
-                "ate",
-                "passo",
-                "faca",
-                "repita",
-                "verdadeiro",
-                "falso",
-                "e",
-                "ou",
-                "nao",
-            ],
-        }
+        self.profile().keywords
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ProjectTemplate {
-    Portugol20,
-    GPortugol,
-    Visualg,
-    PotigolClassic,
-    PotigolJerimum,
-    Calango,
-    Mapler,
-}
-
-impl ProjectTemplate {
-    pub(crate) fn default_for_language(language: Language) -> Self {
-        match language {
-            Language::Portugol => Self::GPortugol,
-            Language::Visualg => Self::Visualg,
-            Language::Potigol => Self::PotigolClassic,
-            Language::GPortugol => Self::GPortugol,
-            Language::Calango => Self::Calango,
-            Language::Mapler => Self::Mapler,
-        }
-    }
-
-    pub(crate) fn language(self) -> Language {
-        match self {
-            Self::Portugol20 => Language::Portugol,
-            Self::GPortugol => Language::GPortugol,
-            Self::Visualg => Language::Visualg,
-            Self::PotigolClassic | Self::PotigolJerimum => Language::Potigol,
-            Self::Calango => Language::Calango,
-            Self::Mapler => Language::Mapler,
-        }
-    }
-
-    pub(crate) fn file_name(self) -> &'static str {
-        self.language().file_name()
-    }
-
-    pub(crate) fn sample(self) -> &'static str {
-        match self {
-            Self::PotigolJerimum => crate::languages::potigol::jerimum::examples::SAMPLE,
-            _ => self.language().sample(),
-        }
-    }
-
-    pub(crate) fn new_file_sample(self) -> &'static str {
-        match self {
-            Self::PotigolJerimum => crate::languages::potigol::jerimum::examples::SAMPLE,
-            _ => "",
-        }
-    }
-}
+pub(crate) use crate::languages::project_templates::ProjectTemplate;
 
 #[cfg(test)]
 mod tests {
@@ -429,4 +193,281 @@ pub(crate) struct SourceDiagnostic {
     pub(crate) line: usize,
     pub(crate) column: usize,
     pub(crate) byte_range: Option<Range<usize>>,
+}
+
+impl SourceDiagnostic {
+    pub(crate) fn at_line(
+        kind: SourceDiagnosticKind,
+        message: String,
+        line: usize,
+        column: usize,
+    ) -> Self {
+        Self {
+            kind,
+            message,
+            line,
+            column,
+            byte_range: None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod language_profile_tests {
+    use super::{Language, ProjectTemplate};
+
+    #[test]
+    fn static_profiles_cover_current_languages_and_preserve_metadata() {
+        let expected = [
+            (
+                Language::Portugol,
+                "portugol",
+                "Portugol Studio 2.0",
+                "principal.por",
+                "por",
+                crate::languages::portugol::studio_20::examples::SAMPLE,
+                crate::languages::portugol::studio_20::completion::LANGUAGE_KEYWORDS,
+                8,
+                "programa",
+                ProjectTemplate::GPortugol,
+            ),
+            (
+                Language::Visualg,
+                "visualg",
+                "VisuAlg",
+                "principal.alg",
+                "alg",
+                crate::languages::portugol::visualg::examples::SAMPLE,
+                crate::languages::portugol::visualg::completion::LANGUAGE_KEYWORDS,
+                12,
+                "algoritmo",
+                ProjectTemplate::Visualg,
+            ),
+            (
+                Language::Potigol,
+                "potigol",
+                "Potigol",
+                "principal.poti",
+                "poti",
+                crate::languages::potigol::classic::examples::SAMPLE,
+                crate::languages::potigol::completion::LANGUAGE_KEYWORDS,
+                34,
+                "escreva",
+                ProjectTemplate::PotigolClassic,
+            ),
+            (
+                Language::GPortugol,
+                "gportugol",
+                "G-Portugol",
+                "principal.gpt",
+                "gpt",
+                crate::languages::portugol::g_portugol::examples::SAMPLE,
+                crate::languages::portugol::g_portugol::completion::LANGUAGE_KEYWORDS,
+                28,
+                "algoritmo",
+                ProjectTemplate::GPortugol,
+            ),
+            (
+                Language::Calango,
+                "calango",
+                "Calango",
+                "principal.clg",
+                "clg",
+                crate::languages::calango::examples::SAMPLE,
+                crate::languages::calango::completion::LANGUAGE_KEYWORDS,
+                38,
+                "fimPrincipal",
+                ProjectTemplate::Calango,
+            ),
+            (
+                Language::Mapler,
+                "mapler",
+                "Mapler",
+                "principal.mapler",
+                "mapler",
+                crate::languages::portugol::mapler::examples::SAMPLE,
+                crate::languages::portugol::mapler::completion::LANGUAGE_KEYWORDS,
+                27,
+                "variaveis",
+                ProjectTemplate::Mapler,
+            ),
+        ];
+
+        assert_eq!(Language::ALL, expected.map(|entry| entry.0));
+        for (
+            language,
+            key,
+            name,
+            file_name,
+            extension,
+            sample,
+            language_keywords,
+            keyword_count,
+            keyword,
+            template,
+        ) in expected
+        {
+            let profile = language.profile();
+            assert_eq!(profile.language, language);
+            assert_eq!(profile.key, key);
+            assert_eq!(profile.display_name, name);
+            assert_eq!(profile.file_name, file_name);
+            assert_eq!(profile.extension, extension);
+            assert_eq!(profile.sample, sample);
+            assert_eq!(profile.keywords, language_keywords, "{key}");
+            assert_eq!(profile.keywords.len(), keyword_count, "{key}");
+            assert!(profile.keywords.contains(&keyword), "{key}: {keyword}");
+            assert_eq!(profile.default_template, template, "{key}");
+            assert_eq!(
+                ProjectTemplate::default_for_language(language),
+                template,
+                "{key}"
+            );
+            assert_eq!(Language::from_key(key), language);
+        }
+        assert_eq!(Language::from_key("unknown"), Language::Portugol);
+    }
+
+    #[test]
+    fn static_profiles_have_unique_keys_and_extensions() {
+        for (index, language) in Language::ALL.iter().enumerate() {
+            let profile = language.profile();
+            for other in Language::ALL.iter().skip(index + 1) {
+                assert_ne!(profile.key, other.profile().key);
+                assert_ne!(profile.extension, other.profile().extension);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod project_template_catalog_tests {
+    use crate::languages::project_templates::{ProjectTemplate, ProjectTemplateGroup};
+
+    #[test]
+    fn template_catalog_preserves_language_group_order_and_examples() {
+        let expected = [
+            (
+                ProjectTemplate::GPortugol,
+                super::Language::GPortugol,
+                ProjectTemplateGroup::Portugol,
+                0,
+                crate::languages::portugol::g_portugol::examples::SAMPLE,
+                "",
+            ),
+            (
+                ProjectTemplate::Visualg,
+                super::Language::Visualg,
+                ProjectTemplateGroup::Portugol,
+                1,
+                crate::languages::portugol::visualg::examples::SAMPLE,
+                "",
+            ),
+            (
+                ProjectTemplate::Portugol20,
+                super::Language::Portugol,
+                ProjectTemplateGroup::Portugol,
+                2,
+                crate::languages::portugol::studio_20::examples::SAMPLE,
+                "",
+            ),
+            (
+                ProjectTemplate::Mapler,
+                super::Language::Mapler,
+                ProjectTemplateGroup::Portugol,
+                3,
+                crate::languages::portugol::mapler::examples::SAMPLE,
+                "",
+            ),
+            (
+                ProjectTemplate::PotigolClassic,
+                super::Language::Potigol,
+                ProjectTemplateGroup::Potigol,
+                0,
+                crate::languages::potigol::classic::examples::SAMPLE,
+                "",
+            ),
+            (
+                ProjectTemplate::PotigolJerimum,
+                super::Language::Potigol,
+                ProjectTemplateGroup::Potigol,
+                1,
+                crate::languages::potigol::jerimum::examples::SAMPLE,
+                crate::languages::potigol::jerimum::examples::SAMPLE,
+            ),
+            (
+                ProjectTemplate::Calango,
+                super::Language::Calango,
+                ProjectTemplateGroup::Calango,
+                0,
+                crate::languages::calango::examples::SAMPLE,
+                "",
+            ),
+        ];
+
+        assert_eq!(ProjectTemplate::ALL, expected.map(|entry| entry.0));
+        for (template, language, group, order, sample, new_file_sample) in expected {
+            let profile = template.profile();
+            assert_eq!(profile.template, template);
+            assert_eq!(profile.language, language);
+            assert_eq!(profile.group, group);
+            assert_eq!(profile.order, order);
+            assert_eq!(profile.sample, sample);
+            assert_eq!(profile.new_file_sample, new_file_sample);
+            assert_eq!(template.file_name(), language.file_name());
+            assert_eq!(template.sample(), sample);
+            assert_eq!(template.new_file_sample(), new_file_sample);
+        }
+    }
+
+    #[test]
+    fn template_group_maps_to_the_existing_variant_selectors() {
+        for (language, group) in [
+            (super::Language::Portugol, ProjectTemplateGroup::Portugol),
+            (super::Language::GPortugol, ProjectTemplateGroup::Portugol),
+            (super::Language::Visualg, ProjectTemplateGroup::Portugol),
+            (super::Language::Mapler, ProjectTemplateGroup::Portugol),
+            (super::Language::Potigol, ProjectTemplateGroup::Potigol),
+            (super::Language::Calango, ProjectTemplateGroup::Calango),
+        ] {
+            assert_eq!(ProjectTemplateGroup::for_language(language), group);
+        }
+
+        for (group, order, expected) in [
+            (
+                ProjectTemplateGroup::Portugol,
+                0,
+                Some(ProjectTemplate::GPortugol),
+            ),
+            (
+                ProjectTemplateGroup::Portugol,
+                1,
+                Some(ProjectTemplate::Visualg),
+            ),
+            (
+                ProjectTemplateGroup::Portugol,
+                2,
+                Some(ProjectTemplate::Portugol20),
+            ),
+            (
+                ProjectTemplateGroup::Portugol,
+                3,
+                Some(ProjectTemplate::Mapler),
+            ),
+            (
+                ProjectTemplateGroup::Potigol,
+                0,
+                Some(ProjectTemplate::PotigolClassic),
+            ),
+            (
+                ProjectTemplateGroup::Potigol,
+                1,
+                Some(ProjectTemplate::PotigolJerimum),
+            ),
+            (ProjectTemplateGroup::Calango, 0, None),
+            (ProjectTemplateGroup::Portugol, 4, None),
+        ] {
+            assert_eq!(ProjectTemplate::for_group_order(group, order), expected);
+        }
+    }
 }

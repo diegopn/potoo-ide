@@ -1,7 +1,48 @@
 use crate::languages::completion::{
-    CompletionCatalog, CompletionSyntax, CursorLexicalContext, cursor_lexical_context_for,
-    identifier_at_start,
+    CompletionAdapter, CompletionCatalog, CompletionSyntax, CursorLexicalContext,
+    cursor_lexical_context_for, identifier_at_start,
 };
+
+pub(crate) const LANGUAGE_KEYWORDS: &[&str] = &[
+    "algoritmo",
+    "principal",
+    "fimPrincipal",
+    "inteiro",
+    "real",
+    "logico",
+    "caracter",
+    "texto",
+    "funcao",
+    "procedimento",
+    "retorna",
+    "se",
+    "entao",
+    "senao",
+    "senaoSe",
+    "fimSe",
+    "escolha",
+    "caso",
+    "outroCaso",
+    "fimEscolha",
+    "para",
+    "de",
+    "ate",
+    "passo",
+    "faca",
+    "fimPara",
+    "enquanto",
+    "fimEnquanto",
+    "interrompa",
+    "escreva",
+    "escreval",
+    "leia",
+    "leiaCaracter",
+    "verdadeiro",
+    "falso",
+    "e",
+    "ou",
+    "nao",
+];
 
 pub(crate) fn catalog() -> CompletionCatalog {
     let (keywords, functions, snippets) = (
@@ -120,3 +161,12 @@ pub(crate) fn declared_identifiers(source: &str) -> Vec<String> {
     }
     names
 }
+
+pub(crate) static ADAPTER: CompletionAdapter = CompletionAdapter {
+    catalog,
+    cursor_lexical_context,
+    library_import_context: None,
+    libraries: None,
+    library_members: None,
+    declared_identifiers,
+};

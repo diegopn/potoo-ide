@@ -54,6 +54,40 @@ pub(crate) fn analyze_source_line_cancellable(
     Ok(analyze_statements(source, &program.main, one_based_line))
 }
 
+pub(crate) fn profile_adapter(
+    source: &str,
+    one_based_line: usize,
+    is_cancelled: &dyn Fn() -> bool,
+) -> Result<Option<SourceLineAnalysis>, Vec<crate::languages::model::SourceDiagnostic>> {
+    analyze_source_line_cancellable(source, one_based_line, is_cancelled).map_err(|diagnostics| {
+        diagnostics
+            .into_iter()
+            .map(|diagnostic| {
+                let kind = match diagnostic.kind {
+                    potoo_calango_interpreter::DiagnosticKind::Lexical => {
+                        crate::languages::model::SourceDiagnosticKind::Lexical
+                    }
+                    potoo_calango_interpreter::DiagnosticKind::Syntax => {
+                        crate::languages::model::SourceDiagnosticKind::Syntax
+                    }
+                    potoo_calango_interpreter::DiagnosticKind::Type => {
+                        crate::languages::model::SourceDiagnosticKind::Type
+                    }
+                    potoo_calango_interpreter::DiagnosticKind::Runtime => {
+                        crate::languages::model::SourceDiagnosticKind::Runtime
+                    }
+                };
+                crate::languages::model::SourceDiagnostic::at_line(
+                    kind,
+                    diagnostic.message,
+                    diagnostic.line,
+                    diagnostic.column,
+                )
+            })
+            .collect()
+    })
+}
+
 fn parse_recovering<F>(source: &str, is_cancelled: &F) -> (Option<Program>, Vec<Diagnostic>)
 where
     F: Fn() -> bool,
@@ -415,4 +449,11 @@ fn insert_unique_array_bounds(
     } else {
         arrays.insert(name, dimensions);
     }
+}
+
+pub(crate) fn profile_declared_array_bounds(
+    source: &str,
+    is_cancelled: &dyn Fn() -> bool,
+) -> Option<HashMap<String, Vec<SourceDimension>>> {
+    declared_array_bounds(source, &|| is_cancelled())
 }

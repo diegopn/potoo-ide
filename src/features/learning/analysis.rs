@@ -39,7 +39,7 @@ where
     if is_cancelled() {
         return None;
     }
-    if is_blank_or_line_comment(source, one_based_line, language) {
+    if (language.profile().is_blank_or_line_comment)(source, one_based_line) {
         return Some(LearningHint {
             line: one_based_line.max(1),
             column: 1,
@@ -55,237 +55,23 @@ where
             problems: Vec::new(),
         });
     }
-    let code_line = match language {
-        Language::Portugol => {
-            crate::languages::portugol::studio_20::syntax_analysis::views::source_line_code(
-                source,
-                one_based_line,
-            )
-        }
-        Language::Visualg => {
-            crate::languages::portugol::visualg::syntax_analysis::views::source_line_code(
-                source,
-                one_based_line,
-            )
-        }
-        Language::GPortugol => {
-            crate::languages::portugol::g_portugol::syntax_analysis::views::source_line_code(
-                source,
-                one_based_line,
-            )
-        }
-        Language::Potigol => crate::languages::potigol::syntax_analysis::views::source_line_code(
-            source,
-            one_based_line,
-        ),
-        Language::Calango => crate::languages::calango::syntax_analysis::views::source_line_code(
-            source,
-            one_based_line,
-        ),
-        Language::Mapler => {
-            crate::languages::portugol::mapler::syntax_analysis::views::source_line_code(
-                source,
-                one_based_line,
-            )
-        }
-    };
+    let code_line = (language.profile().source_line_code)(source, one_based_line);
     let line = code_line.trim();
-    let (facts, column, mut problems) = match language {
-        Language::Portugol => {
-            match crate::languages::portugol::studio_20::learning::analyze_source_line_cancellable(
-                source,
-                one_based_line,
-                &is_cancelled,
-            ) {
-                Ok(Some(analysis)) => {
-                    let column = analysis.column;
-                    (Some(learning_facts(analysis)), column, Vec::new())
-                }
-                Ok(None) => (None, 1, Vec::new()),
-                Err(diagnostics) => {
-                    let problems = diagnostics
-                        .into_iter()
-                        .filter(|diagnostic| diagnostic.line == one_based_line)
-                        .map(|diagnostic| LearningProblem {
-                            kind: LearningProblemKind::Syntax,
-                            severity: LearningSeverity::Error,
-                            line: diagnostic.line,
-                            column: diagnostic.column,
-                            text: LearningProblemText::InterpreterDiagnostic,
-                            message: diagnostic.message,
-                            suggestion: None,
-                        })
-                        .collect();
-                    (None, 1, problems)
-                }
-            }
+    let adapter_result = language
+        .profile()
+        .learning
+        .map(|adapter| adapter(source, one_based_line, &is_cancelled));
+    let (facts, column, mut problems) = match adapter_result {
+        Some(Ok(Some(analysis))) => {
+            let column = analysis.column;
+            (Some(learning_facts(analysis)), column, Vec::new())
         }
-        Language::Visualg => {
-            match crate::languages::portugol::visualg::learning::analyze_source_line_cancellable(
-                source,
-                one_based_line,
-                &is_cancelled,
-            ) {
-                Ok(Some(analysis)) => {
-                    let column = analysis.column;
-                    (Some(learning_facts(analysis)), column, Vec::new())
-                }
-                Ok(None) => (None, 1, Vec::new()),
-                Err(diagnostics) => {
-                    let problems = diagnostics
-                        .into_iter()
-                        .filter(|diagnostic| diagnostic.line == one_based_line)
-                        .map(|diagnostic| LearningProblem {
-                            kind: LearningProblemKind::Syntax,
-                            severity: LearningSeverity::Error,
-                            line: diagnostic.line,
-                            column: diagnostic.column,
-                            text: LearningProblemText::InterpreterDiagnostic,
-                            message: diagnostic.message,
-                            suggestion: None,
-                        })
-                        .collect();
-                    (None, 1, problems)
-                }
-            }
-        }
-        Language::GPortugol => {
-            match crate::languages::portugol::g_portugol::learning::analyze_source_line_cancellable(
-                source,
-                one_based_line,
-                &is_cancelled,
-            ) {
-                Ok(Some(analysis)) => {
-                    let column = analysis.column;
-                    (Some(learning_facts(analysis)), column, Vec::new())
-                }
-                Ok(None) => (None, 1, Vec::new()),
-                Err(diagnostics) => {
-                    let problems = diagnostics
-                        .into_iter()
-                        .filter(|diagnostic| diagnostic.span.start.line == one_based_line)
-                        .map(|diagnostic| LearningProblem {
-                            kind: LearningProblemKind::Syntax,
-                            severity: LearningSeverity::Error,
-                            line: diagnostic.span.start.line,
-                            column: diagnostic.span.start.column,
-                            text: LearningProblemText::InterpreterDiagnostic,
-                            message: diagnostic.message,
-                            suggestion: None,
-                        })
-                        .collect();
-                    (None, 1, problems)
-                }
-            }
-        }
-        Language::Potigol => {
-            match crate::languages::potigol::learning::analyze_source_line_cancellable(
-                source,
-                one_based_line,
-                &is_cancelled,
-            ) {
-                Ok(Some(analysis)) => {
-                    let column = analysis.column;
-                    (Some(learning_facts(analysis)), column, Vec::new())
-                }
-                Ok(None) => (None, 1, Vec::new()),
-                Err(diagnostics) => {
-                    let problems = diagnostics
-                        .into_iter()
-                        .filter(|diagnostic| diagnostic.span.start.line == one_based_line)
-                        .map(|diagnostic| {
-                            let category = match diagnostic.kind {
-                                potoo_potigol_interpreter::DiagnosticKind::Lexical => {
-                                    crate::features::diagnostics::DiagnosticCategory::Lexical
-                                }
-                                potoo_potigol_interpreter::DiagnosticKind::Syntax => {
-                                    crate::features::diagnostics::DiagnosticCategory::Syntax
-                                }
-                                potoo_potigol_interpreter::DiagnosticKind::Type => {
-                                    crate::features::diagnostics::DiagnosticCategory::Type
-                                }
-                                potoo_potigol_interpreter::DiagnosticKind::Runtime => {
-                                    crate::features::diagnostics::DiagnosticCategory::Runtime
-                                }
-                            };
-                            let message = crate::features::diagnostics::adapt_diagnostic_message(
-                                Language::Potigol,
-                                source,
-                                category,
-                                &diagnostic.message,
-                                diagnostic.span.start.line,
-                                diagnostic.span.start.column,
-                            );
-                            diagnostic_problem(
-                                learning_problem_kind(category),
-                                diagnostic.span.start.line,
-                                diagnostic.span.start.column,
-                                message,
-                            )
-                        })
-                        .collect();
-                    (None, 1, problems)
-                }
-            }
-        }
-        Language::Calango => {
-            match crate::languages::calango::learning::analyze_source_line_cancellable(
-                source,
-                one_based_line,
-                &is_cancelled,
-            ) {
-                Ok(Some(analysis)) => {
-                    let column = analysis.column;
-                    (Some(learning_facts(analysis)), column, Vec::new())
-                }
-                Ok(None) => (None, 1, Vec::new()),
-                Err(diagnostics) => {
-                    let problems = diagnostics
-                        .into_iter()
-                        .filter(|diagnostic| diagnostic.line == one_based_line)
-                        .map(|diagnostic| {
-                            let category = map_calango_diagnostic_kind(diagnostic.kind);
-                            diagnostic_problem(
-                                learning_problem_kind(category),
-                                diagnostic.line,
-                                diagnostic.column,
-                                diagnostic.message,
-                            )
-                        })
-                        .collect();
-                    (None, 1, problems)
-                }
-            }
-        }
-        Language::Mapler => {
-            match crate::languages::portugol::mapler::learning::analyze_source_line_cancellable(
-                source,
-                one_based_line,
-                &is_cancelled,
-            ) {
-                Ok(Some(analysis)) => {
-                    let column = analysis.column;
-                    (Some(learning_facts(analysis)), column, Vec::new())
-                }
-                Ok(None) => (None, 1, Vec::new()),
-                Err(diagnostics) => {
-                    let problems = diagnostics
-                        .into_iter()
-                        .filter(|diagnostic| diagnostic.line == one_based_line)
-                        .map(|diagnostic| {
-                            let category = map_mapler_diagnostic_kind(diagnostic.kind);
-                            diagnostic_problem(
-                                learning_problem_kind(category),
-                                diagnostic.line,
-                                diagnostic.column,
-                                diagnostic.message,
-                            )
-                        })
-                        .collect();
-                    (None, 1, problems)
-                }
-            }
-        }
+        Some(Ok(None)) | None => (None, 1, Vec::new()),
+        Some(Err(diagnostics)) => (
+            None,
+            1,
+            learning_diagnostic_problems(language, source, one_based_line, diagnostics),
+        ),
     };
     if is_cancelled() {
         return None;
@@ -377,43 +163,47 @@ where
     })
 }
 
-fn is_blank_or_line_comment(source: &str, line_number: usize, language: Language) -> bool {
-    match language {
-        Language::Portugol => {
-            crate::languages::portugol::studio_20::syntax_analysis::views::is_blank_or_line_comment(
+fn learning_diagnostic_problems(
+    language: Language,
+    source: &str,
+    selected_line: usize,
+    diagnostics: Vec<crate::languages::model::SourceDiagnostic>,
+) -> Vec<LearningProblem> {
+    diagnostics
+        .into_iter()
+        .filter(|diagnostic| diagnostic.line == selected_line)
+        .map(|diagnostic| {
+            let category = match diagnostic.kind {
+                crate::languages::model::SourceDiagnosticKind::Lexical => {
+                    crate::features::diagnostics::DiagnosticCategory::Lexical
+                }
+                crate::languages::model::SourceDiagnosticKind::Syntax => {
+                    crate::features::diagnostics::DiagnosticCategory::Syntax
+                }
+                crate::languages::model::SourceDiagnosticKind::Type => {
+                    crate::features::diagnostics::DiagnosticCategory::Type
+                }
+                crate::languages::model::SourceDiagnosticKind::Runtime => {
+                    crate::features::diagnostics::DiagnosticCategory::Runtime
+                }
+                crate::languages::model::SourceDiagnosticKind::StaticAnalysis => {
+                    crate::features::diagnostics::DiagnosticCategory::StaticAnalysis
+                }
+            };
+            let message = crate::features::diagnostics::adapt_diagnostic_message(
+                language,
                 source,
-                line_number,
+                category,
+                &diagnostic.message,
+                diagnostic.line,
+                diagnostic.column,
+            );
+            diagnostic_problem(
+                learning_problem_kind(category),
+                diagnostic.line,
+                diagnostic.column,
+                message,
             )
-        }
-        Language::Visualg => {
-            crate::languages::portugol::visualg::syntax_analysis::views::is_blank_or_line_comment(
-                source,
-                line_number,
-            )
-        }
-        Language::GPortugol => {
-            crate::languages::portugol::g_portugol::syntax_analysis::views::is_blank_or_line_comment(
-                source,
-                line_number,
-            )
-        }
-        Language::Potigol => {
-            crate::languages::potigol::syntax_analysis::views::is_blank_or_line_comment(
-                source,
-                line_number,
-            )
-        }
-        Language::Calango => {
-            crate::languages::calango::syntax_analysis::views::is_blank_or_line_comment(
-                source,
-                line_number,
-            )
-        }
-        Language::Mapler => {
-            crate::languages::portugol::mapler::syntax_analysis::views::is_blank_or_line_comment(
-                source,
-                line_number,
-            )
-        }
-    }
+        })
+        .collect()
 }

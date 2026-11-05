@@ -13,6 +13,16 @@ pub(crate) struct CompletionCatalog {
     pub(crate) snippets: &'static [CompletionSnippet],
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CompletionAdapter {
+    pub(crate) catalog: fn() -> CompletionCatalog,
+    pub(crate) cursor_lexical_context: fn(&str, usize) -> CursorLexicalContext,
+    pub(crate) library_import_context: Option<fn(&[char], usize) -> Option<LibraryImportContext>>,
+    pub(crate) libraries: Option<fn() -> &'static [&'static str]>,
+    pub(crate) library_members: Option<fn(&str, usize, &str) -> &'static [&'static str]>,
+    pub(crate) declared_identifiers: fn(&str) -> Vec<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct LibraryImportContext {
     pub(crate) start: usize,
@@ -33,15 +43,21 @@ pub(crate) struct CompletionSyntax {
     pub(crate) brace_comments: bool,
 }
 
+const EMPTY_CATALOG: CompletionCatalog = CompletionCatalog {
+    keywords: &[],
+    functions: &[],
+    snippets: &[],
+};
+
+pub(crate) fn is_available(language: Language) -> bool {
+    language.profile().completion.is_some()
+}
+
 pub(crate) fn catalog(language: Language) -> CompletionCatalog {
-    match language {
-        Language::Portugol => super::portugol::studio_20::completion::catalog(),
-        Language::Visualg => super::portugol::visualg::completion::catalog(),
-        Language::Potigol => super::potigol::completion::catalog(),
-        Language::GPortugol => super::portugol::g_portugol::completion::catalog(),
-        Language::Calango => super::calango::completion::catalog(),
-        Language::Mapler => super::portugol::mapler::completion::catalog(),
-    }
+    language
+        .profile()
+        .completion
+        .map_or(EMPTY_CATALOG, |adapter| (adapter.catalog)())
 }
 
 pub(crate) fn cursor_lexical_context(
@@ -49,22 +65,12 @@ pub(crate) fn cursor_lexical_context(
     source: &str,
     cursor: usize,
 ) -> CursorLexicalContext {
-    match language {
-        Language::Portugol => {
-            super::portugol::studio_20::completion::cursor_lexical_context(source, cursor)
-        }
-        Language::Visualg => {
-            super::portugol::visualg::completion::cursor_lexical_context(source, cursor)
-        }
-        Language::Potigol => super::potigol::completion::cursor_lexical_context(source, cursor),
-        Language::GPortugol => {
-            super::portugol::g_portugol::completion::cursor_lexical_context(source, cursor)
-        }
-        Language::Calango => super::calango::completion::cursor_lexical_context(source, cursor),
-        Language::Mapler => {
-            super::portugol::mapler::completion::cursor_lexical_context(source, cursor)
-        }
-    }
+    language
+        .profile()
+        .completion
+        .map_or_else(CursorLexicalContext::default, |adapter| {
+            (adapter.cursor_lexical_context)(source, cursor)
+        })
 }
 
 pub(crate) fn library_import_context(
@@ -72,21 +78,15 @@ pub(crate) fn library_import_context(
     chars: &[char],
     cursor: usize,
 ) -> Option<LibraryImportContext> {
-    match language {
-        Language::Portugol => {
-            super::portugol::studio_20::completion::library_import_context(chars, cursor)
-        }
-        Language::Potigol => super::potigol::completion::library_import_context(chars, cursor),
-        Language::Visualg | Language::GPortugol | Language::Calango | Language::Mapler => None,
-    }
+    language.profile().completion?.library_import_context?(chars, cursor)
 }
 
 pub(crate) fn libraries(language: Language) -> &'static [&'static str] {
-    match language {
-        Language::Portugol => super::portugol::studio_20::completion::libraries(),
-        Language::Potigol => super::potigol::completion::libraries(),
-        Language::Visualg | Language::GPortugol | Language::Calango | Language::Mapler => &[],
-    }
+    language
+        .profile()
+        .completion
+        .and_then(|adapter| adapter.libraries)
+        .map_or(&[], |libraries| libraries())
 }
 
 pub(crate) fn library_members(
@@ -95,26 +95,18 @@ pub(crate) fn library_members(
     cursor: usize,
     owner: &str,
 ) -> &'static [&'static str] {
-    match language {
-        Language::Portugol => {
-            super::portugol::studio_20::completion::library_members(source, cursor, owner)
-        }
-        Language::Potigol => super::potigol::completion::library_members(source, cursor, owner),
-        Language::Visualg | Language::GPortugol | Language::Calango | Language::Mapler => &[],
-    }
+    language
+        .profile()
+        .completion
+        .and_then(|adapter| adapter.library_members)
+        .map_or(&[], |members| members(source, cursor, owner))
 }
 
 pub(crate) fn declared_identifiers(language: Language, source: &str) -> Vec<String> {
-    match language {
-        Language::Portugol => super::portugol::studio_20::completion::declared_identifiers(source),
-        Language::Visualg => super::portugol::visualg::completion::declared_identifiers(source),
-        Language::Potigol => super::potigol::completion::declared_identifiers(source),
-        Language::GPortugol => {
-            super::portugol::g_portugol::completion::declared_identifiers(source)
-        }
-        Language::Calango => super::calango::completion::declared_identifiers(source),
-        Language::Mapler => super::portugol::mapler::completion::declared_identifiers(source),
-    }
+    language
+        .profile()
+        .completion
+        .map_or_else(Vec::new, |adapter| (adapter.declared_identifiers)(source))
 }
 
 pub(crate) fn cursor_lexical_context_for(

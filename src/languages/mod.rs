@@ -3,6 +3,8 @@ pub(crate) mod completion;
 pub(crate) mod model;
 pub(crate) mod portugol;
 pub(crate) mod potigol;
+pub(crate) mod profile;
+pub(crate) mod project_templates;
 pub(crate) mod source;
 
 #[cfg(test)]

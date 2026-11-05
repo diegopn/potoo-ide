@@ -24,3 +24,7 @@ use crate::languages::{
     source::{read_identifier, read_integer, skip_spaces},
 };
 use std::collections::HashMap;
+
+pub(crate) fn is_available(language: Language) -> bool {
+    language.profile().learning.is_some()
+}
