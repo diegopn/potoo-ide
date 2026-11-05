@@ -46,6 +46,7 @@ pub struct MainUi {
     pub(super) debugger_position: gtk::Label,
     pub(super) debugger_variables: gtk::TextBuffer,
     pub(super) debugger_learning: content_panel::DebuggerLearningUi,
+    pub(super) tools_panel: gtk::Box,
     pub(super) right_panel_revealer: gtk::Revealer,
     pub(super) right_panel_stack: gtk::Stack,
     pub(super) learning_tool_button: gtk::Button,

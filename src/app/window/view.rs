@@ -619,6 +619,7 @@ pub(super) fn build_window_content(
         debugger_position,
         debugger_variables,
         debugger_learning,
+        tools_panel,
         right_panel_revealer: tools_ui.revealer,
         right_panel_stack: tools_ui.stack,
         learning_tool_button: tools_ui.learning_button,

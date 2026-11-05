@@ -35,12 +35,13 @@ impl MainWindow {
             debugger_available,
             game_preview_available,
         );
+        ui.tools_panel.set_visible(right_panel_section.is_some());
 
-        if ui.displayed_right_panel_section != Some(right_panel_section)
-            || ui.displayed_right_panel_collapsed != self.right_panel_collapsed
+        if let Some(section) = right_panel_section
+            && (ui.displayed_right_panel_section != Some(section)
+                || ui.displayed_right_panel_collapsed != self.right_panel_collapsed)
         {
             let collapsed = self.right_panel_collapsed;
-            let section = right_panel_section;
             ui.right_panel_stack.set_visible_child_name(match section {
                 RightPanelSection::Learning => "learning",
                 RightPanelSection::Debugger => "debugger",
@@ -92,6 +93,10 @@ impl MainWindow {
             )));
             ui.displayed_right_panel_section = Some(section);
             ui.displayed_right_panel_collapsed = collapsed;
+        } else if right_panel_section.is_none() {
+            ui.right_panel_revealer.set_reveal_child(false);
+            ui.displayed_right_panel_section = None;
+            ui.displayed_right_panel_collapsed = self.right_panel_collapsed;
         }
 
         if ui.displayed_game_preview_active != self.game_preview_active {
@@ -773,36 +778,36 @@ fn available_panel_section(
     learning_available: bool,
     debugger_available: bool,
     game_preview_available: bool,
-) -> RightPanelSection {
+) -> Option<RightPanelSection> {
     match requested {
         RightPanelSection::Learning if !learning_available => {
             if debugger_available {
-                RightPanelSection::Debugger
+                Some(RightPanelSection::Debugger)
             } else if game_preview_available {
-                RightPanelSection::GamePreview
+                Some(RightPanelSection::GamePreview)
             } else {
-                RightPanelSection::Learning
+                None
             }
         }
         RightPanelSection::Debugger if !debugger_available => {
             if learning_available {
-                RightPanelSection::Learning
+                Some(RightPanelSection::Learning)
             } else if game_preview_available {
-                RightPanelSection::GamePreview
+                Some(RightPanelSection::GamePreview)
             } else {
-                RightPanelSection::Debugger
+                None
             }
         }
         RightPanelSection::GamePreview if !game_preview_available => {
             if learning_available {
-                RightPanelSection::Learning
+                Some(RightPanelSection::Learning)
             } else if debugger_available {
-                RightPanelSection::Debugger
+                Some(RightPanelSection::Debugger)
             } else {
-                RightPanelSection::GamePreview
+                None
             }
         }
-        section => section,
+        section => Some(section),
     }
 }
 
@@ -814,15 +819,29 @@ mod tests {
     fn unavailable_panel_falls_back_to_an_available_feature() {
         assert_eq!(
             available_panel_section(RightPanelSection::Learning, false, true, false),
-            RightPanelSection::Debugger
+            Some(RightPanelSection::Debugger)
         );
         assert_eq!(
             available_panel_section(RightPanelSection::Debugger, false, false, true),
-            RightPanelSection::GamePreview
+            Some(RightPanelSection::GamePreview)
         );
         assert_eq!(
             available_panel_section(RightPanelSection::GamePreview, false, true, false),
-            RightPanelSection::Debugger
+            Some(RightPanelSection::Debugger)
         );
+    }
+
+    #[test]
+    fn returns_no_panel_when_all_features_are_unavailable() {
+        for requested in [
+            RightPanelSection::Learning,
+            RightPanelSection::Debugger,
+            RightPanelSection::GamePreview,
+        ] {
+            assert_eq!(
+                available_panel_section(requested, false, false, false),
+                None
+            );
+        }
     }
 }
