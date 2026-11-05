@@ -67,6 +67,27 @@ jobs:
             mingw-w64-ucrt-x86_64-gtksourceview5
             mingw-w64-ucrt-x86_64-pkgconf
             mingw-w64-ucrt-x86_64-toolchain
+      - name: Verify GDK-Pixbuf loader helper
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          package=mingw-w64-ucrt-x86_64-gdk-pixbuf2
+          helper=/ucrt64/bin/gdk-pixbuf-query-loaders.exe
+          if [[ ! -f "$helper" ]]; then
+            echo "GDK-Pixbuf package is installed without its loader helper; reinstalling it."
+            pacman -S --noconfirm "$package" || {
+              pacman -Qkk "$package" || true
+              pacman -Ql "$package" | grep -E 'gdk-pixbuf-query-loaders|loaders.cache' || true
+              exit 1
+            }
+          fi
+          if [[ ! -f "$helper" ]]; then
+            echo "GDK-Pixbuf loader helper is still missing after reinstall."
+            pacman -Qkk "$package" || true
+            pacman -Ql "$package" | grep -E 'gdk-pixbuf-query-loaders|loaders.cache' || true
+            exit 1
+          fi
+          printf 'Found GDK-Pixbuf loader helper: %s\n' "$(cygpath -aw "$helper")"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-gnu
