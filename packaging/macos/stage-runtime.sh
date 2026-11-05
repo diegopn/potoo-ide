@@ -96,7 +96,7 @@ bundle_dependency_closure() {
 
         chmod u+w "$current" 2>/dev/null || true
         if [[ "$current" == *.dylib ]]; then
-            install_name_tool -id "@executable_path/../Frameworks/$(basename "$current")" "$current"
+            install_name_tool -id "@rpath/$(basename "$current")" "$current"
         fi
 
         while IFS= read -r dependency; do
@@ -117,7 +117,10 @@ bundle_dependency_closure() {
                 chmod u+w "$destination" 2>/dev/null || true
                 queue+=("$destination")
             fi
-            install_name_tool -change "$dependency" "@executable_path/../Frameworks/$name" "$current"
+            local install_name="@rpath/$name"
+            if [[ "$dependency" != "$install_name" ]]; then
+                install_name_tool -change "$dependency" "$install_name" "$current"
+            fi
         done < <(otool -L "$current" | tail -n +2 | awk '{print $1}')
     done
 }
@@ -145,7 +148,7 @@ create_info_plist() {
 EOF
 }
 
-rustflags="${RUSTFLAGS:-} -C link-arg=-Wl,-headerpad_max_install_names"
+rustflags="${RUSTFLAGS:-} -C link-arg=-Wl,-headerpad_max_install_names -C link-arg=-Wl,-rpath,@executable_path/../Frameworks"
 MACOSX_DEPLOYMENT_TARGET="$deployment_target" RUSTFLAGS="$rustflags" \
     cargo build --locked --release --bin potoo-ide --target "$target"
 

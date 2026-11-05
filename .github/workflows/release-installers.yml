@@ -166,8 +166,37 @@ jobs:
       - name: Validate Intel app bundle
         run: |
           app="target/packages/macos-x86_64/stage/Potoo IDE.app"
+          contents="$app/Contents"
+          frameworks="$contents/Frameworks"
+          resources="$contents/Resources"
+          executable="$contents/MacOS/PotooIDE"
           plutil -lint "$app/Contents/Info.plist"
-          test "$(lipo -archs "$app/Contents/MacOS/PotooIDE")" = "x86_64"
+          test "$(lipo -archs "$executable")" = "x86_64"
+          otool -l "$executable" | grep -Fq 'path @executable_path/../Frameworks '
+          while IFS= read -r -d '' binary; do
+            file "$binary" | grep -q 'Mach-O' || continue
+            while IFS= read -r dependency; do
+              case "$dependency" in
+                /System/Library/*|/usr/lib/*|/Library/Apple/System/*) ;;
+                @rpath/*)
+                  library="${dependency#@rpath/}"
+                  test -f "$frameworks/$library" || {
+                    echo "Bundled macOS dependency not found: $dependency (from $binary)" >&2
+                    exit 1
+                  }
+                  ;;
+                *)
+                  echo "Non-relocatable macOS dependency: $dependency (from $binary)" >&2
+                  exit 1
+                  ;;
+              esac
+            done < <(otool -L "$binary" | tail -n +2 | awk '{print $1}')
+          done < <(find "$contents" -type f -print0)
+          shopt -s nullglob
+          loaders=("$resources/lib/gdk-pixbuf-2.0/2.10.0/loaders/"*.so)
+          test "${#loaders[@]}" -gt 0
+          DYLD_LIBRARY_PATH="$frameworks${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" \
+            "$contents/MacOS/gdk-pixbuf-query-loaders" "${loaders[@]}" >/dev/null
           hdiutil verify target/packages/macos-x86_64/Potoo-IDE-*-macos-x86_64.dmg
           test -x "$app/Contents/MacOS/PotooIDE"
       - uses: actions/upload-artifact@v7
