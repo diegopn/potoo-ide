@@ -47,11 +47,11 @@ Project documentation is maintained in English. The app offers Portuguese, Engli
 
 ## Platforms
 
-Potoo IDE packages are built for 64-bit Windows, Intel Macs, and x86_64 Linux. Apple Silicon builds are not available yet.
+Potoo IDE installers are currently available for Windows x64 and x86_64 Linux (Flatpak). macOS installers are not included yet; Apple Silicon builds are also unavailable.
 
 ## Install
 
-Download the installers from the [latest GitHub release](https://github.com/diegopn/potoo-ide/releases/latest). The release also includes a ZIP containing every installer and a `SHA256SUMS` file.
+Download the installers from the [latest GitHub release](https://github.com/diegopn/potoo-ide/releases/latest). The release also includes a ZIP containing the installers available for that release and a `SHA256SUMS` file.
 
 ### Windows
 
@@ -61,13 +61,9 @@ Download the installers from the [latest GitHub release](https://github.com/dieg
 
 The installer includes the GTK, GtkSourceView, and GStreamer runtime files needed by the application. The Windows installer is not code-signed, so Windows may show a publisher warning.
 
-### macOS (Intel)
+### macOS
 
-1. Download `Potoo-IDE-<version>-macos-x86_64.dmg`.
-2. Open the disk image and drag `Potoo IDE.app` to `Applications`.
-3. Open Potoo IDE from `Applications`.
-
-This package is for Intel Macs only. It is not signed or notarized; Gatekeeper may ask you to approve the first launch.
+The macOS installer is not included in this release while we work through packaging issues for Intel Macs. Apple Silicon builds are not available yet.
 
 ### Linux (Flatpak)
 

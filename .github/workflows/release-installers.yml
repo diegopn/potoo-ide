@@ -143,7 +143,8 @@ jobs:
           retention-days: 14
 
   macos-installer:
-    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    # Re-enable by setting BUILD_MACOS_INSTALLER=true after the Apple packaging issue is resolved.
+    if: vars.BUILD_MACOS_INSTALLER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.merged == true)
     name: macOS Intel installer
     runs-on: macos-15-intel
     steps:
@@ -207,6 +208,7 @@ jobs:
           retention-days: 14
 
   assemble:
+    if: always() && needs.linux-flatpak.result == 'success' && needs.windows-installer.result == 'success'
     name: Assemble release archive
     needs:
       - linux-flatpak
@@ -224,6 +226,23 @@ jobs:
         run: |
           set -euo pipefail
           version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
+          platforms=()
+          macos_note=""
+          for package in package-files/Potoo-IDE-*; do
+            case "$package" in
+              *-windows-x64-setup.exe) platforms+=("Windows x64") ;;
+              *-macos-x86_64.dmg)
+                platforms+=("Intel macOS")
+                macos_note="The Intel macOS build is not signed or notarized."
+                ;;
+              *-linux-x86_64.flatpak) platforms+=("Linux x86_64 (Flatpak)") ;;
+            esac
+          done
+          if (("${#platforms[@]}" == 0)); then
+            echo "No installer packages were downloaded." >&2
+            exit 1
+          fi
+          platform_list="$(IFS=', '; printf '%s' "${platforms[*]}")"
           archive_root="figshare-package"
           release_root="release-assets"
           mkdir -p "$archive_root" "$release_root"
@@ -241,9 +260,10 @@ jobs:
             cd "$release_root"
             sha256sum Potoo-IDE-* > SHA256SUMS
             cat > RELEASE_NOTES.md <<EOF
-          Potoo IDE ${version} installers for Windows x64, Intel macOS, and Linux x86_64 (Flatpak).
+          Potoo IDE ${version} installers for ${platform_list}.
 
-          The macOS build is not signed or notarized. The Windows installer is not code-signed. The Flatpak single-file bundle downloads its GNOME 51 runtime from Flathub if it is not already installed.
+          ${macos_note}
+          The Windows installer is not code-signed. The Flatpak single-file bundle downloads its GNOME 51 runtime from Flathub if it is not already installed.
 
           See README.md in this release for installation steps and SHA256SUMS for download verification.
           EOF
@@ -257,7 +277,7 @@ jobs:
 
   publish:
     name: Publish GitHub release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: always() && startsWith(github.ref, 'refs/tags/v') && needs.assemble.result == 'success'
     needs: assemble
     runs-on: ubuntu-24.04
     permissions:
