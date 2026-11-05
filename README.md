@@ -47,7 +47,48 @@ Project documentation is maintained in English. The app offers Portuguese, Engli
 
 ## Platforms
 
-The goal is to offer Potoo IDE for Linux, Windows, and macOS. This base prepares the Linux Flatpak distribution first; support and installers for the other platforms still need to be developed and validated.
+Potoo IDE packages are built for 64-bit Windows, Intel Macs, and x86_64 Linux. Apple Silicon builds are not available yet.
+
+## Install
+
+Download the installers from the [latest GitHub release](https://github.com/diegopn/potoo-ide/releases/latest). The release also includes a ZIP containing every installer and a `SHA256SUMS` file.
+
+### Windows
+
+1. Download `Potoo-IDE-<version>-windows-x64-setup.exe`.
+2. Run the installer and follow its prompts.
+3. Start Potoo IDE from the Start menu.
+
+The installer includes the GTK, GtkSourceView, and GStreamer runtime files needed by the application. The Windows installer is not code-signed, so Windows may show a publisher warning.
+
+### macOS (Intel)
+
+1. Download `Potoo-IDE-<version>-macos-x86_64.dmg`.
+2. Open the disk image and drag `Potoo IDE.app` to `Applications`.
+3. Open Potoo IDE from `Applications`.
+
+This package is for Intel Macs only. It is not signed or notarized; Gatekeeper may ask you to approve the first launch.
+
+### Linux (Flatpak)
+
+If Flatpak is not yet set up on your computer, [follow the instructions to prepare your system](https://flatpak.org/setup) before installing the app. Then install the downloaded bundle:
+
+```sh
+flatpak install --user --bundle ./Potoo-IDE-<version>-linux-x86_64.flatpak
+flatpak run io.github.diegopn.potooide
+```
+
+The single-file Flatpak bundle contains the application, not its runtime. If the GNOME 51 runtime is not already installed, Flatpak downloads it from the configured Flathub remote during installation; internet access is required for that first install.
+
+### Verify downloads
+
+Download `SHA256SUMS` alongside the installers. On Linux or macOS, verify them with:
+
+```sh
+sha256sum --check SHA256SUMS
+```
+
+On Windows PowerShell, compare the output of `Get-FileHash <installer> -Algorithm SHA256` with the matching entry in `SHA256SUMS`.
 
 ## Development
 

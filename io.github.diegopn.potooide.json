@@ -16,15 +16,15 @@
   "finish-args": [
     "--share=ipc",
     "--socket=wayland",
-    "--socket=fallback-x11"
+    "--socket=fallback-x11",
+    "--socket=pulseaudio"
   ],
   "modules": [
     {
       "name": "potoo-ide",
       "buildsystem": "simple",
       "build-commands": [
-        "cargo generate-lockfile --manifest-path Cargo.toml",
-        "cargo build --manifest-path Cargo.toml --release",
+        "cargo build --manifest-path Cargo.toml --locked --release",
         "install -Dm0755 target/release/potoo-ide /app/bin/potoo-ide",
         "install -Dm0644 data/io.github.diegopn.potooide.desktop /app/share/applications/io.github.diegopn.potooide.desktop",
         "install -Dm0644 data/io.github.diegopn.potooide.metainfo.xml /app/share/metainfo/io.github.diegopn.potooide.metainfo.xml",

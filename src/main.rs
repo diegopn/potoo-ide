@@ -1,3 +1,5 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 mod app;
 mod features;
 mod languages;
@@ -73,6 +75,184 @@ fn app_font_directory() -> Option<PathBuf> {
         directory.is_dir() && FONT_FILES.iter().all(|font| directory.join(font).is_file())
     })
 }
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn configure_bundled_runtime() {
+    let Some(executable_directory) = std::env::current_exe()
+        .ok()
+        .and_then(|executable| executable.parent().map(Path::to_path_buf))
+    else {
+        return;
+    };
+
+    #[cfg(target_os = "windows")]
+    let resource_directory = executable_directory
+        .parent()
+        .unwrap_or(&executable_directory)
+        .to_path_buf();
+    #[cfg(target_os = "macos")]
+    let resource_directory = executable_directory.join("../Resources");
+
+    let share_directory = resource_directory.join("share");
+    if !share_directory.is_dir() {
+        return;
+    }
+
+    let runtime_key = bundled_runtime_cache_key(&resource_directory);
+    let mut data_directories = vec![share_directory.clone()];
+    if let Some(existing) = std::env::var_os("XDG_DATA_DIRS") {
+        data_directories.extend(std::env::split_paths(&existing));
+    }
+    #[cfg(target_os = "macos")]
+    if std::env::var_os("XDG_DATA_DIRS").is_none() {
+        data_directories.extend([
+            PathBuf::from("/usr/local/share"),
+            PathBuf::from("/usr/share"),
+        ]);
+    }
+    if let Ok(data_directories) = std::env::join_paths(data_directories) {
+        set_bundled_environment("XDG_DATA_DIRS", data_directories);
+    }
+
+    let schema_directory = share_directory.join("glib-2.0/schemas");
+    if schema_directory.is_dir() {
+        set_bundled_environment("GSETTINGS_SCHEMA_DIR", schema_directory.into_os_string());
+    }
+
+    let library_directory = resource_directory.join("lib");
+    set_bundled_environment(
+        "GTK_DATA_PREFIX",
+        resource_directory.clone().into_os_string(),
+    );
+    set_bundled_environment(
+        "GTK_EXE_PREFIX",
+        resource_directory.clone().into_os_string(),
+    );
+
+    let gtk_module_directory = library_directory.join("gtk-4.0");
+    if gtk_module_directory.is_dir() {
+        set_bundled_environment("GTK_PATH", gtk_module_directory.into_os_string());
+    }
+    let gio_module_directory = library_directory.join("gio/modules");
+    if gio_module_directory.is_dir() {
+        set_bundled_environment("GIO_EXTRA_MODULES", gio_module_directory.into_os_string());
+    }
+
+    let gst_plugin_directory = library_directory.join("gstreamer-1.0");
+    if gst_plugin_directory.is_dir() {
+        set_bundled_environment(
+            "GST_PLUGIN_PATH_1_0",
+            gst_plugin_directory.clone().into_os_string(),
+        );
+        set_bundled_environment(
+            "GST_PLUGIN_SYSTEM_PATH_1_0",
+            gst_plugin_directory.into_os_string(),
+        );
+        let scanner = executable_directory.join(if cfg!(target_os = "windows") {
+            "gst-plugin-scanner.exe"
+        } else {
+            "gst-plugin-scanner"
+        });
+        if scanner.is_file() {
+            set_bundled_environment("GST_PLUGIN_SCANNER", scanner.into_os_string());
+        }
+        let cache_directory = bundled_cache_directory();
+        if std::fs::create_dir_all(&cache_directory).is_ok() {
+            set_bundled_environment(
+                "GST_REGISTRY",
+                cache_directory
+                    .join(format!(
+                        "gstreamer-registry-{}-{runtime_key}.bin",
+                        env!("CARGO_PKG_VERSION"),
+                    ))
+                    .into_os_string(),
+            );
+        }
+    }
+
+    let pixbuf_root = library_directory.join("gdk-pixbuf-2.0/2.10.0");
+    let pixbuf_loaders = pixbuf_root.join("loaders");
+    if pixbuf_loaders.is_dir() {
+        let cache_directory = bundled_cache_directory();
+        let cache_file = cache_directory.join(format!(
+            "gdk-pixbuf-loaders-{}-{runtime_key}.cache",
+            env!("CARGO_PKG_VERSION"),
+        ));
+        if !cache_file.is_file() {
+            let helper = executable_directory.join(if cfg!(target_os = "windows") {
+                "gdk-pixbuf-query-loaders.exe"
+            } else {
+                "gdk-pixbuf-query-loaders"
+            });
+            let mut loaders = match std::fs::read_dir(&pixbuf_loaders) {
+                Ok(entries) => entries
+                    .flatten()
+                    .map(|entry| entry.path())
+                    .filter(|path| {
+                        matches!(
+                            path.extension().and_then(|extension| extension.to_str()),
+                            Some("dll" | "dylib" | "so")
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+                Err(_) => Vec::new(),
+            };
+            loaders.sort();
+
+            if helper.is_file() && !loaders.is_empty() {
+                if let Ok(output) = Command::new(helper).args(loaders).output()
+                    && output.status.success()
+                    && !output.stdout.is_empty()
+                    && std::fs::create_dir_all(&cache_directory).is_ok()
+                {
+                    let _ = std::fs::write(&cache_file, output.stdout);
+                }
+            }
+        }
+        if cache_file.is_file() {
+            set_bundled_environment("GDK_PIXBUF_MODULE_FILE", cache_file.into_os_string());
+        } else {
+            let packaged_cache = pixbuf_root.join("loaders.cache");
+            if packaged_cache.is_file() {
+                set_bundled_environment("GDK_PIXBUF_MODULE_FILE", packaged_cache.into_os_string());
+            }
+        }
+    }
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn bundled_runtime_cache_key(path: &Path) -> u64 {
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    path.hash(&mut hasher);
+    hasher.finish()
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn set_bundled_environment(name: &str, value: std::ffi::OsString) {
+    // Startup is single-threaded, before GTK or worker threads are initialized.
+    unsafe { std::env::set_var(name, value) };
+}
+
+#[cfg(target_os = "windows")]
+fn bundled_cache_directory() -> PathBuf {
+    std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("Potoo IDE/cache")
+}
+
+#[cfg(target_os = "macos")]
+fn bundled_cache_directory() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("Library/Caches/io.github.diegopn.potooide")
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn configure_bundled_runtime() {}
 
 #[cfg(target_os = "linux")]
 fn register_app_fonts() {
@@ -290,6 +470,7 @@ pub(crate) fn restart_application() -> Result<(), String> {
 }
 
 fn main() {
+    configure_bundled_runtime();
     register_app_fonts();
 
     let application = gtk::Application::builder()
