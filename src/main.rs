@@ -98,6 +98,15 @@ fn configure_bundled_runtime() {
         return;
     }
 
+    #[cfg(target_os = "macos")]
+    {
+        let framework_directory = executable_directory.join("../Frameworks");
+        if framework_directory.is_dir() {
+            // The app binary uses its embedded @rpath; this path is for bundled helper processes.
+            set_bundled_environment("DYLD_LIBRARY_PATH", framework_directory.into_os_string());
+        }
+    }
+
     let runtime_key = bundled_runtime_cache_key(&resource_directory);
     let mut data_directories = vec![share_directory.clone()];
     if let Some(existing) = std::env::var_os("XDG_DATA_DIRS") {
