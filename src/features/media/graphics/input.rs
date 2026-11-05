@@ -7,6 +7,7 @@ pub(super) fn install_input_controllers(
     focus_on_window_active: bool,
 ) {
     let keys = gtk::EventControllerKey::new();
+    keys.set_propagation_phase(gtk::PropagationPhase::Capture);
     let key_state = state.clone();
     keys.connect_key_pressed(move |_, key, hardware_keycode, _| {
         if let Some(code) = java_key_code(key) {
@@ -15,7 +16,14 @@ pub(super) fn install_input_controllers(
                 .pressed_keys
                 .insert(hardware_keycode, code);
         }
-        gtk::glib::Propagation::Proceed
+        if matches!(
+            key,
+            gtk::gdk::Key::Left | gtk::gdk::Key::Right | gtk::gdk::Key::Up | gtk::gdk::Key::Down
+        ) {
+            gtk::glib::Propagation::Stop
+        } else {
+            gtk::glib::Propagation::Proceed
+        }
     });
     let key_state = state.clone();
     keys.connect_key_released(move |_, key, hardware_keycode, _| {

@@ -637,25 +637,6 @@ pub(super) fn build_debugger_learning(language: UiLanguage) -> DebuggerLearningU
     problems.append(&problem_empty);
     content.append(&problems);
 
-    let experiment_section = gtk::Box::new(gtk::Orientation::Vertical, 10);
-    experiment_section.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
-    let experiment_title = gtk::Label::new(Some(tr(language, "Experimente")));
-    experiment_title.set_xalign(0.0);
-    experiment_title.add_css_class("heading");
-    experiment_section.append(&experiment_title);
-    let experiment = gtk::Label::new(Some(""));
-    experiment.set_xalign(0.0);
-    experiment.set_wrap(true);
-    experiment.set_selectable(true);
-    experiment.add_css_class("potoo-card");
-    experiment.add_css_class("potoo-experiment-card");
-    experiment.set_margin_start(2);
-    experiment.set_margin_end(2);
-    experiment.set_margin_top(4);
-    experiment.set_margin_bottom(4);
-    experiment_section.append(&experiment);
-    content.append(&experiment_section);
-
     let content_scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
         .vscrollbar_policy(gtk::PolicyType::Automatic)
@@ -677,8 +658,6 @@ pub(super) fn build_debugger_learning(language: UiLanguage) -> DebuggerLearningU
         concept_section,
         concept_title,
         concept_text,
-        experiment_section,
-        experiment,
         problem_list,
         problem_empty,
     }

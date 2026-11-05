@@ -1588,16 +1588,12 @@ impl SimpleComponent for MainWindow {
                     self.text("Linha"),
                     hint.line
                 ));
-                let (explanation, concept, experiment) = learning_copy(hint, self.ui_language);
+                let (explanation, concept, _) = learning_copy(hint, self.ui_language);
                 ui.debugger_learning.explanation.set_text(&explanation);
-                ui.debugger_learning.experiment.set_text(&experiment);
                 let show_learning_concept = hint.topic != LearningTopic::Unrecognized;
                 ui.debugger_learning
                     .concept_section
                     .set_visible(show_learning_concept);
-                ui.debugger_learning
-                    .experiment_section
-                    .set_visible(show_learning_concept && !experiment.is_empty());
                 ui.debugger_learning
                     .concept_title
                     .set_text(&format!("{} {topic_name}", self.text("Conceito:")));
@@ -1622,7 +1618,6 @@ impl SimpleComponent for MainWindow {
                 ));
             } else {
                 ui.debugger_learning.concept_section.set_visible(false);
-                ui.debugger_learning.experiment_section.set_visible(false);
                 ui.debugger_learning
                     .line_title
                     .set_text(self.text("Linha 1 · programa"));
