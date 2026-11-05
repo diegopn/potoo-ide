@@ -145,14 +145,14 @@ create_info_plist() {
 EOF
 }
 
-if [[ ! -x "$release_binary" ]]; then
-    echo "Release executable not found: $release_binary" >&2
-    exit 1
-fi
-
 rustflags="${RUSTFLAGS:-} -C link-arg=-Wl,-headerpad_max_install_names"
 MACOSX_DEPLOYMENT_TARGET="$deployment_target" RUSTFLAGS="$rustflags" \
     cargo build --locked --release --bin potoo-ide --target "$target"
+
+if [[ ! -x "$release_binary" ]]; then
+    echo "Release executable not found after the macOS build: $release_binary" >&2
+    exit 1
+fi
 
 rm -rf "$package_root"
 mkdir -p "$macos_dir" "$frameworks_dir" "$resources_dir"
