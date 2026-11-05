@@ -1,10 +1,12 @@
 name: Build installers
 
 on:
-  push:
+  pull_request:
     branches:
-      - develop
       - main
+    types:
+      - closed
+  push:
     tags:
       - "v*"
   workflow_dispatch:
@@ -14,6 +16,7 @@ permissions:
 
 jobs:
   linux-flatpak:
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     name: Linux x86_64 Flatpak
     runs-on: ubuntu-24.04
     steps:
@@ -44,6 +47,7 @@ jobs:
           retention-days: 14
 
   windows-installer:
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     name: Windows x64 installer
     runs-on: windows-2025
     steps:
@@ -69,6 +73,7 @@ jobs:
       - name: Check and build application
         shell: msys2 {0}
         run: |
+          export PATH="$(cygpath -u "$CARGO_HOME")/bin:$PATH"
           cargo check --locked --target x86_64-pc-windows-gnu
           cargo build --locked --release --target x86_64-pc-windows-gnu
       - name: Stage GTK runtime
@@ -108,6 +113,7 @@ jobs:
           retention-days: 14
 
   macos-installer:
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     name: macOS Intel installer
     runs-on: macos-15-intel
     steps:
@@ -116,7 +122,7 @@ jobs:
         with:
           parameters: .github/parameters/setup-macports.yaml
       - name: Install GTK and media runtimes
-        run: port install gtk4 gtksourceview5 adwaita-icon-theme gstreamer1 gstreamer1-gst-plugins-base gstreamer1-gst-plugins-good gstreamer1-gst-libav
+        run: sudo port install gtk4 gtksourceview5 adwaita-icon-theme gstreamer1 gstreamer1-gst-plugins-base gstreamer1-gst-plugins-good gstreamer1-gst-libav
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-apple-darwin
