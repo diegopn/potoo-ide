@@ -53,6 +53,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: msys2/setup-msys2@v2
+        id: msys2
         with:
           msystem: UCRT64
           update: true
@@ -101,12 +102,18 @@ jobs:
           cargo build --locked --release --target x86_64-pc-windows-gnu
       - name: Stage GTK runtime
         shell: pwsh
-        run: ./packaging/windows/stage-runtime.ps1
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          $prefix = Join-Path $env:MSYS2_LOCATION "ucrt64"
+          ./packaging/windows/stage-runtime.ps1 -Prefix $prefix
       - name: Validate staged runtime dependencies
         shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
         run: |
           $executable = (Resolve-Path "target/packages/windows/stage/bin/potoo-ide.exe").Path
-          $objdump = "C:\msys64\ucrt64\bin\objdump.exe"
+          $objdump = Join-Path $env:MSYS2_LOCATION "ucrt64\bin\objdump.exe"
           $imports = & $objdump -p $executable |
             Select-String -Pattern "DLL Name:\s*(.+)$" |
             ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }
