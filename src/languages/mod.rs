@@ -2,6 +2,7 @@ pub(crate) mod calango;
 pub(crate) mod model;
 pub(crate) mod portugol;
 pub(crate) mod potigol;
+pub(crate) mod source;
 
 #[cfg(test)]
 mod syntax_analysis_tests {
@@ -57,5 +58,32 @@ mod syntax_analysis_tests {
         assert!(!is_jerimum_import(
             "se verdadeiro entao\nuse \"jerimum\"\nfim\n"
         ));
+    }
+
+    #[test]
+    fn language_views_mask_literals_and_each_language_comment_syntax() {
+        let source = "valores[2] /* valores[8] */ // valores[9] \"valores[10]\"\n";
+        let views = [
+            calango::syntax_analysis::views::without_literals_and_comments,
+            portugol::g_portugol::syntax_analysis::views::without_literals_and_comments,
+            portugol::mapler::syntax_analysis::views::without_literals_and_comments,
+            portugol::studio_20::syntax_analysis::views::without_literals_and_comments,
+            portugol::visualg::syntax_analysis::views::without_literals_and_comments,
+            potigol::syntax_analysis::views::without_literals_and_comments,
+        ];
+
+        for view in views {
+            let code = view(source);
+            assert!(code.contains("valores[2]"), "{code:?}");
+            assert!(!code.contains("valores[8]"), "{code:?}");
+            assert!(!code.contains("valores[9]"), "{code:?}");
+            assert!(!code.contains("valores[10]"), "{code:?}");
+        }
+
+        let potigol = potigol::syntax_analysis::views::without_literals_and_comments(
+            "valores[2] # valores[8]\n",
+        );
+        assert!(potigol.contains("valores[2]"), "{potigol:?}");
+        assert!(!potigol.contains("valores[8]"), "{potigol:?}");
     }
 }

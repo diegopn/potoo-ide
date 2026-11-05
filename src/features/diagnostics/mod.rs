@@ -102,26 +102,6 @@ pub(crate) fn analyze(
 
     normalize_parser_syntax_location(language, source, &mut diagnostics);
 
-    if language == Language::GPortugol
-        && let Some((start, line, column)) =
-            crate::languages::portugol::g_portugol::syntax_analysis::views::unclosed_block_comment(
-                source,
-            )
-    {
-        diagnostics.push(EditorDiagnostic {
-            document_id,
-            source_name: source_name.to_owned(),
-            source_path: source_path.map(PathBuf::from),
-            language,
-            severity: DiagnosticSeverity::Warning,
-            category: DiagnosticCategory::StaticAnalysis,
-            message: "Comentário de bloco sem fechamento".to_owned(),
-            offset: start,
-            range: Some(start..source.chars().count()),
-            line,
-            column,
-        });
-    }
     diagnostics
 }
 
@@ -144,11 +124,15 @@ fn from_source_diagnostic(
     source: &str,
     diagnostic: SourceDiagnostic,
 ) -> EditorDiagnostic {
-    let category = match diagnostic.kind {
-        SourceDiagnosticKind::Lexical => DiagnosticCategory::Lexical,
-        SourceDiagnosticKind::Syntax => DiagnosticCategory::Syntax,
-        SourceDiagnosticKind::Type => DiagnosticCategory::Type,
-        SourceDiagnosticKind::Runtime => DiagnosticCategory::Runtime,
+    let (severity, category) = match diagnostic.kind {
+        SourceDiagnosticKind::Lexical => (DiagnosticSeverity::Error, DiagnosticCategory::Lexical),
+        SourceDiagnosticKind::Syntax => (DiagnosticSeverity::Error, DiagnosticCategory::Syntax),
+        SourceDiagnosticKind::Type => (DiagnosticSeverity::Error, DiagnosticCategory::Type),
+        SourceDiagnosticKind::Runtime => (DiagnosticSeverity::Error, DiagnosticCategory::Runtime),
+        SourceDiagnosticKind::StaticAnalysis => (
+            DiagnosticSeverity::Warning,
+            DiagnosticCategory::StaticAnalysis,
+        ),
     };
     let span = diagnostic.byte_range.and_then(|range| {
         Some((
@@ -168,7 +152,7 @@ fn from_source_diagnostic(
         source_name: source_name.to_owned(),
         source_path: source_path.map(PathBuf::from),
         language,
-        severity: DiagnosticSeverity::Error,
+        severity,
         category,
         message: adapt_diagnostic_message(
             language,

@@ -419,6 +419,7 @@ pub(crate) enum SourceDiagnosticKind {
     Syntax,
     Type,
     Runtime,
+    StaticAnalysis,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

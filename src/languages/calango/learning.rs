@@ -1,6 +1,9 @@
+use std::collections::{HashMap, HashSet};
+
 use crate::features::learning::source_call;
-use crate::languages::model::{
-    SourceCall, SourceConstruct, SourceDimension, SourceLineAnalysis, SourceSymbol,
+use crate::languages::{
+    model::{SourceCall, SourceConstruct, SourceDimension, SourceLineAnalysis, SourceSymbol},
+    source::{read_identifier, read_integer, skip_spaces, skip_to_top_level_comma},
 };
 use potoo_calango_interpreter::{Diagnostic, ast::*, parse};
 
@@ -322,5 +325,94 @@ fn empty_analysis(line: usize, column: usize, construct: SourceConstruct) -> Sou
         parameters: Vec::new(),
         variables: Vec::new(),
         call: None,
+    }
+}
+
+pub(crate) fn declared_array_bounds(
+    source: &str,
+    is_cancelled: &impl Fn() -> bool,
+) -> Option<HashMap<String, Vec<SourceDimension>>> {
+    let mut arrays = HashMap::new();
+    let mut ambiguous = HashSet::new();
+    for source_line in source.lines() {
+        if is_cancelled() {
+            return None;
+        }
+        let characters = source_line.trim().chars().collect::<Vec<_>>();
+        let mut cursor = 0;
+        let Some(type_name) = read_identifier(&characters, &mut cursor) else {
+            continue;
+        };
+        if !matches!(
+            type_name.to_lowercase().as_str(),
+            "inteiro" | "real" | "logico" | "caracter" | "caractere" | "cadeia"
+        ) {
+            continue;
+        }
+
+        read_array_declarations(&characters, cursor, &mut arrays, &mut ambiguous);
+    }
+    Some(arrays)
+}
+
+fn read_array_declarations(
+    characters: &[char],
+    mut cursor: usize,
+    arrays: &mut HashMap<String, Vec<SourceDimension>>,
+    ambiguous: &mut HashSet<String>,
+) {
+    loop {
+        skip_spaces(characters, &mut cursor);
+        let Some(name) = read_identifier(characters, &mut cursor) else {
+            break;
+        };
+        skip_spaces(characters, &mut cursor);
+        let mut dimensions = Vec::new();
+        while characters.get(cursor) == Some(&'[') {
+            cursor += 1;
+            skip_spaces(characters, &mut cursor);
+            let Some(size) = read_integer(characters, &mut cursor) else {
+                break;
+            };
+            skip_spaces(characters, &mut cursor);
+            if characters.get(cursor) != Some(&']') {
+                break;
+            }
+            cursor += 1;
+            dimensions.push(SourceDimension {
+                lower_bound: (size > 0).then_some(0),
+                upper_bound: (size > 0).then_some(size - 1),
+            });
+            skip_spaces(characters, &mut cursor);
+        }
+        if !dimensions.is_empty()
+            && dimensions
+                .iter()
+                .all(|dimension| dimension.upper_bound.is_some())
+        {
+            insert_unique_array_bounds(arrays, ambiguous, &name, dimensions);
+        }
+        cursor = skip_to_top_level_comma(characters, cursor);
+        if characters.get(cursor) != Some(&',') {
+            break;
+        }
+        cursor += 1;
+    }
+}
+
+fn insert_unique_array_bounds(
+    arrays: &mut HashMap<String, Vec<SourceDimension>>,
+    ambiguous: &mut HashSet<String>,
+    name: &str,
+    dimensions: Vec<SourceDimension>,
+) {
+    let name = name.to_lowercase();
+    if ambiguous.contains(&name) {
+        return;
+    }
+    if arrays.remove(&name).is_some() {
+        ambiguous.insert(name);
+    } else {
+        arrays.insert(name, dimensions);
     }
 }

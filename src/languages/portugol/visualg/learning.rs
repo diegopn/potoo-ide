@@ -1,4 +1,9 @@
-use crate::languages::model::{SourceConstruct, SourceDimension, SourceLineAnalysis, SourceSymbol};
+use std::collections::{HashMap, HashSet};
+
+use crate::languages::{
+    model::{SourceConstruct, SourceDimension, SourceLineAnalysis, SourceSymbol},
+    source::{read_identifier, read_integer, skip_spaces},
+};
 use potoo_visualg_interpreter::{Diagnostic, ast::*, parse};
 
 /// Parses source with the interpreter AST and describes the construct at `one_based_line`.
@@ -294,3 +299,103 @@ fn type_name(data_type: Type) -> &'static str {
 #[cfg(test)]
 #[path = "../../../../tests/learning/visualg_tests.rs"]
 mod tests;
+
+pub(crate) fn declared_array_bounds(
+    source: &str,
+    is_cancelled: &impl Fn() -> bool,
+) -> Option<HashMap<String, Vec<SourceDimension>>> {
+    let mut arrays = HashMap::new();
+    let mut ambiguous = HashSet::new();
+    for source_line in source.lines() {
+        if is_cancelled() {
+            return None;
+        }
+        let characters = source_line.trim().chars().collect::<Vec<_>>();
+        let mut cursor = 0;
+        let mut variables = Vec::new();
+        loop {
+            skip_spaces(&characters, &mut cursor);
+            let Some(name) = read_identifier(&characters, &mut cursor) else {
+                break;
+            };
+            variables.push(name);
+            skip_spaces(&characters, &mut cursor);
+            if characters.get(cursor) != Some(&',') {
+                break;
+            }
+            cursor += 1;
+        }
+        skip_spaces(&characters, &mut cursor);
+        if characters.get(cursor) != Some(&':') {
+            continue;
+        }
+        cursor += 1;
+        skip_spaces(&characters, &mut cursor);
+        let Some(container) = read_identifier(&characters, &mut cursor) else {
+            continue;
+        };
+        if !container.eq_ignore_ascii_case("vetor") {
+            continue;
+        }
+        let Some(dimensions) = read_dimensions(&characters, &mut cursor) else {
+            continue;
+        };
+        if dimensions.is_empty() {
+            continue;
+        }
+        for name in variables {
+            insert_unique_array_bounds(&mut arrays, &mut ambiguous, &name, dimensions.clone());
+        }
+    }
+    Some(arrays)
+}
+
+fn read_dimensions(characters: &[char], cursor: &mut usize) -> Option<Vec<SourceDimension>> {
+    skip_spaces(characters, cursor);
+    if characters.get(*cursor) != Some(&'[') {
+        return None;
+    }
+    *cursor += 1;
+    let mut dimensions = Vec::new();
+    loop {
+        skip_spaces(characters, cursor);
+        let lower = read_integer(characters, cursor)?;
+        skip_spaces(characters, cursor);
+        if characters.get(*cursor) != Some(&'.') || characters.get(*cursor + 1) != Some(&'.') {
+            return None;
+        }
+        *cursor += 2;
+        skip_spaces(characters, cursor);
+        let upper = read_integer(characters, cursor)?;
+        dimensions.push(SourceDimension {
+            lower_bound: Some(lower),
+            upper_bound: Some(upper),
+        });
+        skip_spaces(characters, cursor);
+        match characters.get(*cursor) {
+            Some(',') => *cursor += 1,
+            Some(']') => {
+                *cursor += 1;
+                return Some(dimensions);
+            }
+            _ => return None,
+        }
+    }
+}
+
+fn insert_unique_array_bounds(
+    arrays: &mut HashMap<String, Vec<SourceDimension>>,
+    ambiguous: &mut HashSet<String>,
+    name: &str,
+    dimensions: Vec<SourceDimension>,
+) {
+    let name = name.to_lowercase();
+    if ambiguous.contains(&name) {
+        return;
+    }
+    if arrays.remove(&name).is_some() {
+        ambiguous.insert(name);
+    } else {
+        arrays.insert(name, dimensions);
+    }
+}

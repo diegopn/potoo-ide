@@ -189,6 +189,45 @@ pub(super) fn tokens(source: &str) -> Vec<Token> {
     result
 }
 
+pub(super) fn without_literals_and_comments(source: &str) -> String {
+    let mut result = source
+        .chars()
+        .map(|character| {
+            if matches!(character, '\n' | '\r') {
+                character
+            } else {
+                ' '
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let mut byte_cursor = 0;
+    let mut character_cursor = 0;
+    for token in tokens(source) {
+        while byte_cursor < token.start {
+            let character = source[byte_cursor..]
+                .chars()
+                .next()
+                .expect("token offset must be within the source");
+            byte_cursor += character.len_utf8();
+            character_cursor += 1;
+        }
+        if matches!(token.kind, TokenKind::String | TokenKind::Newline) {
+            continue;
+        }
+        let start = character_cursor;
+        let mut token_character_count = 0;
+        for (offset, character) in source[token.start..token.end].chars().enumerate() {
+            result[start + offset] = character;
+            token_character_count += 1;
+        }
+        character_cursor += token_character_count;
+        byte_cursor = token.end;
+    }
+
+    result.into_iter().collect()
+}
+
 pub(super) fn line_without_comments(source: &str, selected_line: usize) -> String {
     let mut result = String::new();
     let mut line = 1usize;

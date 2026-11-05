@@ -1,8 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::{
     features::execution::{DiagnosticKind as ExecutionDiagnosticKind, ExecutionDiagnostic},
-    languages::model::Language,
+    languages::{
+        model::{Language, SourceDimension},
+        source::{read_identifier, read_integer, skip_spaces},
+    },
 };
 
 pub(crate) use crate::languages::model::{
@@ -568,23 +571,43 @@ where
 }
 
 fn is_blank_or_line_comment(source: &str, line_number: usize, language: Language) -> bool {
-    let line = source
-        .lines()
-        .nth(line_number.saturating_sub(1))
-        .unwrap_or("")
-        .trim_start();
-    if line.is_empty() {
-        return true;
-    }
     match language {
-        Language::Potigol => {
-            line.starts_with('#')
-                && source
-                    .split_inclusive('\n')
-                    .nth(line_number.saturating_sub(1))
-                    .is_some_and(|line| line.ends_with('\n'))
+        Language::Portugol => {
+            crate::languages::portugol::studio_20::syntax_analysis::views::is_blank_or_line_comment(
+                source,
+                line_number,
+            )
         }
-        _ => line.starts_with("//"),
+        Language::Visualg => {
+            crate::languages::portugol::visualg::syntax_analysis::views::is_blank_or_line_comment(
+                source,
+                line_number,
+            )
+        }
+        Language::GPortugol => {
+            crate::languages::portugol::g_portugol::syntax_analysis::views::is_blank_or_line_comment(
+                source,
+                line_number,
+            )
+        }
+        Language::Potigol => {
+            crate::languages::potigol::syntax_analysis::views::is_blank_or_line_comment(
+                source,
+                line_number,
+            )
+        }
+        Language::Calango => {
+            crate::languages::calango::syntax_analysis::views::is_blank_or_line_comment(
+                source,
+                line_number,
+            )
+        }
+        Language::Mapler => {
+            crate::languages::portugol::mapler::syntax_analysis::views::is_blank_or_line_comment(
+                source,
+                line_number,
+            )
+        }
     }
 }
 
@@ -885,8 +908,12 @@ fn constant_index_problems(
     language: Language,
     is_cancelled: &impl Fn() -> bool,
 ) -> Option<Vec<LearningProblem>> {
-    let arrays = declared_array_bounds(source, language, is_cancelled)?;
-    let code = without_literals_and_comments(selected_line);
+    let source_code = without_literals_and_comments(source, language);
+    let arrays = declared_array_bounds(&source_code, language, is_cancelled)?;
+    let code = source_code
+        .lines()
+        .nth(line_number.saturating_sub(1))
+        .unwrap_or(selected_line);
     let characters = code.chars().collect::<Vec<_>>();
     let mut problems = Vec::new();
     let mut index = 0;
@@ -951,277 +978,52 @@ fn declared_array_bounds(
     source: &str,
     language: Language,
     is_cancelled: &impl Fn() -> bool,
-) -> Option<HashMap<String, Vec<LearningDimension>>> {
-    let mut arrays = HashMap::new();
-    let mut ambiguous = HashSet::new();
-    for source_line in source.lines() {
-        if is_cancelled() {
-            return None;
+) -> Option<HashMap<String, Vec<SourceDimension>>> {
+    match language {
+        Language::Portugol => {
+            crate::languages::portugol::studio_20::learning::declared_array_bounds(
+                source,
+                is_cancelled,
+            )
         }
-        let code = without_literals_and_comments(source_line);
-        let characters = code.trim().chars().collect::<Vec<_>>();
-        let mut cursor = 0;
-        match language {
-            Language::Portugol | Language::Calango => {
-                let Some(type_name) = read_identifier(&characters, &mut cursor) else {
-                    continue;
-                };
-                if !matches!(
-                    type_name.to_lowercase().as_str(),
-                    "inteiro" | "real" | "logico" | "caracter" | "caractere" | "cadeia"
-                ) {
-                    continue;
-                }
-                read_portugol_array_declarations(&characters, cursor, &mut arrays, &mut ambiguous);
-            }
-            Language::Visualg => {
-                let mut variables = Vec::new();
-                loop {
-                    skip_spaces(&characters, &mut cursor);
-                    let Some(name) = read_identifier(&characters, &mut cursor) else {
-                        break;
-                    };
-                    variables.push(name);
-                    skip_spaces(&characters, &mut cursor);
-                    if characters.get(cursor) != Some(&',') {
-                        break;
-                    }
-                    cursor += 1;
-                }
-                skip_spaces(&characters, &mut cursor);
-                if characters.get(cursor) != Some(&':') {
-                    continue;
-                }
-                cursor += 1;
-                skip_spaces(&characters, &mut cursor);
-                let Some(container) = read_identifier(&characters, &mut cursor) else {
-                    continue;
-                };
-                if !container.eq_ignore_ascii_case("vetor") {
-                    continue;
-                }
-                let Some(dimensions) = read_visualg_dimensions(&characters, &mut cursor) else {
-                    continue;
-                };
-                if dimensions.is_empty() {
-                    continue;
-                }
-                for name in variables {
-                    insert_unique_array_bounds(
-                        &mut arrays,
-                        &mut ambiguous,
-                        &name,
-                        dimensions.clone(),
-                    );
-                }
-            }
-            Language::Potigol | Language::GPortugol | Language::Mapler => continue,
+        Language::Visualg => crate::languages::portugol::visualg::learning::declared_array_bounds(
+            source,
+            is_cancelled,
+        ),
+        Language::Calango => {
+            crate::languages::calango::learning::declared_array_bounds(source, is_cancelled)
+        }
+        Language::Potigol | Language::GPortugol | Language::Mapler => Some(HashMap::new()),
+    }
+}
+
+fn without_literals_and_comments(source: &str, language: Language) -> String {
+    match language {
+        Language::Portugol => {
+            crate::languages::portugol::studio_20::syntax_analysis::views::without_literals_and_comments(source)
+        }
+        Language::Visualg => {
+            crate::languages::portugol::visualg::syntax_analysis::views::without_literals_and_comments(source)
+        }
+        Language::GPortugol => {
+            crate::languages::portugol::g_portugol::syntax_analysis::views::without_literals_and_comments(source)
+        }
+        Language::Potigol => {
+            crate::languages::potigol::syntax_analysis::views::without_literals_and_comments(source)
+        }
+        Language::Calango => {
+            crate::languages::calango::syntax_analysis::views::without_literals_and_comments(source)
+        }
+        Language::Mapler => {
+            crate::languages::portugol::mapler::syntax_analysis::views::without_literals_and_comments(source)
         }
     }
-    Some(arrays)
 }
 
 fn character_column(line: &str, fragment: &str) -> usize {
     line.find(fragment)
         .map(|byte_offset| line[..byte_offset].chars().count() + 1)
         .unwrap_or(1)
-}
-
-fn read_portugol_array_declarations(
-    characters: &[char],
-    mut cursor: usize,
-    arrays: &mut HashMap<String, Vec<LearningDimension>>,
-    ambiguous: &mut HashSet<String>,
-) {
-    loop {
-        skip_spaces(characters, &mut cursor);
-        let Some(name) = read_identifier(characters, &mut cursor) else {
-            break;
-        };
-        skip_spaces(characters, &mut cursor);
-        let mut dimensions = Vec::new();
-        while characters.get(cursor) == Some(&'[') {
-            cursor += 1;
-            skip_spaces(characters, &mut cursor);
-            let Some(size) = read_integer(characters, &mut cursor) else {
-                break;
-            };
-            skip_spaces(characters, &mut cursor);
-            if characters.get(cursor) != Some(&']') {
-                break;
-            }
-            cursor += 1;
-            dimensions.push(LearningDimension {
-                lower_bound: (size > 0).then_some(0),
-                upper_bound: (size > 0).then_some(size - 1),
-            });
-            skip_spaces(characters, &mut cursor);
-        }
-        if !dimensions.is_empty()
-            && dimensions
-                .iter()
-                .all(|dimension| dimension.upper_bound.is_some())
-        {
-            insert_unique_array_bounds(arrays, ambiguous, &name, dimensions);
-        }
-        cursor = skip_to_top_level_comma(characters, cursor);
-        if characters.get(cursor) != Some(&',') {
-            break;
-        }
-        cursor += 1;
-    }
-}
-
-fn insert_unique_array_bounds(
-    arrays: &mut HashMap<String, Vec<LearningDimension>>,
-    ambiguous: &mut HashSet<String>,
-    name: &str,
-    dimensions: Vec<LearningDimension>,
-) {
-    let name = name.to_lowercase();
-    if ambiguous.contains(&name) {
-        return;
-    }
-    if arrays.remove(&name).is_some() {
-        ambiguous.insert(name);
-    } else {
-        arrays.insert(name, dimensions);
-    }
-}
-
-fn read_visualg_dimensions(
-    characters: &[char],
-    cursor: &mut usize,
-) -> Option<Vec<LearningDimension>> {
-    skip_spaces(characters, cursor);
-    if characters.get(*cursor) != Some(&'[') {
-        return None;
-    }
-    *cursor += 1;
-    let mut dimensions = Vec::new();
-    loop {
-        skip_spaces(characters, cursor);
-        let lower = read_integer(characters, cursor)?;
-        skip_spaces(characters, cursor);
-        if characters.get(*cursor) != Some(&'.') || characters.get(*cursor + 1) != Some(&'.') {
-            return None;
-        }
-        *cursor += 2;
-        skip_spaces(characters, cursor);
-        let upper = read_integer(characters, cursor)?;
-        dimensions.push(LearningDimension {
-            lower_bound: Some(lower),
-            upper_bound: Some(upper),
-        });
-        skip_spaces(characters, cursor);
-        match characters.get(*cursor) {
-            Some(',') => *cursor += 1,
-            Some(']') => {
-                *cursor += 1;
-                return Some(dimensions);
-            }
-            _ => return None,
-        }
-    }
-}
-
-fn read_identifier(characters: &[char], cursor: &mut usize) -> Option<String> {
-    skip_spaces(characters, cursor);
-    let start = *cursor;
-    if !characters
-        .get(*cursor)
-        .is_some_and(|character| character.is_alphabetic() || *character == '_')
-    {
-        return None;
-    }
-    *cursor += 1;
-    while characters
-        .get(*cursor)
-        .is_some_and(|character| character.is_alphanumeric() || *character == '_')
-    {
-        *cursor += 1;
-    }
-    Some(characters[start..*cursor].iter().collect())
-}
-
-fn read_integer(characters: &[char], cursor: &mut usize) -> Option<i64> {
-    let start = *cursor;
-    if matches!(characters.get(*cursor), Some('-' | '+')) {
-        *cursor += 1;
-    }
-    while characters
-        .get(*cursor)
-        .is_some_and(|character| character.is_ascii_digit())
-    {
-        *cursor += 1;
-    }
-    if *cursor == start || (*cursor == start + 1 && matches!(characters[start], '-' | '+')) {
-        *cursor = start;
-        return None;
-    }
-    characters[start..*cursor]
-        .iter()
-        .collect::<String>()
-        .parse()
-        .ok()
-}
-
-fn skip_spaces(characters: &[char], cursor: &mut usize) {
-    while characters
-        .get(*cursor)
-        .is_some_and(|character| character.is_whitespace())
-    {
-        *cursor += 1;
-    }
-}
-
-fn skip_to_top_level_comma(characters: &[char], mut cursor: usize) -> usize {
-    let mut square_depth = 0usize;
-    let mut brace_depth = 0usize;
-    let mut paren_depth = 0usize;
-    while let Some(character) = characters.get(cursor) {
-        match character {
-            '[' => square_depth += 1,
-            ']' => square_depth = square_depth.saturating_sub(1),
-            '{' => brace_depth += 1,
-            '}' => brace_depth = brace_depth.saturating_sub(1),
-            '(' => paren_depth += 1,
-            ')' => paren_depth = paren_depth.saturating_sub(1),
-            ',' if square_depth == 0 && brace_depth == 0 && paren_depth == 0 => return cursor,
-            _ => {}
-        }
-        cursor += 1;
-    }
-    cursor
-}
-
-fn without_literals_and_comments(line: &str) -> String {
-    let mut result = String::with_capacity(line.len());
-    let mut characters = line.chars().peekable();
-    let mut quote = None;
-    while let Some(character) = characters.next() {
-        if let Some(quote_character) = quote {
-            if character == '\\' {
-                result.push(' ');
-                if characters.next().is_some() {
-                    result.push(' ');
-                }
-            } else if character == quote_character {
-                quote = None;
-                result.push(' ');
-            } else {
-                result.push(' ');
-            }
-        } else if character == '/' && characters.peek() == Some(&'/') {
-            break;
-        } else if matches!(character, '"' | '\'') {
-            quote = Some(character);
-            result.push(' ');
-        } else {
-            result.push(character);
-        }
-    }
-    result
 }
 
 fn extract_condition(line: &str) -> String {
@@ -1725,6 +1527,16 @@ fim";
                 .problems
                 .iter()
                 .any(|problem| problem.kind == LearningProblemKind::Logic)
+        );
+
+        let commented_index = "programa {\n funcao inicio() {\n  inteiro valores[3]\n  escreva(valores[2] /* valores[3] */)\n }\n}";
+        let commented_index = learning_hint(commented_index, 4, Language::Portugol);
+        assert!(
+            !commented_index
+                .problems
+                .iter()
+                .any(|problem| problem.kind == LearningProblemKind::Logic),
+            "indexes inside block comments must not produce learning problems"
         );
     }
 

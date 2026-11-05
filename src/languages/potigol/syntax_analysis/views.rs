@@ -1,5 +1,26 @@
 use super::structure;
 
+pub(crate) fn without_literals_and_comments(source: &str) -> String {
+    super::lexer::without_literals_and_comments(source)
+}
+
+pub(crate) fn is_blank_or_line_comment(source: &str, line_number: usize) -> bool {
+    let line = source
+        .lines()
+        .nth(line_number.saturating_sub(1))
+        .unwrap_or("")
+        .trim_start();
+    if line.is_empty() {
+        return true;
+    }
+
+    line.starts_with('#')
+        && source
+            .split_inclusive('\n')
+            .nth(line_number.saturating_sub(1))
+            .is_some_and(|line| line.ends_with('\n'))
+}
+
 pub(crate) fn mask_diagnostic_statement(source: &str, line: usize, column: usize) -> String {
     structure::mask_diagnostic_statement(source, line, column)
 }
