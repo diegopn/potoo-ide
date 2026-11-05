@@ -238,7 +238,7 @@ jobs:
               *-linux-x86_64.flatpak) platforms+=("Linux x86_64 (Flatpak)") ;;
             esac
           done
-          if (("${#platforms[@]}" == 0)); then
+          if ((${#platforms[@]} == 0)); then
             echo "No installer packages were downloaded." >&2
             exit 1
           fi
