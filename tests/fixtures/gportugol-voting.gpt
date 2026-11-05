@@ -1,0 +1,11 @@
+algoritmo votacao;
+variáveis idade: inteiro; fim-variáveis
+início
+  imprima("Qual é sua idade?");
+  idade := leia();
+  se idade >= 18 então
+    imprima("Pode votar.");
+  senão
+    imprima("Ainda não pode votar.");
+  fim-se
+fim

@@ -15,7 +15,7 @@ Use examples created for the report. Do not send personal documents, private dat
 
 ## Set up the development environment
 
-Install Rust 1.93 or later and the GTK 4.20 and libadwaita 1.8 development libraries available for your distribution. Then run:
+Install Rust 1.93 or later and the GTK 4.20 development libraries available for your distribution. Then run:
 
 ```sh
 cargo run --locked

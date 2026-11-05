@@ -4,34 +4,95 @@
 
 # Potoo IDE
 
-A desktop IDE for students and teachers to practice programming logic with Portugol and VisuAlg.
+A desktop IDE for students and teachers to practice programming logic with Portugol dialects, Calango, and Potigol.
 
-The project aims to provide a simple, intuitive space for students to practice and for teachers to support the concepts taught through code. The interface is built with Rust, GTK 4, libadwaita, and Relm4, with inspiration from GNOME Builder. Teachers choose which tools fit their classes; the IDE does not impose one learning path.
+The project aims to provide a simple, intuitive space for students to practice and for teachers to support the concepts taught through code. The interface is built with Rust, GTK 4, and Relm4, with Potoo-owned components and inspiration from GNOME Builder. Teachers choose which tools fit their classes; the IDE does not impose one learning path.
 
 ## Languages
 
-**In development**
+The IDE has execution integrations for these languages. Compatibility work is ongoing; each interpreter repository documents its supported syntax and current limits.
 
-- Portugol
-- VisuAlg
+- **Portugol Studio 2.0** (`.por`)
+- **VisuAlg** (`.alg`; compatibility target: classic 3.0.5.2)
+- **Potigol** (`.poti`; independent Rust implementation targeting the documented 1.0.0-RC2 language core)
+- **G-Portugol** (`.gpt`; independent Rust implementation targeting the documented 1.4.0 language)
+- **Calango** (`.clg`)
+- **Portugol Mapler** (`.mapler`)
+
+Mapler is a separate Portugol dialect. The original Mapler IDE uses `.txt`; Potoo adopts `.mapler` from [Design Liquido's Mapler implementation](https://github.com/DesignLiquido/mapler), which began as part of Delégua. See the [Mapler manual](https://portugol.sourceforge.io/manuais.html) and [syntax repository](https://github.com/Projeto-Mapler/portugol). Calango's upstream project is [available on GitHub](https://github.com/GeovanaRamos/calango).
+
+## Independent interpreters
+
+The IDE uses independent Rust interpreters maintained in separate repositories. Each repository includes a reusable library and a standalone command-line runner, and documents its compatibility target and limits. The IDE pins each interpreter to a Git commit in `Cargo.toml` and builds it with the application. The installed app does not need GitHub access; building from source may need to fetch dependencies that are not already cached.
+
+- [Calango](https://github.com/diegopn/potoo-calango-interpreter)
+- [G-Portugol](https://github.com/diegopn/potoo-gportugol-interpreter)
+- [Portugol Mapler](https://github.com/diegopn/potoo-portugol-mapler-interpreter)
+- [Portugol Studio 2.0](https://github.com/diegopn/potoo-portugol-studio-2-interpreter)
+- [Potigol](https://github.com/diegopn/potoo-potigol-interpreter)
+- [Portugol VisuAlg](https://github.com/diegopn/potoo-portugol-visualg-interpreter)
+
+The Potigol interpreter includes a compatibility layer for a supported subset of the Jerimum API. Potoo routes graphics and audio requests through GTK hosts and provides native facades for selected `Color`, `BufferedImage`, `JFrame`, `Canvas`, and `Graphics2D` members. It does not bundle the JVM or provide general Swing/AWT interoperability.
 
 **Future**
 
-- Potigol
 - PSeInt
 - Linotte
 - C0 (Simplified C)
 - Karel
+- [Égua](https://github.com/eguadev/egua)
+- Logic Basic
 
-The current native preview includes an editable code area and the main learning workspace. Portugol and VisuAlg execution engines are not connected yet; compatibility and integration work will be delivered in stages. Project documentation is maintained in English. Both the app and project website are planned to support English (default), Brazilian Portuguese, and Spanish; app localization has not been implemented yet.
+Project documentation is maintained in English. The app offers Portuguese, English, and Spanish UI languages. The project website is available in Brazilian Portuguese (default), English, and Spanish.
 
 ## Platforms
 
-The goal is to offer Potoo IDE for Linux, Windows, and macOS. This base prepares the Linux Flatpak distribution first; support and installers for the other platforms still need to be developed and validated.
+Potoo IDE packages are built for 64-bit Windows, Intel Macs, and x86_64 Linux. Apple Silicon builds are not available yet.
+
+## Install
+
+Download the installers from the [latest GitHub release](https://github.com/diegopn/potoo-ide/releases/latest). The release also includes a ZIP containing every installer and a `SHA256SUMS` file.
+
+### Windows
+
+1. Download `Potoo-IDE-<version>-windows-x64-setup.exe`.
+2. Run the installer and follow its prompts.
+3. Start Potoo IDE from the Start menu.
+
+The installer includes the GTK, GtkSourceView, and GStreamer runtime files needed by the application. The Windows installer is not code-signed, so Windows may show a publisher warning.
+
+### macOS (Intel)
+
+1. Download `Potoo-IDE-<version>-macos-x86_64.dmg`.
+2. Open the disk image and drag `Potoo IDE.app` to `Applications`.
+3. Open Potoo IDE from `Applications`.
+
+This package is for Intel Macs only. It is not signed or notarized; Gatekeeper may ask you to approve the first launch.
+
+### Linux (Flatpak)
+
+If Flatpak is not yet set up on your computer, [follow the instructions to prepare your system](https://flatpak.org/setup) before installing the app. Then install the downloaded bundle:
+
+```sh
+flatpak install --user --bundle ./Potoo-IDE-<version>-linux-x86_64.flatpak
+flatpak run io.github.diegopn.potooide
+```
+
+The single-file Flatpak bundle contains the application, not its runtime. If the GNOME 51 runtime is not already installed, Flatpak downloads it from the configured Flathub remote during installation; internet access is required for that first install.
+
+### Verify downloads
+
+Download `SHA256SUMS` alongside the installers. On Linux or macOS, verify them with:
+
+```sh
+sha256sum --check SHA256SUMS
+```
+
+On Windows PowerShell, compare the output of `Get-FileHash <installer> -Algorithm SHA256` with the matching entry in `SHA256SUMS`.
 
 ## Development
 
-Requirements for running the native version: Rust 1.93 or later, GTK 4.20, and libadwaita 1.8 with the platform development libraries.
+Requirements for running the native version: Rust 1.93 or later and GTK 4.20 with the platform development libraries.
 
 ```sh
 cargo run --locked

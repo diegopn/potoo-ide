@@ -1,0 +1,234 @@
+name: Build installers
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - closed
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-flatpak:
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    name: Linux x86_64 Flatpak
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Flatpak tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes flatpak flatpak-builder
+      - name: Install GNOME runtime and SDK
+        run: |
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user --assumeyes --noninteractive flathub \
+            org.gnome.Platform//51 \
+            org.gnome.Sdk//51 \
+            org.freedesktop.Sdk.Extension.rust-stable//26.08
+      - name: Build and smoke-check Flatpak bundle
+        run: |
+          packaging/linux/build-flatpak.sh
+          bundle="target/packages/linux-x86_64/Potoo-IDE-$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)-linux-x86_64.flatpak"
+          flatpak --user install --assumeyes --noninteractive --bundle "$bundle"
+          app_location="$(flatpak --user info --show-location io.github.diegopn.potooide)"
+          test -x "$app_location/files/bin/potoo-ide"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: package-linux-x86_64
+          path: target/packages/linux-x86_64/Potoo-IDE-*-linux-x86_64.flatpak
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-installer:
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    name: Windows x64 installer
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v7
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-adwaita-icon-theme
+            mingw-w64-ucrt-x86_64-binutils
+            mingw-w64-ucrt-x86_64-gst-libav
+            mingw-w64-ucrt-x86_64-gst-plugins-base
+            mingw-w64-ucrt-x86_64-gst-plugins-good
+            mingw-w64-ucrt-x86_64-gstreamer
+            mingw-w64-ucrt-x86_64-gtk4
+            mingw-w64-ucrt-x86_64-gtksourceview5
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-toolchain
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
+      - name: Check and build application
+        shell: msys2 {0}
+        run: |
+          export PATH="$(cygpath -u "$CARGO_HOME")/bin:$PATH"
+          cargo check --locked --target x86_64-pc-windows-gnu
+          cargo build --locked --release --target x86_64-pc-windows-gnu
+      - name: Stage GTK runtime
+        shell: pwsh
+        run: ./packaging/windows/stage-runtime.ps1
+      - name: Validate staged runtime dependencies
+        shell: pwsh
+        run: |
+          $executable = (Resolve-Path "target/packages/windows/stage/bin/potoo-ide.exe").Path
+          $objdump = "C:\msys64\ucrt64\bin\objdump.exe"
+          $imports = & $objdump -p $executable |
+            Select-String -Pattern "DLL Name:\s*(.+)$" |
+            ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }
+          if ($LASTEXITCODE -ne 0) { throw "Could not inspect the Windows executable imports." }
+          $stagedDlls = Get-ChildItem "target/packages/windows/stage/bin" -Filter "*.dll" |
+            ForEach-Object { $_.Name.ToLowerInvariant() }
+          $missing = $imports | Where-Object {
+            $name = $_.ToLowerInvariant()
+            -not ($stagedDlls -contains $name) -and
+              -not (Test-Path (Join-Path $env:WINDIR "System32\$_")) -and
+              -not ($name.StartsWith("api-ms-win-") -or $name.StartsWith("ext-ms-win-"))
+          }
+          if ($missing) { throw "Missing Windows runtime DLLs: $($missing -join ', ')" }
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "([^"]+)"').Matches[0].Groups[1].Value
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" "packaging\windows\PotooIDE.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed." }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: package-windows-x64
+          path: target/packages/windows/Potoo-IDE-*-windows-x64-setup.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  macos-installer:
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    name: macOS Intel installer
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v7
+      - uses: melusina-org/setup-macports@v1
+        with:
+          parameters: .github/parameters/setup-macports.yaml
+      - name: Install GTK and media runtimes
+        run: sudo port install gtk4 gtksourceview5 adwaita-icon-theme gstreamer1 gstreamer1-gst-plugins-base gstreamer1-gst-plugins-good gstreamer1-gst-libav
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+      - name: Check and build application bundle
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "13.0"
+          GTK_PREFIX: /opt/local
+        run: |
+          cargo check --locked --target x86_64-apple-darwin
+          packaging/macos/build-dmg.sh
+      - name: Validate Intel app bundle
+        run: |
+          app="target/packages/macos-x86_64/stage/Potoo IDE.app"
+          plutil -lint "$app/Contents/Info.plist"
+          test "$(lipo -archs "$app/Contents/MacOS/PotooIDE")" = "x86_64"
+          hdiutil verify target/packages/macos-x86_64/Potoo-IDE-*-macos-x86_64.dmg
+          test -x "$app/Contents/MacOS/PotooIDE"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: package-macos-x86_64
+          path: target/packages/macos-x86_64/Potoo-IDE-*-macos-x86_64.dmg
+          if-no-files-found: error
+          retention-days: 14
+
+  assemble:
+    name: Assemble release archive
+    needs:
+      - linux-flatpak
+      - windows-installer
+      - macos-installer
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: package-*
+          path: package-files
+          merge-multiple: true
+      - name: Build Figshare archive and release checksums
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
+          archive_root="figshare-package"
+          release_root="release-assets"
+          mkdir -p "$archive_root" "$release_root"
+          cp package-files/Potoo-IDE-* "$archive_root/"
+          cp README.md LICENSE "$archive_root/"
+          (
+            cd "$archive_root"
+            sha256sum Potoo-IDE-* > SHA256SUMS
+            zip -9 -r "../Potoo-IDE-${version}-installers.zip" .
+          )
+          cp package-files/Potoo-IDE-* "$release_root/"
+          cp "Potoo-IDE-${version}-installers.zip" "$release_root/"
+          cp README.md LICENSE "$release_root/"
+          (
+            cd "$release_root"
+            sha256sum Potoo-IDE-* > SHA256SUMS
+            cat > RELEASE_NOTES.md <<EOF
+          Potoo IDE ${version} installers for Windows x64, Intel macOS, and Linux x86_64 (Flatpak).
+
+          The macOS build is not signed or notarized. The Windows installer is not code-signed. The Flatpak single-file bundle downloads its GNOME 51 runtime from Flathub if it is not already installed.
+
+          See README.md in this release for installation steps and SHA256SUMS for download verification.
+          EOF
+          )
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-assets
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: assemble
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-assets
+          path: release-assets
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
+          if [[ "$tag" != "v$version" ]]; then
+            echo "Release tag $tag does not match Cargo.toml version $version." >&2
+            exit 1
+          fi
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" \
+              --title "Potoo IDE $tag" \
+              --notes-file release-assets/RELEASE_NOTES.md
+          else
+            gh release create "$tag" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Potoo IDE $tag" \
+              --notes-file release-assets/RELEASE_NOTES.md \
+              --verify-tag
+          fi

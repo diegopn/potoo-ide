@@ -1,0 +1,9 @@
+version: '2.11.5'
+prefix: '/opt/local'
+variants:
+  select:
+    - quartz
+  deselect:
+    - x11
+    - universal
+    - tests
