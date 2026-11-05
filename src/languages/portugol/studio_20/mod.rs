@@ -1,4 +1,5 @@
 pub(crate) mod audio;
+pub(crate) mod completion;
 pub(crate) mod diagnostics;
 pub(crate) mod examples;
 pub(crate) mod files;

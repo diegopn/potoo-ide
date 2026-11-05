@@ -1,4 +1,5 @@
 pub(crate) mod calango;
+pub(crate) mod completion;
 pub(crate) mod model;
 pub(crate) mod portugol;
 pub(crate) mod potigol;

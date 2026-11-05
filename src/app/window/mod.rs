@@ -10,10 +10,11 @@ mod project;
 mod settings;
 mod view;
 
+#[cfg(test)]
+use self::analysis::{CurrentLearningAnalysis, LearningAnalysisIdentity, merge_editor_diagnostics};
 use self::analysis::{
-    CurrentLearningAnalysis, DiagnosticNavigation, DiagnosticsAnalysisWorker,
-    LearningAnalysisIdentity, LearningAnalysisWorker, invalidate_learning_hint,
-    merge_editor_diagnostics, project_scan_is_current,
+    DiagnosticNavigation, DiagnosticsAnalysisWorker, LearningAnalysisWorker,
+    invalidate_learning_hint, project_scan_is_current,
 };
 pub(crate) use self::analysis::{MainWindowMsg, RightPanelSection};
 use self::dialogs::*;
@@ -24,7 +25,8 @@ use self::localization::{UI_TRANSLATION_KEYS, translate_known_text};
 pub(crate) use self::localization::{UiLanguage, tr};
 use self::persistence::*;
 use self::project::*;
-use self::view::*;
+#[cfg(test)]
+use self::view::input_cancel_controller;
 
 use crate::features::diagnostics::{self, AnalysisIdentity, EditorDiagnostic};
 use crate::features::execution::{
