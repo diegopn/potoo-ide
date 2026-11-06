@@ -551,6 +551,9 @@ impl MainWindow {
                     Some(execution::DebugPauseReason::Step) => self.text("passo a passo"),
                     Some(execution::DebugPauseReason::Pause) => self.text("pausa"),
                     Some(execution::DebugPauseReason::Debug) => self.text("ponto de depuração"),
+                    Some(execution::DebugPauseReason::StaticErrorNotReached) => {
+                        self.text("erro encontrado; trecho anterior não executado")
+                    }
                     None => self.text("depuração"),
                 };
                 ui.debugger_position.set_text(&format!(

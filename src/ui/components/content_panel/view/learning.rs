@@ -177,6 +177,9 @@ pub(crate) fn show_learning_problems(
             crate::features::learning::LearningProblemKind::Runtime => {
                 tr(language, "Erro durante a execução")
             }
+            crate::features::learning::LearningProblemKind::Analysis => {
+                tr(language, "Análise incompleta")
+            }
             crate::features::learning::LearningProblemKind::Logic => {
                 tr(language, "Índice fora dos limites")
             }
@@ -295,6 +298,7 @@ pub(crate) fn localize_learning_problem(
                     "O interpretador encontrou uma incompatibilidade de tipos nesta linha."
                 }
                 LearningProblemKind::Runtime => "A execução encontrou um problema nesta linha.",
+                LearningProblemKind::Analysis => "A análise não foi concluída para esta linha.",
                 LearningProblemKind::Logic => "Índice fora dos limites",
                 LearningProblemKind::PossibleLogic => "Possível problema lógico",
             };
@@ -305,6 +309,14 @@ pub(crate) fn localize_learning_problem(
             .replace("{message}", &problem.message);
             (tr(language, summary).to_owned(), Some(detail))
         }
+        LearningProblemText::AnalysisIncomplete => (
+            tr(
+                language,
+                "A análise foi interrompida antes de recuperar toda a estrutura do programa.",
+            )
+            .to_owned(),
+            None,
+        ),
     }
 }
 

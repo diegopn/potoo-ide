@@ -54,59 +54,23 @@ pub(crate) fn start(
                         .iter()
                         .any(|diagnostic| diagnostic.kind != DiagnosticKind::Runtime) =>
             {
-                let location = diagnostics
-                    .iter()
-                    .find(|diagnostic| diagnostic.kind != DiagnosticKind::Runtime)
-                    .map_or((1, 1), |diagnostic| {
-                        (diagnostic.line.max(1), diagnostic.column.max(1))
-                    });
-                let prefix = crate::features::debugging::executable_prefix(
-                    language, &source, location.0, location.1,
-                );
-                let prefix_has_static_errors = crate::features::diagnostics::analyze(
-                    0,
-                    "<debugger-prefix>",
-                    None,
-                    language,
-                    &prefix,
-                )
-                .iter()
-                .any(|diagnostic| {
-                    diagnostic.severity == crate::features::diagnostics::DiagnosticSeverity::Error
-                        && diagnostic.category
-                            != crate::features::diagnostics::DiagnosticCategory::Runtime
-                });
-                if prefix.is_empty() || prefix_has_static_errors {
-                    Err(diagnostics)
-                } else {
-                    match execute_source(language, &prefix, &mut io) {
-                        Ok(()) => {
-                            let pause = WorkerIo::execution_snapshot(
-                                location.0,
-                                location.1,
-                                [],
-                                Some(DebugPauseReason::Debug),
-                            );
-                            match io.await_action(pause) {
-                                Ok(ControlAction::Stop) => Ok(()),
-                                Ok(_) => Err(diagnostics),
-                                Err(message) => Err(vec![ExecutionDiagnostic {
-                                    kind: DiagnosticKind::Runtime,
-                                    message,
-                                    line: location.0,
-                                    column: location.1,
-                                }]),
-                            }
-                        }
-                        Err(prefix_diagnostics)
-                            if prefix_diagnostics.iter().any(|diagnostic| {
-                                diagnostic.kind == DiagnosticKind::Runtime
-                                    && diagnostic.line < location.0
-                            }) =>
-                        {
-                            Err(prefix_diagnostics)
-                        }
-                        Err(_) => Err(diagnostics),
+                let (resolution, location) =
+                    crate::features::debugging::executable_prefix(language, &source, &diagnostics);
+                match resolution {
+                    crate::features::debugging::DebuggerPrefixResolution::Unsupported => {
+                        Err(diagnostics)
+                    }
+                    crate::features::debugging::DebuggerPrefixResolution::Legacy(prefix) => {
+                        execute_legacy_debug_prefix(
+                            language,
+                            &prefix,
+                            location,
+                            diagnostics,
+                            &mut io,
+                        )
+                    }
+                    crate::features::debugging::DebuggerPrefixResolution::Safe(prefix) => {
+                        execute_safe_debug_prefix(language, prefix, location, diagnostics, &mut io)
                     }
                 }
             }
@@ -128,6 +92,109 @@ pub(crate) fn start(
         input,
         control,
         cancellable,
+    }
+}
+
+fn execute_legacy_debug_prefix(
+    language: Language,
+    prefix: &str,
+    location: (usize, usize),
+    diagnostics: Vec<ExecutionDiagnostic>,
+    io: &mut WorkerIo,
+) -> Result<(), Vec<ExecutionDiagnostic>> {
+    let prefix_has_static_errors =
+        crate::features::diagnostics::analyze(0, "<debugger-prefix>", None, language, prefix)
+            .iter()
+            .any(|diagnostic| {
+                diagnostic.severity == crate::features::diagnostics::DiagnosticSeverity::Error
+                    && diagnostic.category
+                        != crate::features::diagnostics::DiagnosticCategory::Runtime
+            });
+    if prefix.is_empty() || prefix_has_static_errors {
+        return Err(diagnostics);
+    }
+
+    match execute_source(language, prefix, io) {
+        Ok(()) => pause_at_location(location, DebugPauseReason::Debug, diagnostics, io),
+        Err(prefix_diagnostics)
+            if prefix_diagnostics.iter().any(|diagnostic| {
+                diagnostic.kind == DiagnosticKind::Runtime && diagnostic.line < location.0
+            }) =>
+        {
+            Err(prefix_diagnostics)
+        }
+        Err(_) => Err(diagnostics),
+    }
+}
+
+fn execute_safe_debug_prefix(
+    language: Language,
+    prefix: Option<String>,
+    location: (usize, usize),
+    diagnostics: Vec<ExecutionDiagnostic>,
+    io: &mut WorkerIo,
+) -> Result<(), Vec<ExecutionDiagnostic>> {
+    let Some(prefix) = prefix.filter(|prefix| !prefix.is_empty()) else {
+        return pause_at_location(
+            location,
+            DebugPauseReason::StaticErrorNotReached,
+            diagnostics,
+            io,
+        );
+    };
+
+    let prefix_has_static_errors =
+        crate::features::diagnostics::analyze(0, "<debugger-prefix>", None, language, &prefix)
+            .iter()
+            .any(|diagnostic| {
+                diagnostic.severity == crate::features::diagnostics::DiagnosticSeverity::Error
+                    && diagnostic.category
+                        != crate::features::diagnostics::DiagnosticCategory::Runtime
+            });
+    if prefix_has_static_errors {
+        return pause_at_location(
+            location,
+            DebugPauseReason::StaticErrorNotReached,
+            diagnostics,
+            io,
+        );
+    }
+
+    match execute_source(language, &prefix, io) {
+        Ok(()) => pause_at_location(location, DebugPauseReason::Debug, diagnostics, io),
+        Err(prefix_diagnostics)
+            if prefix_diagnostics.iter().any(|diagnostic| {
+                diagnostic.kind == DiagnosticKind::Runtime
+                    && (diagnostic.line.max(1), diagnostic.column.max(1)) < location
+            }) =>
+        {
+            Err(prefix_diagnostics)
+        }
+        Err(_) => pause_at_location(
+            location,
+            DebugPauseReason::StaticErrorNotReached,
+            diagnostics,
+            io,
+        ),
+    }
+}
+
+fn pause_at_location(
+    location: (usize, usize),
+    reason: DebugPauseReason,
+    diagnostics: Vec<ExecutionDiagnostic>,
+    io: &mut WorkerIo,
+) -> Result<(), Vec<ExecutionDiagnostic>> {
+    let pause = WorkerIo::execution_snapshot(location.0, location.1, [], Some(reason));
+    match io.await_action(pause) {
+        Ok(ControlAction::Stop) => Ok(()),
+        Ok(_) => Err(diagnostics),
+        Err(message) => Err(vec![ExecutionDiagnostic {
+            kind: DiagnosticKind::Runtime,
+            message,
+            line: location.0,
+            column: location.1,
+        }]),
     }
 }
 

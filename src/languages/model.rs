@@ -175,6 +175,19 @@ pub(crate) struct SourceLineAnalysis {
     pub(crate) variables: Vec<SourceSymbol>,
     pub(crate) call: Option<SourceCall>,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(crate) enum SourceLineAnalysisOutcome {
+    Complete {
+        analysis: Option<SourceLineAnalysis>,
+        diagnostics: Vec<SourceDiagnostic>,
+    },
+    Incomplete {
+        diagnostics: Vec<SourceDiagnostic>,
+    },
+    Cancelled,
+}
 use std::ops::Range;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

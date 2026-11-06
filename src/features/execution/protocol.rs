@@ -34,6 +34,7 @@ pub(crate) enum DebugPauseReason {
     Step,
     Pause,
     Debug,
+    StaticErrorNotReached,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

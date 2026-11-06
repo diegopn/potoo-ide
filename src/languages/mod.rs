@@ -5,6 +5,8 @@ pub(crate) mod portugol;
 pub(crate) mod potigol;
 pub(crate) mod profile;
 pub(crate) mod project_templates;
+// The shared engine is introduced before profiles migrate to it in later stages.
+#[allow(dead_code)]
 pub(crate) mod source;
 
 #[cfg(test)]

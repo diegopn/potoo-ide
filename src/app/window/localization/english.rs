@@ -195,6 +195,10 @@ pub(super) fn translate(portuguese: &'static str) -> &'static str {
         "Erro de execução" => "Runtime error",
         "Análise estática" => "Static analysis",
         "Erro durante a execução" => "Runtime error",
+        "Análise incompleta" => "Analysis incomplete",
+        "A análise foi interrompida antes de recuperar toda a estrutura do programa." => {
+            "Analysis stopped before the full program structure could be recovered."
+        }
         "Possível problema lógico" => "Possible logic issue",
         "Índice fora dos limites" => "Index out of bounds",
         "A condição é sempre verdadeira; o ramo alternativo pode nunca ser executado." => {
@@ -606,6 +610,9 @@ pub(super) fn translate(portuguese: &'static str) -> &'static str {
         "passo a passo" => "step",
         "pausa" => "pause",
         "ponto de depuração" => "debug point",
+        "erro encontrado; trecho anterior não executado" => {
+            "error found; earlier code was not executed"
+        }
         "depuração" => "debugging",
         "Digite um valor e pressione Enter" => "Enter a value and press Enter",
         "O interpretador foi encerrado antes de concluir o programa." => {

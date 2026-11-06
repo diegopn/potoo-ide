@@ -57,21 +57,27 @@ where
     }
     let code_line = (language.profile().source_line_code)(source, one_based_line);
     let line = code_line.trim();
-    let adapter_result = language
-        .profile()
-        .learning
-        .map(|adapter| adapter(source, one_based_line, &is_cancelled));
-    let (facts, column, mut problems) = match adapter_result {
-        Some(Ok(Some(analysis))) => {
-            let column = analysis.column;
-            (Some(learning_facts(analysis)), column, Vec::new())
+    let (facts, column, mut problems) = match language.profile().learning {
+        Some(LearningAdapter::Legacy(adapter)) => {
+            match adapter(source, one_based_line, &is_cancelled) {
+                Ok(Some(analysis)) => {
+                    let column = analysis.column;
+                    (Some(learning_facts(analysis)), column, Vec::new())
+                }
+                Ok(None) => (None, 1, Vec::new()),
+                Err(diagnostics) => (
+                    None,
+                    1,
+                    learning_diagnostic_problems(language, source, one_based_line, diagnostics),
+                ),
+            }
         }
-        Some(Ok(None)) | None => (None, 1, Vec::new()),
-        Some(Err(diagnostics)) => (
-            None,
-            1,
-            learning_diagnostic_problems(language, source, one_based_line, diagnostics),
-        ),
+        Some(LearningAdapter::Recovering(adapter)) => {
+            let outcome = adapter(source, one_based_line, &is_cancelled);
+            let mapped = recovering_learning_result(outcome, language, source, one_based_line)?;
+            (mapped.facts, mapped.column, mapped.problems)
+        }
+        None => (None, 1, Vec::new()),
     };
     if is_cancelled() {
         return None;
@@ -163,6 +169,74 @@ where
     })
 }
 
+struct RecoveringLearningResult {
+    facts: Option<facts::LearningFacts>,
+    column: usize,
+    problems: Vec<LearningProblem>,
+}
+
+fn recovering_learning_result(
+    outcome: SourceLineAnalysisOutcome,
+    language: Language,
+    source: &str,
+    selected_line: usize,
+) -> Option<RecoveringLearningResult> {
+    match outcome {
+        SourceLineAnalysisOutcome::Complete {
+            analysis,
+            diagnostics,
+        } => {
+            let selected_diagnostic = diagnostics
+                .iter()
+                .find(|diagnostic| diagnostic.line == selected_line);
+            let column = selected_diagnostic
+                .map(|diagnostic| diagnostic.column.max(1))
+                .or_else(|| analysis.as_ref().map(|analysis| analysis.column))
+                .unwrap_or(1);
+            let facts = if selected_diagnostic.is_some() {
+                None
+            } else {
+                analysis.map(learning_facts)
+            };
+            Some(RecoveringLearningResult {
+                facts,
+                column,
+                problems: learning_diagnostic_problems(
+                    language,
+                    source,
+                    selected_line,
+                    diagnostics,
+                ),
+            })
+        }
+        SourceLineAnalysisOutcome::Incomplete { diagnostics } => {
+            let column = diagnostics
+                .iter()
+                .find(|diagnostic| diagnostic.line == selected_line)
+                .map_or(1, |diagnostic| diagnostic.column.max(1));
+            let mut problems =
+                learning_diagnostic_problems(language, source, selected_line, diagnostics);
+            problems.push(LearningProblem {
+                kind: LearningProblemKind::Analysis,
+                severity: LearningSeverity::Warning,
+                line: selected_line.max(1),
+                column: 1,
+                text: LearningProblemText::AnalysisIncomplete,
+                message:
+                    "A análise foi interrompida antes de recuperar toda a estrutura do programa."
+                        .to_owned(),
+                suggestion: None,
+            });
+            Some(RecoveringLearningResult {
+                facts: None,
+                column,
+                problems,
+            })
+        }
+        SourceLineAnalysisOutcome::Cancelled => None,
+    }
+}
+
 fn learning_diagnostic_problems(
     language: Language,
     source: &str,
@@ -206,4 +280,131 @@ fn learning_diagnostic_problems(
             )
         })
         .collect()
+}
+
+#[cfg(test)]
+mod recovering_adapter_tests {
+    use super::*;
+    use crate::languages::model::{SourceDiagnostic, SourceDiagnosticKind};
+
+    #[test]
+    fn incomplete_recovery_keeps_selected_diagnostic_and_adds_an_analysis_warning() {
+        let mapped = recovering_learning_result(
+            SourceLineAnalysisOutcome::Incomplete {
+                diagnostics: vec![SourceDiagnostic {
+                    kind: SourceDiagnosticKind::Syntax,
+                    message: "erro sintático".to_owned(),
+                    line: 2,
+                    column: 3,
+                    byte_range: None,
+                }],
+            },
+            Language::Portugol,
+            "programa {\n @\n}",
+            2,
+        )
+        .expect("incomplete analysis is shown");
+
+        assert!(mapped.facts.is_none());
+        assert_eq!(mapped.column, 3);
+        assert!(mapped.problems.iter().any(|problem| {
+            problem.kind == LearningProblemKind::Syntax
+                && problem.severity == LearningSeverity::Error
+                && problem.line == 2
+                && problem.column == 3
+        }));
+        assert!(mapped.problems.iter().any(|problem| {
+            problem.kind == LearningProblemKind::Analysis
+                && problem.severity == LearningSeverity::Warning
+                && problem.line == 2
+                && problem.text == LearningProblemText::AnalysisIncomplete
+        }));
+    }
+
+    #[test]
+    fn cancelled_recovery_produces_no_learning_result() {
+        assert!(
+            recovering_learning_result(
+                SourceLineAnalysisOutcome::Cancelled,
+                Language::Portugol,
+                "programa {}",
+                1,
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn complete_recovery_keeps_facts_and_only_diagnostics_for_the_selected_line() {
+        let mapped = recovering_learning_result(
+            SourceLineAnalysisOutcome::Complete {
+                analysis: Some(SourceLineAnalysis {
+                    line: 3,
+                    column: 4,
+                    construct: SourceConstruct::Output,
+                    name: None,
+                    return_type: None,
+                    parameters: Vec::new(),
+                    variables: Vec::new(),
+                    call: None,
+                }),
+                diagnostics: vec![
+                    SourceDiagnostic {
+                        kind: SourceDiagnosticKind::Syntax,
+                        message: "erro em outra linha".to_owned(),
+                        line: 1,
+                        column: 1,
+                        byte_range: None,
+                    },
+                    SourceDiagnostic {
+                        kind: SourceDiagnosticKind::Syntax,
+                        message: "erro em linha anterior".to_owned(),
+                        line: 2,
+                        column: 4,
+                        byte_range: None,
+                    },
+                ],
+            },
+            Language::Portugol,
+            "programa {\n @\n escreva(1)\n}",
+            3,
+        )
+        .expect("complete analysis is shown");
+
+        assert_eq!(mapped.column, 4);
+        assert_eq!(
+            mapped.facts.expect("AST facts").topic,
+            LearningTopic::Output
+        );
+        assert!(mapped.problems.is_empty());
+
+        let selected_error = recovering_learning_result(
+            SourceLineAnalysisOutcome::Complete {
+                analysis: Some(SourceLineAnalysis {
+                    line: 2,
+                    column: 4,
+                    construct: SourceConstruct::Output,
+                    name: None,
+                    return_type: None,
+                    parameters: Vec::new(),
+                    variables: Vec::new(),
+                    call: None,
+                }),
+                diagnostics: vec![SourceDiagnostic {
+                    kind: SourceDiagnosticKind::Syntax,
+                    message: "erro nesta linha".to_owned(),
+                    line: 2,
+                    column: 4,
+                    byte_range: None,
+                }],
+            },
+            Language::Portugol,
+            "programa {\n @\n}",
+            2,
+        )
+        .expect("selected error remains visible");
+        assert!(selected_error.facts.is_none());
+        assert_eq!(selected_error.problems.len(), 1);
+        assert_eq!(selected_error.problems[0].line, 2);
+    }
 }

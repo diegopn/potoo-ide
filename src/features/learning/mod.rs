@@ -8,7 +8,7 @@ mod problems;
 mod tests;
 
 pub(crate) use crate::languages::model::{
-    SourceCall, SourceConstruct, SourceLineAnalysis, SourceSymbol,
+    SourceCall, SourceConstruct, SourceLineAnalysis, SourceLineAnalysisOutcome, SourceSymbol,
 };
 pub(crate) use analysis::learning_hint_with_runtime_cancellable;
 #[cfg(test)]
@@ -21,6 +21,7 @@ use self::problems::*;
 use crate::features::execution::{DiagnosticKind as ExecutionDiagnosticKind, ExecutionDiagnostic};
 use crate::languages::{
     model::{Language, SourceDimension},
+    profile::LearningAdapter,
     source::{read_identifier, read_integer, skip_spaces},
 };
 use std::collections::HashMap;

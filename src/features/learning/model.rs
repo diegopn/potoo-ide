@@ -23,6 +23,7 @@ pub(crate) enum LearningProblemKind {
     Syntax,
     Type,
     Runtime,
+    Analysis,
     Logic,
     PossibleLogic,
 }
@@ -30,6 +31,7 @@ pub(crate) enum LearningProblemKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum LearningProblemText {
     InterpreterDiagnostic,
+    AnalysisIncomplete,
     ConstantCondition {
         always_true: bool,
     },
