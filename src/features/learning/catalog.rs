@@ -20,6 +20,14 @@ pub(crate) fn lookup_library_call(
         return None;
     }
 
+    lookup_jerimum_call_candidate(call)
+}
+
+pub(crate) fn is_jerimum_call_candidate(language: Language, call: &SourceCall) -> bool {
+    language == Language::Potigol && lookup_jerimum_call_candidate(call).is_some()
+}
+
+fn lookup_jerimum_call_candidate(call: &SourceCall) -> Option<LibraryCallKnowledge> {
     let receiver = call
         .receiver
         .as_deref()

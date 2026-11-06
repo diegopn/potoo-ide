@@ -70,9 +70,20 @@ where
     if is_cancelled() {
         return None;
     }
-    let statement = (profile.source_statement_range)(source, one_based_line, column)
-        .and_then(|range| source.get(range))
+    let statement_range = (profile.source_statement_range)(source, one_based_line, column);
+    let statement = statement_range
+        .as_ref()
+        .and_then(|range| source.get(range.clone()))
         .unwrap_or(line);
+    let statement_column = if statement_range.is_some() {
+        column
+    } else {
+        code_line
+            .chars()
+            .take_while(|character| character.is_whitespace())
+            .count()
+            + 1
+    };
     let mut facts = facts.unwrap_or_else(unrecognized_facts);
     if matches!(facts.topic, LearningTopic::Call | LearningTopic::Input) && facts.call.is_none() {
         facts.call = call_from_source(source, one_based_line, column);
@@ -161,8 +172,14 @@ where
         problems.push(problem);
     }
     if facts.topic != LearningTopic::Variable && facts.topic != LearningTopic::Unrecognized {
-        let index_problems =
-            constant_index_problems(source, statement, one_based_line, language, &is_cancelled)?;
+        let index_problems = constant_index_problems(
+            source,
+            statement,
+            one_based_line,
+            statement_column,
+            language,
+            &is_cancelled,
+        )?;
         problems.extend(index_problems);
     }
     if is_cancelled() {
@@ -202,9 +219,11 @@ fn recovering_learning_result(
             analysis,
             diagnostics,
         } => {
-            let selected_diagnostic = diagnostics
-                .iter()
-                .find(|diagnostic| diagnostic.line == selected_line);
+            let selected_diagnostic = diagnostics.iter().find(|diagnostic| {
+                diagnostic.line == selected_line
+                    && diagnostic.kind
+                        != crate::languages::model::SourceDiagnosticKind::StaticAnalysis
+            });
             let column = selected_diagnostic
                 .map(|diagnostic| diagnostic.column.max(1))
                 .or_else(|| analysis.as_ref().map(|analysis| analysis.column))

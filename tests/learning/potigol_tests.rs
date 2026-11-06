@@ -60,19 +60,27 @@ fn classic_and_jerimum_are_separate_import_aware_fixtures() {
         None
     );
 
-    for (source, line) in [
-        ("# use \"jerimum\"\ng.setColor(Cor.VERDE.color)", 2),
+    for (source, line, expects_missing_import) in [
+        ("# use \"jerimum\"\ng.setColor(Cor.VERDE.color)", 2, false),
         (
             " use \"jerimum\"\ndef desenhe(g: Graphics2D): Nada\n  g.setColor(Cor.VERDE.color)\nfim",
             3,
+            true,
         ),
         (
             "se verdadeiro entao\n  use \"jerimum\"\n  g.setColor(Cor.VERDE.color)\nfim",
             3,
+            false,
         ),
     ] {
         let (call, diagnostics) = analyze_source_line(source, line);
-        assert!(diagnostics.is_empty());
+        if expects_missing_import {
+            assert_eq!(diagnostics.len(), 1);
+            assert_eq!(diagnostics[0].kind, SourceDiagnosticKind::StaticAnalysis);
+            assert!(diagnostics[0].message.contains("use \"jerimum\""));
+        } else {
+            assert!(diagnostics.is_empty());
+        }
         let call = call.expect("the method call should remain recognizable");
         assert_eq!(call.construct, SourceConstruct::MethodCall);
         assert_eq!(

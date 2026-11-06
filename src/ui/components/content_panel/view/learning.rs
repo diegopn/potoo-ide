@@ -355,6 +355,12 @@ fn translate_interpreter_diagnostic(message: &str, language: UiLanguage) -> Opti
             "Number is outside the integer range",
             "El número está fuera del rango de enteros",
         ),
+        "A chamada pertence à biblioteca Jerimum, mas ela não foi importada. Adicione `use \"jerimum\"` no início do arquivo." => {
+            (
+                "This call belongs to the Jerimum library, but it has not been imported. Add `use \"jerimum\"` near the start of the file.",
+                "Esta llamada pertenece a la biblioteca Jerimum, pero no se ha importado. Añada `use \"jerimum\"` al inicio del archivo.",
+            )
+        }
         "não é possível comparar estes valores" => (
             "These values cannot be compared",
             "No se pueden comparar estos valores",
@@ -739,5 +745,23 @@ mod tests {
             suggestion.as_deref(),
             Some("Use an index between 0 and 2 in `valores`.")
         );
+    }
+
+    #[test]
+    fn missing_jerimum_import_advice_is_localized() {
+        let source = "def desenhe(g: Graphics2D): Nada\n  g.setColor(Cor.VERDE.color)\nfim";
+        let problem = learning_hint(source, 2, Language::Potigol)
+            .problems
+            .into_iter()
+            .find(|problem| problem.kind == LearningProblemKind::PossibleLogic)
+            .expect("a typed Jerimum call without its import should be reported");
+
+        let (english, _) = localize_learning_problem(&problem, UiLanguage::English);
+        assert!(english.contains("Jerimum library"));
+        assert!(english.contains("use \"jerimum\""));
+
+        let (spanish, _) = localize_learning_problem(&problem, UiLanguage::Spanish);
+        assert!(spanish.contains("biblioteca Jerimum"));
+        assert!(spanish.contains("use \"jerimum\""));
     }
 }

@@ -22,7 +22,11 @@ pub(super) fn diagnostic_problem(
 ) -> LearningProblem {
     LearningProblem {
         kind,
-        severity: LearningSeverity::Error,
+        severity: if kind == LearningProblemKind::PossibleLogic {
+            LearningSeverity::Warning
+        } else {
+            LearningSeverity::Error
+        },
         line,
         column,
         text: LearningProblemText::InterpreterDiagnostic,
@@ -63,18 +67,17 @@ pub(super) fn constant_condition_problem(
 
 pub(super) fn constant_index_problems(
     source: &str,
-    selected_line: &str,
+    selected_statement: &str,
     line_number: usize,
+    statement_column: usize,
     language: Language,
     is_cancelled: &impl Fn() -> bool,
 ) -> Option<Vec<LearningProblem>> {
     let source_code = (language.profile().without_literals_and_comments)(source);
     let arrays = declared_array_bounds(&source_code, language, is_cancelled)?;
-    let code = source_code
-        .lines()
-        .nth(line_number.saturating_sub(1))
-        .unwrap_or(selected_line);
+    let code = (language.profile().without_literals_and_comments)(selected_statement);
     let characters = code.chars().collect::<Vec<_>>();
+    let positions = statement_positions(&characters, line_number, statement_column, language);
     let mut problems = Vec::new();
     let mut index = 0;
     while index < characters.len() {
@@ -110,8 +113,12 @@ pub(super) fn constant_index_problems(
                 problems.push(LearningProblem {
                     kind: LearningProblemKind::Logic,
                     severity: LearningSeverity::Error,
-                    line: line_number,
-                    column: name_start + 1,
+                    line: positions
+                        .get(name_start)
+                        .map_or(line_number, |(line, _)| *line),
+                    column: positions
+                        .get(name_start)
+                        .map_or(statement_column + name_start, |(_, column)| *column),
                     text: LearningProblemText::ConstantIndex {
                         index: value,
                         name: name.clone(),
@@ -131,6 +138,41 @@ pub(super) fn constant_index_problems(
         }
     }
     Some(problems)
+}
+
+fn statement_positions(
+    characters: &[char],
+    first_line: usize,
+    first_column: usize,
+    language: Language,
+) -> Vec<(usize, usize)> {
+    let universal_line_endings = !matches!(language, Language::Calango | Language::Mapler);
+    let mut positions = Vec::with_capacity(characters.len());
+    let (mut line, mut column) = (first_line, first_column);
+    let mut previous_was_carriage_return = false;
+
+    for character in characters {
+        positions.push((line, column));
+        match character {
+            '\r' if universal_line_endings => {
+                line += 1;
+                column = 1;
+                previous_was_carriage_return = true;
+            }
+            '\n' => {
+                if !(universal_line_endings && previous_was_carriage_return) {
+                    line += 1;
+                }
+                column = 1;
+                previous_was_carriage_return = false;
+            }
+            _ => {
+                column += 1;
+                previous_was_carriage_return = false;
+            }
+        }
+    }
+    positions
 }
 
 fn declared_array_bounds(
@@ -262,5 +304,36 @@ mod condition_suggestion_tests {
         );
         assert_eq!(suggest_condition_change("texto == \"nota1\""), None);
         assert_eq!(suggest_condition_change("texto == palavra // nota1"), None);
+    }
+}
+
+#[cfg(test)]
+mod constant_index_location_tests {
+    use super::constant_index_problems;
+    use crate::languages::model::Language;
+
+    #[test]
+    fn constant_index_location_tracks_lf_only_and_universal_line_endings() {
+        let calango = constant_index_problems(
+            "inteiro dados[3]",
+            "escreva(\r\n dados[3]\r\n)",
+            4,
+            2,
+            Language::Calango,
+            &|| false,
+        )
+        .expect("the analysis is not cancelled");
+        assert_eq!((calango[0].line, calango[0].column), (5, 2));
+
+        let visualg = constant_index_problems(
+            "dados: vetor[1..3] de inteiro",
+            "escreva(\r\n  dados[0]\r\n)",
+            4,
+            1,
+            Language::Visualg,
+            &|| false,
+        )
+        .expect("the analysis is not cancelled");
+        assert_eq!((visualg[0].line, visualg[0].column), (5, 3));
     }
 }

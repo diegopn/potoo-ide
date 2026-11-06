@@ -261,6 +261,68 @@ fn learning_hint_recognizes_jerimum_calls_only_when_the_library_is_imported() {
 }
 
 #[test]
+fn learning_hint_recommends_import_for_known_jerimum_calls() {
+    let cases = [
+        (
+            "def desenhe(g: Graphics2D): Nada\n  g.setColor(Cor.VERDE.color)\nfim",
+            2,
+        ),
+        (
+            "def desenhe(g: Graphics2D): Nada\n  g.fillRect(1, 2, 32, 32)\nfim",
+            2,
+        ),
+        (
+            "def desenhe(g: Graphics2D): Nada\n  g.drawString(\"Olá\", 1, 2)\nfim",
+            2,
+        ),
+        ("jogo.iniciar(\"Jogo\", 320, 200, atualize, desenhe, 60)", 1),
+        ("Desenho.incluir(1, desenhe_personagem)", 1),
+    ];
+
+    for (source, line) in cases {
+        let hint = learning_hint(source, line, Language::Potigol);
+        assert_eq!(hint.topic, LearningTopic::Call, "{source}");
+        assert_eq!(
+            hint.call.as_ref().and_then(|call| call.library.as_deref()),
+            None,
+            "missing-import advice must not claim the library is active: {source}"
+        );
+        assert!(
+            hint.problems.iter().any(|problem| {
+                problem.kind == LearningProblemKind::PossibleLogic
+                    && problem.severity == LearningSeverity::Warning
+                    && problem.message.contains("biblioteca Jerimum")
+                    && problem.message.contains("use \"jerimum\"")
+            }),
+            "a known Jerimum call without its import should explain the missing library: {source}; {:?}",
+            hint.problems
+        );
+    }
+
+    let untyped = learning_hint("g.setColor(Cor.VERDE.color)", 1, Language::Potigol);
+    assert!(
+        untyped
+            .problems
+            .iter()
+            .all(|problem| !problem.message.contains("biblioteca Jerimum")),
+        "an untyped method call must not be guessed to belong to Jerimum"
+    );
+
+    let unknown = learning_hint(
+        "def desenhe(g: Graphics2D): Nada\n  g.mystery(1)\nfim",
+        2,
+        Language::Potigol,
+    );
+    assert!(
+        unknown
+            .problems
+            .iter()
+            .all(|problem| !problem.message.contains("biblioteca Jerimum")),
+        "unknown members must not receive guessed library advice"
+    );
+}
+
+#[test]
 fn potigol_input_builtins_are_all_explained_as_input() {
     for name in [
         "leia_inteiro",
@@ -727,6 +789,25 @@ fn reports_only_proven_constant_indexes_outside_declared_bounds() {
             .iter()
             .any(|problem| problem.kind == LearningProblemKind::Logic),
         "indexes inside block comments must not produce learning problems"
+    );
+}
+
+#[test]
+fn constant_index_analysis_stays_with_the_selected_semicolon_statement() {
+    let source = "algoritmo aula;\nprincipal\ninteiro valores[3];\nvalores[0] = 1; escreval(valores[3]);\nfimPrincipal";
+    let hint = learning_hint(source, 4, Language::Calango);
+
+    assert_eq!(hint.topic, LearningTopic::Assignment);
+    assert_eq!(hint.expression.as_deref(), Some("1"));
+    assert!(
+        hint.problems.iter().all(|problem| {
+            !matches!(
+                &problem.text,
+                LearningProblemText::ConstantIndex { index: 3, .. }
+            )
+        }),
+        "an out-of-range access in a later statement must not be attributed to the selected assignment: {:?}",
+        hint.problems
     );
 }
 

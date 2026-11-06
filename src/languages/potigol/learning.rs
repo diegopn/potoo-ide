@@ -1,6 +1,6 @@
-use crate::features::learning::source_call;
+use crate::features::learning::{catalog, source_call};
 use crate::languages::model::{
-    SourceCall, SourceConstruct, SourceDiagnostic, SourceDiagnosticKind, SourceDimension,
+    Language, SourceCall, SourceConstruct, SourceDiagnostic, SourceDiagnosticKind, SourceDimension,
     SourceLineAnalysis, SourceLineAnalysisOutcome, SourceSymbol,
 };
 use crate::languages::source::{RecoveryStatus, SourceIndex, recover_parse};
@@ -28,7 +28,7 @@ pub(crate) fn profile_adapter(
         crate::languages::potigol::syntax_analysis::views::mask_diagnostic_statement,
         is_cancelled,
     );
-    let diagnostics = recovered
+    let mut diagnostics = recovered
         .diagnostics
         .into_iter()
         .map(to_source_diagnostic)
@@ -51,6 +51,12 @@ pub(crate) fn profile_adapter(
             } else {
                 analyze_program_line(source, &program, one_based_line)
             };
+            if let Some(diagnostic) = analysis
+                .as_ref()
+                .and_then(|analysis| missing_jerimum_import_diagnostic(&program, analysis))
+            {
+                diagnostics.push(diagnostic);
+            }
             SourceLineAnalysisOutcome::Complete {
                 analysis,
                 diagnostics,
@@ -79,10 +85,7 @@ fn analyze_program_line(
     program: &Program,
     line: usize,
 ) -> Option<SourceLineAnalysis> {
-    let jerimum_imported = program.statements.iter().any(|statement| {
-        statement.span.start.column == 1
-            && matches!(&statement.kind, StmtKind::Import(name) if name.eq_ignore_ascii_case("jerimum"))
-    });
+    let jerimum_imported = jerimum_imported(program);
     let mut analysis = analyze_statements(source, &program.statements, line, jerimum_imported);
     if jerimum_imported
         && let Some(call) = analysis
@@ -94,6 +97,42 @@ fn analyze_program_line(
         call.library = Some("jerimum".to_owned());
     }
     analysis
+}
+
+fn jerimum_imported(program: &Program) -> bool {
+    program.statements.iter().any(|statement| {
+        statement.span.start.column == 1
+            && matches!(&statement.kind, StmtKind::Import(name) if name.eq_ignore_ascii_case("jerimum"))
+    })
+}
+
+fn missing_jerimum_import_diagnostic(
+    program: &Program,
+    analysis: &SourceLineAnalysis,
+) -> Option<SourceDiagnostic> {
+    if jerimum_imported(program) {
+        return None;
+    }
+    let call = analysis.call.as_ref()?;
+    if !catalog::is_jerimum_call_candidate(Language::Potigol, call) {
+        return None;
+    }
+    let confirmed_jerimum_call = match (call.receiver.as_deref(), call.member.as_str()) {
+        (Some("jogo"), "iniciar") => call.arguments.len() == 6,
+        (Some("Desenho"), "incluir") => call.arguments.len() == 2,
+        (Some(receiver), "setColor" | "fillRect" | "drawString") => {
+            graphics_receiver_at_line(program, analysis.line, Some(receiver))
+        }
+        _ => false,
+    };
+    confirmed_jerimum_call.then(|| {
+        SourceDiagnostic::at_line(
+            SourceDiagnosticKind::StaticAnalysis,
+            "A chamada pertence à biblioteca Jerimum, mas ela não foi importada. Adicione `use \"jerimum\"` no início do arquivo.".to_owned(),
+            analysis.line,
+            analysis.column,
+        )
+    })
 }
 
 fn graphics_receiver_at_line(program: &Program, line: usize, receiver: Option<&str>) -> bool {
