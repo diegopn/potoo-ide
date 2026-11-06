@@ -73,10 +73,10 @@ mod shared_source_tests {
     use std::cell::Cell;
 
     use super::{
-        LexerConfig, LineCommentTerminator, MaskRules, QuoteRule, RecoveryStatus, SourceIndex,
-        SourceTokenKind, StatementRules, close_open_blocks, mask_range_preserving_positions,
-        mask_range_preserving_positions_with_rules, recover_parse, statement_range, token_text,
-        tokenize,
+        LexerConfig, LineCommentTerminator, LineEndingPolicy, MaskRules, QuoteRule, RecoveryStatus,
+        SourceIndex, SourceTokenKind, StatementRules, close_open_blocks,
+        mask_range_preserving_positions, mask_range_preserving_positions_with_rules, recover_parse,
+        statement_range, token_text, tokenize,
     };
 
     #[test]
@@ -138,6 +138,26 @@ mod shared_source_tests {
     }
 
     #[test]
+    fn lf_only_source_index_counts_carriage_returns_as_columns() {
+        let source = "a\r\nb\rc\n";
+        let index = SourceIndex::new_lf_only(source);
+
+        assert_eq!(index.line_count(), 3);
+        assert_eq!(index.line_text(1), Some("a"));
+        assert_eq!(index.line_text(2), Some("b\rc"));
+        assert_eq!(index.line_text(3), Some(""));
+        assert_eq!(index.line_column_to_byte(1, 1), Some(0));
+        assert_eq!(index.line_column_to_byte(1, 2), Some(1));
+        assert_eq!(index.line_column_to_byte(1, 3), Some(2));
+        assert_eq!(index.line_column_to_byte(1, 4), None);
+        assert_eq!(index.line_column_to_byte(2, 1), Some(3));
+        assert_eq!(index.line_column_to_byte(2, 3), Some(5));
+        assert_eq!(index.byte_to_line_column(1), Some((1, 2)));
+        assert_eq!(index.byte_to_line_column(2), Some((1, 3)));
+        assert_eq!(index.byte_to_line_column(3), Some((2, 1)));
+    }
+
+    #[test]
     fn source_index_can_ignore_a_leading_bom_for_language_coordinates() {
         let source = "\u{feff}ação\r\nfim";
         let index = SourceIndex::new_ignoring_leading_bom(source);
@@ -174,6 +194,7 @@ se */ z"#;
             ],
             hyphenated_words: &["fim-se"],
             line_comment_terminator: LineCommentTerminator::AnyNewline,
+            line_endings: LineEndingPolicy::Universal,
             ignore_leading_bom: false,
         };
 
@@ -227,6 +248,7 @@ se */ z"#;
                 allows_newlines: true,
             }],
             hyphenated_words: &[],
+            line_endings: LineEndingPolicy::Universal,
             ignore_leading_bom: false,
         };
 
@@ -251,6 +273,40 @@ se */ z"#;
     }
 
     #[test]
+    fn lf_only_tokenizer_keeps_bare_carriage_returns_inside_the_current_line() {
+        let config = LexerConfig {
+            line_comments: &["//"],
+            line_comment_terminator: LineCommentTerminator::LfOnly,
+            line_endings: LineEndingPolicy::LfOnly,
+            block_comments: &[],
+            quote_rules: &[QuoteRule {
+                delimiter: '"',
+                escape: None,
+                doubled_delimiter: false,
+                allows_newlines: false,
+            }],
+            hyphenated_words: &[],
+            ignore_leading_bom: false,
+        };
+
+        let source = "a\r// comentário\rtexto\n@";
+        let tokens = tokenize(source, &config);
+        let at = tokens
+            .iter()
+            .find(|token| token.kind == SourceTokenKind::Symbol('@'))
+            .expect("code after the LF-terminated comment remains tokenized");
+        assert_eq!((at.line, at.column), (2, 1));
+
+        let source = "a\r@";
+        let tokens = tokenize(source, &config);
+        let at = tokens
+            .iter()
+            .find(|token| token.kind == SourceTokenKind::Symbol('@'))
+            .expect("a bare carriage return is whitespace, not a line ending");
+        assert_eq!((at.line, at.column), (1, 3));
+    }
+
+    #[test]
     fn statement_range_respects_nested_delimiters_semicolons_and_line_continuations() {
         let source = "first; second(x; y); third\nvalue = a +\n  b\nnext";
         let config = LexerConfig {
@@ -259,6 +315,7 @@ se */ z"#;
             block_comments: &[],
             quote_rules: &[],
             hyphenated_words: &[],
+            line_endings: LineEndingPolicy::Universal,
             ignore_leading_bom: false,
         };
         let tokens = tokenize(source, &config);
@@ -296,6 +353,7 @@ se */ z"#;
             block_comments: &[],
             quote_rules: &[],
             hyphenated_words: &[],
+            line_endings: LineEndingPolicy::Universal,
             ignore_leading_bom: false,
         };
         let tokens = tokenize(source, &config);
@@ -321,6 +379,7 @@ se */ z"#;
             block_comments: &[],
             quote_rules: &[],
             hyphenated_words: &[],
+            line_endings: LineEndingPolicy::Universal,
             ignore_leading_bom: false,
         };
         let tokens = tokenize(source, &config);
@@ -589,42 +648,60 @@ se */ z"#;
 }
 use std::ops::Range;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LineEndingPolicy {
+    Universal,
+    LfOnly,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct SourceIndex<'a> {
     source: &'a str,
     line_starts: Vec<usize>,
+    line_endings: LineEndingPolicy,
 }
 
 impl<'a> SourceIndex<'a> {
     pub(crate) fn new(source: &'a str) -> Self {
-        Self::with_first_line_start(source, 0)
+        Self::with_first_line_start(source, 0, LineEndingPolicy::Universal)
+    }
+
+    pub(crate) fn new_lf_only(source: &'a str) -> Self {
+        Self::with_first_line_start(source, 0, LineEndingPolicy::LfOnly)
     }
 
     pub(crate) fn new_ignoring_leading_bom(source: &'a str) -> Self {
         let first_line_start = source
             .strip_prefix('\u{feff}')
             .map_or(0, |without_bom| source.len() - without_bom.len());
-        Self::with_first_line_start(source, first_line_start)
+        Self::with_first_line_start(source, first_line_start, LineEndingPolicy::Universal)
     }
 
-    fn with_first_line_start(source: &'a str, first_line_start: usize) -> Self {
+    fn with_first_line_start(
+        source: &'a str,
+        first_line_start: usize,
+        line_endings: LineEndingPolicy,
+    ) -> Self {
         let mut line_starts = vec![first_line_start];
         let bytes = source.as_bytes();
         let mut offset = first_line_start;
         while offset < bytes.len() {
-            match bytes[offset] {
-                b'\r' if bytes.get(offset + 1) == Some(&b'\n') => offset += 2,
-                b'\r' | b'\n' => offset += 1,
+            let width = match (line_endings, bytes[offset]) {
+                (LineEndingPolicy::Universal, b'\r') if bytes.get(offset + 1) == Some(&b'\n') => 2,
+                (LineEndingPolicy::Universal, b'\r' | b'\n')
+                | (LineEndingPolicy::LfOnly, b'\n') => 1,
                 _ => {
                     offset += 1;
                     continue;
                 }
-            }
+            };
+            offset += width;
             line_starts.push(offset);
         }
         Self {
             source,
             line_starts,
+            line_endings,
         }
     }
 
@@ -640,7 +717,7 @@ impl<'a> SourceIndex<'a> {
             .copied()
             .unwrap_or(self.source.len());
         self.source
-            .get(start..line_content_end(self.source, start, next_start))
+            .get(start..line_text_end(self.source, start, next_start, self.line_endings))
     }
 
     pub(crate) fn line_column_to_byte(&self, line: usize, column: usize) -> Option<usize> {
@@ -649,8 +726,13 @@ impl<'a> SourceIndex<'a> {
         }
         let line_index = line - 1;
         let start = *self.line_starts.get(line_index)?;
-        let text = self.line_text(line)?;
-        let end = start + text.len();
+        let next_start = self
+            .line_starts
+            .get(line_index + 1)
+            .copied()
+            .unwrap_or(self.source.len());
+        let end = line_coordinate_end(self.source, start, next_start, self.line_endings);
+        let text = self.source.get(start..end)?;
         let target_character = column - 1;
 
         for (character_index, (byte_offset, _)) in text.char_indices().enumerate() {
@@ -676,22 +758,50 @@ impl<'a> SourceIndex<'a> {
             .get(line_index + 1)
             .copied()
             .unwrap_or(self.source.len());
-        let end = line_content_end(self.source, start, next_start);
+        let end = line_coordinate_end(self.source, start, next_start, self.line_endings);
         let position = byte.min(end);
         let column = self.source.get(start..position)?.chars().count() + 1;
         Some((line_index + 1, column))
     }
 }
 
-fn line_content_end(source: &str, start: usize, next_start: usize) -> usize {
+fn line_coordinate_end(
+    source: &str,
+    start: usize,
+    next_start: usize,
+    line_endings: LineEndingPolicy,
+) -> usize {
     let bytes = source.as_bytes();
     let mut end = next_start;
     if end > start && bytes.get(end - 1) == Some(&b'\n') {
         end -= 1;
-        if end > start && bytes.get(end - 1) == Some(&b'\r') {
+        if line_endings == LineEndingPolicy::Universal
+            && end > start
+            && bytes.get(end - 1) == Some(&b'\r')
+        {
             end -= 1;
         }
-    } else if end > start && bytes.get(end - 1) == Some(&b'\r') {
+    } else if line_endings == LineEndingPolicy::Universal
+        && end > start
+        && bytes.get(end - 1) == Some(&b'\r')
+    {
+        end -= 1;
+    }
+    end
+}
+
+fn line_text_end(
+    source: &str,
+    start: usize,
+    next_start: usize,
+    line_endings: LineEndingPolicy,
+) -> usize {
+    let mut end = line_coordinate_end(source, start, next_start, line_endings);
+    if line_endings == LineEndingPolicy::LfOnly
+        && end > start
+        && source.as_bytes().get(end - 1) == Some(&b'\r')
+        && source.as_bytes().get(next_start.saturating_sub(1)) == Some(&b'\n')
+    {
         end -= 1;
     }
     end
@@ -725,12 +835,14 @@ pub(crate) struct QuoteRule {
 pub(crate) enum LineCommentTerminator {
     AnyNewline,
     LfOrCrlf,
+    LfOnly,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct LexerConfig<'a> {
     pub(crate) line_comments: &'a [&'a str],
     pub(crate) line_comment_terminator: LineCommentTerminator,
+    pub(crate) line_endings: LineEndingPolicy,
     pub(crate) block_comments: &'a [(&'a str, &'a str)],
     pub(crate) quote_rules: &'a [QuoteRule],
     pub(crate) hyphenated_words: &'a [&'a str],
@@ -751,6 +863,49 @@ pub(crate) fn token_text<'a>(source: &'a str, token: &SourceToken) -> Option<&'a
     source.get(token.byte_range.clone())
 }
 
+pub(crate) fn source_view(source: &str, tokens: &[SourceToken], preserve_literals: bool) -> String {
+    let mut result = String::with_capacity(source.len());
+    let mut cursor = 0;
+
+    for token in tokens {
+        let range = token.byte_range.clone();
+        let Some(gap) = source.get(cursor..range.start) else {
+            continue;
+        };
+        result.extend(gap.chars().map(mask_comment_character));
+        let Some(text) = token_text(source, token) else {
+            continue;
+        };
+        if token.kind == SourceTokenKind::Literal && !preserve_literals {
+            result.extend(text.chars().map(mask_literal_character));
+        } else {
+            result.push_str(text);
+        }
+        cursor = range.end;
+    }
+
+    if let Some(gap) = source.get(cursor..) {
+        result.extend(gap.chars().map(mask_comment_character));
+    }
+    result
+}
+
+fn mask_comment_character(character: char) -> char {
+    if character.is_whitespace() || character == '\u{feff}' {
+        character
+    } else {
+        ' '
+    }
+}
+
+fn mask_literal_character(character: char) -> char {
+    if matches!(character, '\n' | '\r' | '\t') {
+        character
+    } else {
+        ' '
+    }
+}
+
 pub(crate) fn tokenize(source: &str, config: &LexerConfig<'_>) -> Vec<SourceToken> {
     let mut tokens = Vec::new();
     let mut offset = if config.ignore_leading_bom {
@@ -763,8 +918,15 @@ pub(crate) fn tokenize(source: &str, config: &LexerConfig<'_>) -> Vec<SourceToke
     let (mut line, mut column) = (1, 1);
 
     while offset < source.len() {
-        if newline_width(source, offset).is_some() {
-            push_newline(source, &mut tokens, &mut offset, &mut line, &mut column);
+        if newline_width(source, offset, config.line_endings).is_some() {
+            push_newline(
+                source,
+                &mut tokens,
+                &mut offset,
+                &mut line,
+                &mut column,
+                config.line_endings,
+            );
             continue;
         }
 
@@ -785,7 +947,12 @@ pub(crate) fn tokenize(source: &str, config: &LexerConfig<'_>) -> Vec<SourceToke
         {
             advance_text(&mut offset, &mut column, comment);
             while offset < source.len()
-                && !line_comment_ends(source, offset, config.line_comment_terminator)
+                && !line_comment_ends(
+                    source,
+                    offset,
+                    config.line_comment_terminator,
+                    config.line_endings,
+                )
             {
                 if config.line_comment_terminator == LineCommentTerminator::LfOrCrlf
                     && source[offset..].starts_with('\r')
@@ -815,8 +982,15 @@ pub(crate) fn tokenize(source: &str, config: &LexerConfig<'_>) -> Vec<SourceToke
                     advance_text(&mut offset, &mut column, closer);
                     break;
                 }
-                if newline_width(source, offset).is_some() {
-                    push_newline(source, &mut tokens, &mut offset, &mut line, &mut column);
+                if newline_width(source, offset, config.line_endings).is_some() {
+                    push_newline(
+                        source,
+                        &mut tokens,
+                        &mut offset,
+                        &mut line,
+                        &mut column,
+                        config.line_endings,
+                    );
                     continue;
                 }
                 let Some(current) = char_at(source, offset) else {
@@ -838,7 +1012,7 @@ pub(crate) fn tokenize(source: &str, config: &LexerConfig<'_>) -> Vec<SourceToke
             advance_character(&mut offset, &mut column, character);
 
             while offset < source.len() {
-                if let Some(width) = newline_width(source, offset) {
+                if let Some(width) = newline_width(source, offset, config.line_endings) {
                     if !rule.allows_newlines {
                         break;
                     }
@@ -850,9 +1024,14 @@ pub(crate) fn tokenize(source: &str, config: &LexerConfig<'_>) -> Vec<SourceToke
                 let Some(current) = char_at(source, offset) else {
                     break;
                 };
+                if !rule.allows_newlines && current == '\r' {
+                    break;
+                }
                 if rule.escape == Some(current) {
                     advance_character(&mut offset, &mut column, current);
-                    if newline_width(source, offset).is_some() {
+                    if newline_width(source, offset, config.line_endings).is_some()
+                        || (!rule.allows_newlines && char_at(source, offset) == Some('\r'))
+                    {
                         break;
                     }
                     if let Some(escaped) = char_at(source, offset) {
@@ -936,12 +1115,18 @@ pub(crate) fn tokenize(source: &str, config: &LexerConfig<'_>) -> Vec<SourceToke
     tokens
 }
 
-fn line_comment_ends(source: &str, offset: usize, terminator: LineCommentTerminator) -> bool {
+fn line_comment_ends(
+    source: &str,
+    offset: usize,
+    terminator: LineCommentTerminator,
+    line_endings: LineEndingPolicy,
+) -> bool {
     match terminator {
-        LineCommentTerminator::AnyNewline => newline_width(source, offset).is_some(),
+        LineCommentTerminator::AnyNewline => newline_width(source, offset, line_endings).is_some(),
         LineCommentTerminator::LfOrCrlf => {
             source[offset..].starts_with('\n') || source[offset..].starts_with("\r\n")
         }
+        LineCommentTerminator::LfOnly => source[offset..].starts_with('\n'),
     }
 }
 
@@ -949,14 +1134,17 @@ fn char_at(source: &str, offset: usize) -> Option<char> {
     source.get(offset..)?.chars().next()
 }
 
-fn newline_width(source: &str, offset: usize) -> Option<usize> {
+fn newline_width(source: &str, offset: usize, line_endings: LineEndingPolicy) -> Option<usize> {
     let remaining = source.get(offset..)?;
-    if remaining.starts_with("\r\n") {
-        Some(2)
-    } else if remaining.starts_with('\n') || remaining.starts_with('\r') {
-        Some(1)
-    } else {
-        None
+    match line_endings {
+        LineEndingPolicy::Universal if remaining.starts_with("\r\n") => Some(2),
+        LineEndingPolicy::Universal
+            if remaining.starts_with('\n') || remaining.starts_with('\r') =>
+        {
+            Some(1)
+        }
+        LineEndingPolicy::LfOnly if remaining.starts_with('\n') => Some(1),
+        _ => None,
     }
 }
 
@@ -976,9 +1164,10 @@ fn push_newline(
     offset: &mut usize,
     line: &mut usize,
     column: &mut usize,
+    line_endings: LineEndingPolicy,
 ) {
     let start = *offset;
-    let width = newline_width(source, start).expect("caller checked for a newline");
+    let width = newline_width(source, start, line_endings).expect("caller checked for a newline");
     tokens.push(SourceToken {
         kind: SourceTokenKind::Newline,
         byte_range: start..start + width,

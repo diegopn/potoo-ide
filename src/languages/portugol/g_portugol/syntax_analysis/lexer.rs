@@ -1,11 +1,12 @@
 use crate::languages::source::{
-    LexerConfig, LineCommentTerminator, QuoteRule, SourceIndex, SourceToken, SourceTokenKind,
-    token_text, tokenize,
+    LexerConfig, LineCommentTerminator, LineEndingPolicy, QuoteRule, SourceIndex, SourceToken,
+    source_view, tokenize,
 };
 
 pub(super) const CONFIG: LexerConfig<'static> = LexerConfig {
     line_comments: &["//"],
     line_comment_terminator: LineCommentTerminator::LfOrCrlf,
+    line_endings: LineEndingPolicy::Universal,
     block_comments: &[("/*", "*/")],
     quote_rules: &[
         QuoteRule {
@@ -30,69 +31,15 @@ pub(super) fn tokens(source: &str) -> Vec<SourceToken> {
 }
 
 pub(crate) fn source_line_code(source: &str, line: usize) -> String {
-    let source_view = source_view(source, true);
-    SourceIndex::new_ignoring_leading_bom(&source_view)
+    let view = source_view(source, &tokens(source), true);
+    SourceIndex::new_ignoring_leading_bom(&view)
         .line_text(line)
         .unwrap_or("")
         .to_owned()
 }
 
 pub(crate) fn without_literals_and_comments(source: &str) -> String {
-    source_view(source, false)
-}
-
-fn source_view(source: &str, preserve_literals: bool) -> String {
-    let tokens = tokens(source);
-    let mut result = String::with_capacity(source.len());
-    let mut cursor = 0;
-
-    for token in tokens {
-        let range = token.byte_range.clone();
-        let Some(gap) = source.get(cursor..range.start) else {
-            continue;
-        };
-        result.push_str(&mask_comment_gap(gap));
-        let Some(text) = token_text(source, &token) else {
-            continue;
-        };
-        match token.kind {
-            SourceTokenKind::Literal if !preserve_literals => {
-                result.push_str(&mask_non_newline_characters(text));
-            }
-            _ => result.push_str(text),
-        }
-        cursor = range.end;
-    }
-
-    if let Some(gap) = source.get(cursor..) {
-        result.push_str(&mask_comment_gap(gap));
-    }
-    result
-}
-
-fn mask_comment_gap(gap: &str) -> String {
-    gap.chars()
-        .map(|character| {
-            if character.is_whitespace() || character == '\u{feff}' {
-                character
-            } else {
-                ' '
-            }
-        })
-        .collect()
-}
-
-fn mask_non_newline_characters(value: &str) -> String {
-    value
-        .chars()
-        .map(|character| {
-            if matches!(character, '\n' | '\r' | '\t') {
-                character
-            } else {
-                ' '
-            }
-        })
-        .collect()
+    source_view(source, &tokens(source), false)
 }
 
 #[cfg(test)]

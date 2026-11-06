@@ -471,6 +471,14 @@ pub(super) fn translate(portuguese: &'static str) -> &'static str {
         "importação" => "import",
         "não identificada" => "unrecognized",
         "A chamada" => "The call",
+        "chama o módulo e continua a execução depois que ele termina" => {
+            "calls the module and resumes execution when it finishes"
+        }
+        "No Mapler, um módulo reúne instruções que podem ser executadas em diferentes pontos do algoritmo." => {
+            "In Mapler, a module groups instructions that can run at different points in the algorithm."
+        }
+        "Altere uma instrução do módulo" => "Change an instruction in the module",
+        "e acompanhe a execução depois da chamada" => "and follow execution after the call",
         "obtém dados de entrada para o programa" => "reads input for the program",
         "A instrução de entrada fornece valores para o programa usar." => {
             "An input instruction provides values for the program to use."

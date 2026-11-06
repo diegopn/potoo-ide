@@ -712,6 +712,55 @@ fim";
     }
 
     #[test]
+    fn mapler_declarations_use_mapler_type_spelling_and_explain_the_value() {
+        let source = "variaveis\nativo: logico;\ninicio\nfim.";
+        let hint = learning_hint(source, 2, Language::Mapler);
+
+        assert_eq!(hint.topic, LearningTopic::Variable);
+        assert_eq!(hint.variables[0].type_name, "logico");
+        let (explanation, _, _) = learning_copy(&hint, UiLanguage::Portuguese);
+        assert!(explanation.contains("`logico`"), "{explanation}");
+        assert!(
+            explanation.contains("valor verdadeiro ou falso"),
+            "{explanation}"
+        );
+        let (english, _, _) = learning_copy(&hint, UiLanguage::English);
+        assert!(english.contains("`logico`"), "{english}");
+        assert!(english.contains("true or false value"), "{english}");
+        let (spanish, _, _) = learning_copy(&hint, UiLanguage::Spanish);
+        assert!(spanish.contains("`logico`"), "{spanish}");
+        assert!(spanish.contains("valor verdadero o falso"), "{spanish}");
+    }
+
+    #[test]
+    fn mapler_module_calls_use_semicolon_syntax_and_module_guidance() {
+        let source = "variaveis executar: modulo;\ninicio\nexecutar;\nfim.\nmodulo executar;\nescrever \"feito\";\nfim modulo;";
+        let hint = learning_hint(source, 3, Language::Mapler);
+
+        assert_eq!(hint.topic, LearningTopic::Call);
+        assert_eq!(
+            hint.call.as_ref().map(|call| call.member.as_str()),
+            Some("executar")
+        );
+        assert!(hint.call.as_ref().unwrap().arguments.is_empty());
+        let (explanation, concept, experiment) = learning_copy(&hint, UiLanguage::Portuguese);
+        assert!(explanation.contains("`executar;`"), "{explanation}");
+        assert!(!explanation.contains("executar()"), "{explanation}");
+        assert!(concept.contains("módulo"), "{concept}");
+        assert!(experiment.contains("módulo"), "{experiment}");
+        let (english_explanation, english_concept, english_experiment) =
+            learning_copy(&hint, UiLanguage::English);
+        assert!(english_explanation.contains("calls the module"));
+        assert!(english_concept.contains("In Mapler"));
+        assert!(english_experiment.contains("instruction in the module"));
+        let (spanish_explanation, spanish_concept, spanish_experiment) =
+            learning_copy(&hint, UiLanguage::Spanish);
+        assert!(spanish_explanation.contains("llama al módulo"));
+        assert!(spanish_concept.contains("En Mapler"));
+        assert!(spanish_experiment.contains("instrucción del módulo"));
+    }
+
+    #[test]
     fn learning_copy_explains_potigol_input_types_and_dialects() {
         for (command, description) in [
             ("leia_inteiro", "inteiro"),

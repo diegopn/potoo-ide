@@ -129,6 +129,12 @@ pub(super) fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (Strin
     let call_name = hint.call.as_ref().map_or_else(
         || name.to_owned(),
         |call| {
+            if hint.language == Language::Mapler
+                && call.receiver.is_none()
+                && call.arguments.is_empty()
+            {
+                return call.member.clone();
+            }
             let callee = call.receiver.as_ref().map_or_else(
                 || call.member.clone(),
                 |receiver| format!("{receiver}.{}", call.member),
@@ -377,6 +383,11 @@ pub(super) fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (Strin
                 )
             }
         }
+        LearningTopic::Call if hint.language == Language::Mapler => format!(
+            "{} `{call_name};` {}.",
+            text("A instrução"),
+            text("chama o módulo e continua a execução depois que ele termina")
+        ),
         LearningTopic::Call => format!(
             "{} `{call_name}` {}.",
             text("A chamada"),
@@ -465,6 +476,9 @@ pub(super) fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (Strin
         LearningTopic::Assignment => {
             text("A expressão à direita do operador produz o valor armazenado.")
         }
+        LearningTopic::Call if hint.language == Language::Mapler => text(
+            "No Mapler, um módulo reúne instruções que podem ser executadas em diferentes pontos do algoritmo.",
+        ),
         LearningTopic::Call => text(
             "Uma chamada transfere a execução para uma função ou operação e depois continua no ponto seguinte.",
         ),
@@ -672,6 +686,11 @@ pub(super) fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (Strin
             ),
             _ => text("Altere o valor à direita do operador e observe a variável."),
         },
+        LearningTopic::Call if hint.language == Language::Mapler => format!(
+            "{} `{call_name}` {}.",
+            text("Altere uma instrução do módulo"),
+            text("e acompanhe a execução depois da chamada")
+        ),
         LearningTopic::Call
             if hint
                 .call

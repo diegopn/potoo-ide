@@ -1,10 +1,11 @@
 use crate::languages::source::{
-    LexerConfig, LineCommentTerminator, QuoteRule, SourceToken, tokenize,
+    LexerConfig, LineCommentTerminator, LineEndingPolicy, QuoteRule, SourceToken, tokenize,
 };
 
 pub(super) const SHARED_CONFIG: LexerConfig<'static> = LexerConfig {
     line_comments: &["//"],
     line_comment_terminator: LineCommentTerminator::AnyNewline,
+    line_endings: LineEndingPolicy::Universal,
     block_comments: &[("/*", "*/")],
     quote_rules: &[
         QuoteRule {

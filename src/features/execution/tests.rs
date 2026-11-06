@@ -1484,6 +1484,160 @@ fn gportugol_debugger_does_not_execute_truncated_loops_before_static_errors() {
 }
 
 #[test]
+fn mapler_debugger_does_not_execute_truncated_loops_before_static_errors() {
+    let sources = [
+        "variaveis i: inteiro;\ninicio\ni <- 0;\nenquanto i < 1 faca\ni <- i + 1;\nescrever \"DENTRO\";\n@;\nescrever \"DEPOIS\";\nfim enquanto;\nfim.",
+        "variaveis i: inteiro;\ninicio\npara i de 1 ate 2 faca\nescrever \"DENTRO\";\n@;\nescrever \"DEPOIS\";\nfim para;\nfim.",
+        "variaveis i: inteiro;\ninicio\ni <- 0;\nrepita\ni <- i + 1;\nescrever \"DENTRO\";\n@;\nescrever \"DEPOIS\";\nate i >= 1;\nfim.",
+    ];
+
+    for source in sources {
+        let expected = potoo_mapler_interpreter::parse(source)
+            .expect_err("the loop body contains a lexical error")
+            .remove(0);
+        let (output, debugger_lines, diagnostics, stopped) =
+            collect_debug_error(start(source.to_owned(), Language::Mapler, None, None, true));
+
+        assert!(
+            output.is_empty(),
+            "a prefix cut inside an open loop must not execute its body: {output:?}"
+        );
+        assert!(!stopped);
+        assert_eq!(debugger_lines.last(), Some(&expected.line));
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].kind, ExecutionDiagnosticKind::Lexical);
+        assert_eq!(diagnostics[0].message, expected.message);
+        assert_eq!(diagnostics[0].line, expected.line);
+        assert_eq!(diagnostics[0].column, expected.column);
+    }
+}
+
+#[test]
+fn mapler_debugger_keeps_completed_loops_before_a_later_static_error() {
+    let cases = [
+        (
+            "variaveis i: inteiro;\ninicio\ni <- 0;\nenquanto i < 1 faca\ni <- i + 1;\nescrever \"LAÇO\";\nfim enquanto;\nescrever \"ANTES\";\n@;\nescrever \"DEPOIS\";\nfim.",
+            "LAÇO\nANTES\n",
+        ),
+        (
+            "variaveis i: inteiro;\ninicio\npara i de 1 ate 1 passo 1 faca\nescrever \"LAÇO\";\nfim para;\nescrever \"ANTES\";\n@;\nescrever \"DEPOIS\";\nfim.",
+            "LAÇO\nANTES\n",
+        ),
+        (
+            "variaveis i: inteiro;\ninicio\ni <- 0;\nrepita\ni <- i + 1;\nescrever \"LAÇO\";\nate i < 1;\nescrever \"ANTES\";\n@;\nescrever \"DEPOIS\";\nfim.",
+            "LAÇO\nANTES\n",
+        ),
+    ];
+
+    for (case_index, (source, expected_output)) in cases.into_iter().enumerate() {
+        let expected = potoo_mapler_interpreter::parse(source)
+            .expect_err("the later invalid token should be diagnosed")
+            .remove(0);
+        let (output, _debugger_lines, diagnostics, stopped) =
+            collect_debug_error(start(source.to_owned(), Language::Mapler, None, None, true));
+
+        assert_eq!(
+            output,
+            expected_output,
+            "case {case_index} repeated unexpectedly; output length {} and prefix {:?}",
+            output.len(),
+            output.chars().take(80).collect::<String>()
+        );
+        assert!(!output.contains("DEPOIS"));
+        assert!(!stopped);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].message, expected.message);
+        assert_eq!(diagnostics[0].line, expected.line);
+        assert_eq!(diagnostics[0].column, expected.column);
+    }
+}
+
+#[test]
+fn mapler_debugger_executes_valid_same_line_prefix_and_keeps_parser_positions() {
+    let lf = "variaveis\ninicio\nescrever \"ação\"; @; escrever \"DEPOIS\";\nfim.";
+    let crlf = lf.replace('\n', "\r\n");
+    let bare_cr = "variaveis\ninicio\rescrever \"ação\"; @; escrever \"DEPOIS\";\nfim.";
+
+    for source in [lf.to_owned(), crlf, bare_cr.to_owned()] {
+        let expected = potoo_mapler_interpreter::parse(&source)
+            .expect_err("the standalone invalid token should be diagnosed")
+            .remove(0);
+        let (output, debugger_lines, diagnostics, stopped) =
+            collect_debug_error(start(source.clone(), Language::Mapler, None, None, true));
+
+        assert_eq!(output, "ação\n", "{source:?}");
+        assert!(!output.contains("DEPOIS"));
+        assert!(!stopped);
+        assert!(debugger_lines.contains(&expected.line), "{source:?}");
+        assert_eq!(diagnostics.len(), 1, "{source:?}");
+        assert_eq!(diagnostics[0].kind, ExecutionDiagnosticKind::Lexical);
+        assert_eq!(diagnostics[0].message, expected.message);
+        assert_eq!(diagnostics[0].line, expected.line);
+        assert_eq!(diagnostics[0].column, expected.column);
+    }
+}
+
+#[test]
+fn mapler_debugger_fails_closed_for_empty_and_ambiguous_prefixes() {
+    let sources = [
+        "@\nvariaveis\ninicio\nescrever \"DEPOIS\";\nfim.",
+        "variaveis x: inteiro;\ninicio\nescrever \"ANTES\";\nx <- (1 + @;\nescrever \"DEPOIS\";\nfim.",
+    ];
+
+    for source in sources {
+        let expected = potoo_mapler_interpreter::parse(source)
+            .expect_err("the invalid or incomplete prefix must keep its diagnostic")
+            .remove(0);
+        let (output, _debugger_lines, diagnostics, stopped) =
+            collect_debug_error(start(source.to_owned(), Language::Mapler, None, None, true));
+
+        assert!(output.is_empty(), "unsafe code must not run: {output:?}");
+        assert!(!stopped);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].message, expected.message);
+        assert_eq!(diagnostics[0].line, expected.line);
+        assert_eq!(diagnostics[0].column, expected.column);
+    }
+}
+
+#[test]
+fn mapler_debugger_reports_an_earlier_same_line_runtime_failure_first() {
+    let source =
+        "variaveis valores: vetor [1..2] de inteiro;\ninicio\nescrever valores[3]; @;\nfim.";
+    let static_diagnostic = potoo_mapler_interpreter::parse(source)
+        .expect_err("the invalid token should be diagnosed")
+        .remove(0);
+    let (_output, _debugger_lines, diagnostics, stopped) =
+        collect_debug_error(start(source.to_owned(), Language::Mapler, None, None, true));
+
+    assert!(!stopped);
+    assert_eq!(diagnostics[0].kind, ExecutionDiagnosticKind::Runtime);
+    assert!(diagnostics[0].message.contains("índice fora dos limites"));
+    assert_eq!(diagnostics[0].line, static_diagnostic.line);
+    assert!(diagnostics[0].column < static_diagnostic.column);
+}
+
+#[test]
+fn mapler_debugger_does_not_run_a_truncated_module_called_by_main() {
+    let source = "variaveis executar: modulo;\ninicio\nexecutar;\nfim.\nmodulo executar;\nescrever \"DENTRO\";\n@;\nfim modulo;";
+    let expected = potoo_mapler_interpreter::parse(source)
+        .expect_err("the invalid token should make the module incomplete")
+        .remove(0);
+    let (output, _debugger_lines, diagnostics, stopped) =
+        collect_debug_error(start(source.to_owned(), Language::Mapler, None, None, true));
+
+    assert!(
+        output.is_empty(),
+        "an incomplete module must not run: {output:?}"
+    );
+    assert!(!stopped);
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].message, expected.message);
+    assert_eq!(diagnostics[0].line, expected.line);
+    assert_eq!(diagnostics[0].column, expected.column);
+}
+
+#[test]
 fn gportugol_debugger_executes_the_valid_prefix_once_before_a_static_error() {
     let source = "algoritmo teste;\ninício\n imprima(\"ANTES\");\n imprima(\"ação\"); @; imprima(\"DEPOIS\");\nfim";
     let expected = potoo_gportugol_interpreter::parse(source)

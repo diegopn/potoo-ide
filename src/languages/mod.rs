@@ -37,7 +37,6 @@ mod syntax_analysis_tests {
         let source = "before; bad @; after\nsecond line";
         let views = [
             calango::syntax_analysis::views::mask_diagnostic_statement,
-            portugol::mapler::syntax_analysis::views::mask_diagnostic_statement,
             portugol::visualg::syntax_analysis::views::mask_diagnostic_statement,
             potigol::syntax_analysis::views::mask_diagnostic_statement,
         ];
@@ -53,6 +52,14 @@ mod syntax_analysis_tests {
         let recovered =
             portugol::g_portugol::syntax_analysis::views::mask_diagnostic_statement(source, 1, 13)
                 .expect("the G-Portugol statement boundary should be safe");
+        assert!(recovered.starts_with("before;"), "{recovered:?}");
+        assert!(!recovered.contains("bad @"), "{recovered:?}");
+        assert!(recovered.contains("after"), "{recovered:?}");
+        assert!(recovered.ends_with("second line"), "{recovered:?}");
+
+        let recovered =
+            portugol::mapler::syntax_analysis::views::mask_diagnostic_statement(source, 1, 13)
+                .expect("the Mapler statement boundary should be safe");
         assert!(recovered.starts_with("before;"), "{recovered:?}");
         assert!(!recovered.contains("bad @"), "{recovered:?}");
         assert!(recovered.contains("after"), "{recovered:?}");
@@ -89,7 +96,6 @@ mod syntax_analysis_tests {
         let views = [
             calango::syntax_analysis::views::without_literals_and_comments,
             portugol::g_portugol::syntax_analysis::views::without_literals_and_comments,
-            portugol::mapler::syntax_analysis::views::without_literals_and_comments,
             portugol::studio_20::syntax_analysis::views::without_literals_and_comments,
             portugol::visualg::syntax_analysis::views::without_literals_and_comments,
             potigol::syntax_analysis::views::without_literals_and_comments,
@@ -102,6 +108,13 @@ mod syntax_analysis_tests {
             assert!(!code.contains("valores[9]"), "{code:?}");
             assert!(!code.contains("valores[10]"), "{code:?}");
         }
+
+        let mapler = portugol::mapler::syntax_analysis::views::without_literals_and_comments(
+            "valores[2] // valores[9] \"valores[10]\"\n",
+        );
+        assert!(mapler.contains("valores[2]"), "{mapler:?}");
+        assert!(!mapler.contains("valores[9]"), "{mapler:?}");
+        assert!(!mapler.contains("valores[10]"), "{mapler:?}");
 
         let potigol = potigol::syntax_analysis::views::without_literals_and_comments(
             "valores[2] # valores[8]\n",
