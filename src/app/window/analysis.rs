@@ -78,7 +78,7 @@ pub(super) fn merge_editor_diagnostics(hint: &mut LearningHint, diagnostics: &[E
                 crate::features::learning::LearningProblemKind::Runtime
             }
             diagnostics::DiagnosticCategory::StaticAnalysis => {
-                crate::features::learning::LearningProblemKind::PossibleLogic
+                crate::features::learning::LearningProblemKind::StaticAnalysis
             }
         };
         if hint.problems.iter().any(|problem| {

@@ -27,23 +27,26 @@ pub(crate) fn analyze(source: &str) -> Vec<SourceDiagnostic> {
         })
         .collect::<Vec<_>>();
 
-    if let Some((start, line, column)) =
-        super::syntax_analysis::views::unclosed_block_comment(source)
-    {
-        let byte_start = source
-            .char_indices()
-            .nth(start)
-            .map_or(source.len(), |(offset, _)| offset);
-        diagnostics.push(SourceDiagnostic {
-            kind: SourceDiagnosticKind::StaticAnalysis,
-            message: "Comentário de bloco sem fechamento".to_owned(),
-            line,
-            column,
-            byte_range: Some(byte_start..source.len()),
-        });
+    if let Some(warning) = unclosed_block_comment_diagnostic(source) {
+        diagnostics.push(warning);
     }
 
     diagnostics
+}
+
+pub(crate) fn unclosed_block_comment_diagnostic(source: &str) -> Option<SourceDiagnostic> {
+    let (start, line, column) = super::syntax_analysis::views::unclosed_block_comment(source)?;
+    let byte_start = source
+        .char_indices()
+        .nth(start)
+        .map_or(source.len(), |(offset, _)| offset);
+    Some(SourceDiagnostic {
+        kind: SourceDiagnosticKind::StaticAnalysis,
+        message: "Comentário de bloco sem fechamento".to_owned(),
+        line,
+        column,
+        byte_range: Some(byte_start..source.len()),
+    })
 }
 
 #[cfg(test)]

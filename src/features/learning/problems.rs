@@ -9,7 +9,7 @@ pub(super) fn learning_problem_kind(
         crate::features::diagnostics::DiagnosticCategory::Type => LearningProblemKind::Type,
         crate::features::diagnostics::DiagnosticCategory::Runtime => LearningProblemKind::Runtime,
         crate::features::diagnostics::DiagnosticCategory::StaticAnalysis => {
-            LearningProblemKind::PossibleLogic
+            LearningProblemKind::StaticAnalysis
         }
     }
 }
@@ -20,9 +20,13 @@ pub(super) fn diagnostic_problem(
     column: usize,
     message: String,
 ) -> LearningProblem {
+    let suggestion = diagnostic_suggestion(kind, &message);
     LearningProblem {
         kind,
-        severity: if kind == LearningProblemKind::PossibleLogic {
+        severity: if matches!(
+            kind,
+            LearningProblemKind::PossibleLogic | LearningProblemKind::StaticAnalysis
+        ) {
             LearningSeverity::Warning
         } else {
             LearningSeverity::Error
@@ -31,7 +35,23 @@ pub(super) fn diagnostic_problem(
         column,
         text: LearningProblemText::InterpreterDiagnostic,
         message,
-        suggestion: None,
+        suggestion,
+    }
+}
+
+pub(super) fn diagnostic_suggestion(kind: LearningProblemKind, message: &str) -> Option<String> {
+    match (kind, message) {
+        (
+            LearningProblemKind::Runtime,
+            "divisão por zero"
+            | "divisão inteira por zero"
+            | "division by zero"
+            | "integer division by zero",
+        ) => Some("Confira se o divisor pode ser zero antes de fazer a divisão.".to_owned()),
+        (LearningProblemKind::StaticAnalysis, "Comentário de bloco sem fechamento") => {
+            Some("Adicione `*/` para fechar o comentário de bloco.".to_owned())
+        }
+        _ => None,
     }
 }
 
@@ -74,7 +94,7 @@ pub(super) fn constant_index_problems(
     is_cancelled: &impl Fn() -> bool,
 ) -> Option<Vec<LearningProblem>> {
     let source_code = (language.profile().without_literals_and_comments)(source);
-    let arrays = declared_array_bounds(&source_code, language, is_cancelled)?;
+    let arrays = declared_array_bounds(source, &source_code, language, is_cancelled)?;
     let code = (language.profile().without_literals_and_comments)(selected_statement);
     let characters = code.chars().collect::<Vec<_>>();
     let positions = statement_positions(&characters, line_number, statement_column, language);
@@ -177,11 +197,12 @@ fn statement_positions(
 
 fn declared_array_bounds(
     source: &str,
+    masked_source: &str,
     language: Language,
     is_cancelled: &impl Fn() -> bool,
 ) -> Option<HashMap<String, Vec<SourceDimension>>> {
     match language.profile().declared_array_bounds {
-        Some(adapter) => adapter(source, is_cancelled),
+        Some(adapter) => adapter(source, masked_source, is_cancelled),
         None => Some(HashMap::new()),
     }
 }
@@ -315,7 +336,7 @@ mod constant_index_location_tests {
     #[test]
     fn constant_index_location_tracks_lf_only_and_universal_line_endings() {
         let calango = constant_index_problems(
-            "inteiro dados[3]",
+            "algoritmo dados;\nprincipal\ninteiro dados[3];\nfimPrincipal",
             "escreva(\r\n dados[3]\r\n)",
             4,
             2,

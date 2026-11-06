@@ -196,8 +196,12 @@ pub(super) fn translate(portuguese: &'static str) -> &'static str {
         "Análise estática" => "Static analysis",
         "Erro durante a execução" => "Runtime error",
         "Análise incompleta" => "Analysis incomplete",
+        "Aviso de análise" => "Analysis warning",
         "A análise foi interrompida antes de recuperar toda a estrutura do programa." => {
             "Analysis stopped before the full program structure could be recovered."
+        }
+        "A análise encontrou um aviso nesta linha." => {
+            "The analysis found a warning on this line."
         }
         "Possível problema lógico" => "Possible logic issue",
         "Índice fora dos limites" => "Index out of bounds",
@@ -209,6 +213,18 @@ pub(super) fn translate(portuguese: &'static str) -> &'static str {
         }
         "Confira se a condição deveria comparar uma variável." => {
             "Check whether the condition should compare a variable."
+        }
+        "Confira se o divisor pode ser zero antes de fazer a divisão." => {
+            "Check whether the divisor can be zero before dividing."
+        }
+        "Adicione `*/` para fechar o comentário de bloco." => {
+            "Add `*/` to close the block comment."
+        }
+        "Informe o valor ou a expressão que será exibida após `escreva`." => {
+            "Provide the value or expression to display after `escreva`."
+        }
+        "Informe o valor ou a expressão que será exibida após `imprima`." => {
+            "Provide the value or expression to display after `imprima`."
         }
         "O índice {value} está fora dos limites de `{name}` ({lower} a {upper})." => {
             "Index {value} is outside the bounds of `{name}` ({lower} to {upper})."

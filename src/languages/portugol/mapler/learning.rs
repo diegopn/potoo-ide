@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use crate::languages::model::{
     SourceCall, SourceConstruct, SourceDiagnostic, SourceDiagnosticKind, SourceDimension,
     SourceLineAnalysis, SourceLineAnalysisOutcome, SourceSymbol,
@@ -212,6 +214,49 @@ fn source_variable(variable: &VariableDeclaration) -> SourceSymbol {
             .unwrap_or_default(),
         initializer: None,
     }
+}
+
+pub(crate) fn profile_declared_array_bounds(
+    source: &str,
+    _masked_source: &str,
+    is_cancelled: &dyn Fn() -> bool,
+) -> Option<HashMap<String, Vec<SourceDimension>>> {
+    if is_cancelled() {
+        return None;
+    }
+    let program = parse(source).ok();
+    if is_cancelled() {
+        return None;
+    }
+    let Some(program) = program else {
+        return Some(HashMap::new());
+    };
+
+    let mut bounds = HashMap::new();
+    let mut ambiguous = HashSet::new();
+    for variable in &program.variables {
+        if is_cancelled() {
+            return None;
+        }
+        let symbol = source_variable(variable);
+        if symbol.dimensions.is_empty()
+            || symbol
+                .dimensions
+                .iter()
+                .any(|dimension| dimension.lower_bound.is_none() || dimension.upper_bound.is_none())
+        {
+            continue;
+        }
+        let name = symbol.name.to_lowercase();
+        if ambiguous.contains(&name) {
+            continue;
+        }
+        if bounds.insert(name.clone(), symbol.dimensions).is_some() {
+            bounds.remove(&name);
+            ambiguous.insert(name);
+        }
+    }
+    if is_cancelled() { None } else { Some(bounds) }
 }
 
 #[cfg(test)]

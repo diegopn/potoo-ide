@@ -13,7 +13,7 @@ pub(crate) type SourceStatementRangeAdapter = fn(&str, usize, usize) -> Option<R
 pub(crate) type BlankCommentAdapter = fn(&str, usize) -> bool;
 pub(crate) type LiteralMaskAdapter = fn(&str) -> String;
 pub(crate) type ArrayBoundsAdapter =
-    fn(&str, &dyn Fn() -> bool) -> Option<HashMap<String, Vec<SourceDimension>>>;
+    fn(&str, &str, &dyn Fn() -> bool) -> Option<HashMap<String, Vec<SourceDimension>>>;
 pub(crate) type DebuggerPrefixAdapter = fn(&str, usize, usize) -> Option<String>;
 pub(crate) type ExecutionAdapter = fn(&str, &mut WorkerIo) -> Result<(), Vec<ExecutionDiagnostic>>;
 pub(crate) type LearningAdapter = fn(&str, usize, &dyn Fn() -> bool) -> SourceLineAnalysisOutcome;
@@ -137,7 +137,9 @@ static PROFILES: [LanguageProfile; 6] = [
             crate::languages::portugol::g_portugol::syntax_analysis::views::is_blank_or_line_comment,
         without_literals_and_comments:
             crate::languages::portugol::g_portugol::syntax_analysis::views::without_literals_and_comments,
-        declared_array_bounds: None,
+        declared_array_bounds: Some(
+            crate::languages::portugol::g_portugol::learning::profile_declared_array_bounds,
+        ),
         debugger_prefix: Some(
             crate::languages::portugol::g_portugol::syntax_analysis::views::debugger_prefix,
         ),
@@ -186,7 +188,9 @@ static PROFILES: [LanguageProfile; 6] = [
             crate::languages::portugol::mapler::syntax_analysis::views::is_blank_or_line_comment,
         without_literals_and_comments:
             crate::languages::portugol::mapler::syntax_analysis::views::without_literals_and_comments,
-        declared_array_bounds: None,
+        declared_array_bounds: Some(
+            crate::languages::portugol::mapler::learning::profile_declared_array_bounds,
+        ),
         debugger_prefix: Some(
             crate::languages::portugol::mapler::syntax_analysis::views::debugger_prefix,
         ),
@@ -220,7 +224,8 @@ mod tests {
     type SourceLineCode = fn(&str, usize) -> String;
     type BlankComment = fn(&str, usize) -> bool;
     type LiteralMask = fn(&str) -> String;
-    type ArrayBounds = fn(&str, &dyn Fn() -> bool) -> Option<HashMap<String, Vec<SourceDimension>>>;
+    type ArrayBounds =
+        fn(&str, &str, &dyn Fn() -> bool) -> Option<HashMap<String, Vec<SourceDimension>>>;
     type DebuggerPrefix = fn(&str, usize, usize) -> Option<String>;
     type Execution =
         fn(&str, &mut WorkerIo) -> Result<(), Vec<crate::features::execution::ExecutionDiagnostic>>;
@@ -294,7 +299,10 @@ mod tests {
                 crate::languages::portugol::g_portugol::syntax_analysis::views::source_line_code,
                 crate::languages::portugol::g_portugol::syntax_analysis::views::is_blank_or_line_comment,
                 crate::languages::portugol::g_portugol::syntax_analysis::views::without_literals_and_comments,
-                None,
+                Some(
+                    crate::languages::portugol::g_portugol::learning::profile_declared_array_bounds
+                        as ArrayBounds,
+                ),
                 Some(
                     crate::languages::portugol::g_portugol::syntax_analysis::views::debugger_prefix,
                 ),
@@ -320,7 +328,10 @@ mod tests {
                 crate::languages::portugol::mapler::syntax_analysis::views::source_line_code,
                 crate::languages::portugol::mapler::syntax_analysis::views::is_blank_or_line_comment,
                 crate::languages::portugol::mapler::syntax_analysis::views::without_literals_and_comments,
-                None,
+                Some(
+                    crate::languages::portugol::mapler::learning::profile_declared_array_bounds
+                        as ArrayBounds,
+                ),
                 Some(crate::languages::portugol::mapler::syntax_analysis::views::debugger_prefix),
                 crate::languages::portugol::mapler::runtime::execute,
                 &crate::languages::portugol::mapler::completion::ADAPTER,

@@ -6,10 +6,7 @@ use crate::languages::{
         SourceCall, SourceConstruct, SourceDiagnostic, SourceDiagnosticKind, SourceDimension,
         SourceLineAnalysis, SourceLineAnalysisOutcome, SourceSymbol,
     },
-    source::{
-        RecoveryStatus, SourceIndex, read_identifier, read_integer, recover_parse, skip_spaces,
-        skip_to_top_level_comma,
-    },
+    source::{RecoveryStatus, SourceIndex, recover_parse},
 };
 use potoo_calango_interpreter::{Diagnostic, DiagnosticKind, ast::*, parse};
 
@@ -337,80 +334,97 @@ fn empty_analysis(line: usize, column: usize, construct: SourceConstruct) -> Sou
     }
 }
 
-pub(crate) fn declared_array_bounds(
+fn collect_declared_array_bounds(
     source: &str,
-    is_cancelled: &impl Fn() -> bool,
+    is_cancelled: &dyn Fn() -> bool,
 ) -> Option<HashMap<String, Vec<SourceDimension>>> {
+    if is_cancelled() {
+        return None;
+    }
+    let program = match parse(source) {
+        Ok(program) => program,
+        Err(_) => return Some(HashMap::new()),
+    };
+    if is_cancelled() {
+        return None;
+    }
+
     let mut arrays = HashMap::new();
     let mut ambiguous = HashSet::new();
-    let source_index = SourceIndex::new_lf_only(source);
-    for line in 1..=source_index.line_count() {
+    for routine in &program.routines {
+        for parameter in &routine.parameters {
+            if is_cancelled() {
+                return None;
+            }
+            insert_symbol_array_bounds(&source_parameter(parameter), &mut arrays, &mut ambiguous);
+        }
+        collect_statement_array_bounds(&routine.body, is_cancelled, &mut arrays, &mut ambiguous)?;
+    }
+    collect_statement_array_bounds(&program.main, is_cancelled, &mut arrays, &mut ambiguous)?;
+    if is_cancelled() { None } else { Some(arrays) }
+}
+
+fn collect_statement_array_bounds(
+    statements: &[Statement],
+    is_cancelled: &dyn Fn() -> bool,
+    arrays: &mut HashMap<String, Vec<SourceDimension>>,
+    ambiguous: &mut HashSet<String>,
+) -> Option<()> {
+    for statement in statements {
         if is_cancelled() {
             return None;
         }
-        let Some(source_line) = source_index.line_text(line) else {
-            continue;
-        };
-        let characters = source_line.trim().chars().collect::<Vec<_>>();
-        let mut cursor = 0;
-        let Some(type_name) = read_identifier(&characters, &mut cursor) else {
-            continue;
-        };
-        if !matches!(
-            type_name.to_lowercase().as_str(),
-            "inteiro" | "real" | "logico" | "caracter" | "caractere" | "cadeia"
-        ) {
-            continue;
+        match &statement.kind {
+            StatementKind::Declare(variables) => {
+                for variable in variables {
+                    if is_cancelled() {
+                        return None;
+                    }
+                    insert_symbol_array_bounds(&source_variable(variable), arrays, ambiguous);
+                }
+            }
+            StatementKind::If {
+                branches,
+                otherwise,
+            } => {
+                for (_, body) in branches {
+                    collect_statement_array_bounds(body, is_cancelled, arrays, ambiguous)?;
+                }
+                collect_statement_array_bounds(otherwise, is_cancelled, arrays, ambiguous)?;
+            }
+            StatementKind::While { body, .. }
+            | StatementKind::DoWhile { body, .. }
+            | StatementKind::For { body, .. } => {
+                collect_statement_array_bounds(body, is_cancelled, arrays, ambiguous)?;
+            }
+            StatementKind::Choose {
+                cases, otherwise, ..
+            } => {
+                for (_, body) in cases {
+                    collect_statement_array_bounds(body, is_cancelled, arrays, ambiguous)?;
+                }
+                collect_statement_array_bounds(otherwise, is_cancelled, arrays, ambiguous)?;
+            }
+            _ => {}
         }
-
-        read_array_declarations(&characters, cursor, &mut arrays, &mut ambiguous);
     }
-    Some(arrays)
+    Some(())
 }
 
-fn read_array_declarations(
-    characters: &[char],
-    mut cursor: usize,
+fn insert_symbol_array_bounds(
+    symbol: &SourceSymbol,
     arrays: &mut HashMap<String, Vec<SourceDimension>>,
     ambiguous: &mut HashSet<String>,
 ) {
-    loop {
-        skip_spaces(characters, &mut cursor);
-        let Some(name) = read_identifier(characters, &mut cursor) else {
-            break;
-        };
-        skip_spaces(characters, &mut cursor);
-        let mut dimensions = Vec::new();
-        while characters.get(cursor) == Some(&'[') {
-            cursor += 1;
-            skip_spaces(characters, &mut cursor);
-            let Some(size) = read_integer(characters, &mut cursor) else {
-                break;
-            };
-            skip_spaces(characters, &mut cursor);
-            if characters.get(cursor) != Some(&']') {
-                break;
-            }
-            cursor += 1;
-            dimensions.push(SourceDimension {
-                lower_bound: (size > 0).then_some(0),
-                upper_bound: (size > 0).then_some(size - 1),
-            });
-            skip_spaces(characters, &mut cursor);
-        }
-        if !dimensions.is_empty()
-            && dimensions
-                .iter()
-                .all(|dimension| dimension.upper_bound.is_some())
-        {
-            insert_unique_array_bounds(arrays, ambiguous, &name, dimensions);
-        }
-        cursor = skip_to_top_level_comma(characters, cursor);
-        if characters.get(cursor) != Some(&',') {
-            break;
-        }
-        cursor += 1;
+    if symbol.dimensions.is_empty()
+        || symbol
+            .dimensions
+            .iter()
+            .any(|dimension| dimension.lower_bound.is_none() || dimension.upper_bound.is_none())
+    {
+        return;
     }
+    insert_unique_array_bounds(arrays, ambiguous, &symbol.name, symbol.dimensions.clone());
 }
 
 fn insert_unique_array_bounds(
@@ -432,9 +446,10 @@ fn insert_unique_array_bounds(
 
 pub(crate) fn profile_declared_array_bounds(
     source: &str,
+    _masked_source: &str,
     is_cancelled: &dyn Fn() -> bool,
 ) -> Option<HashMap<String, Vec<SourceDimension>>> {
-    declared_array_bounds(source, &|| is_cancelled())
+    collect_declared_array_bounds(source, is_cancelled)
 }
 
 #[cfg(test)]

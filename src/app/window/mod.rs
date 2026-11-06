@@ -1621,6 +1621,34 @@ fim";
     }
 
     #[test]
+    fn learning_panel_keeps_one_gportugol_open_comment_warning_after_editor_merge() {
+        let source = "algoritmo aula;\ninício\n  /* comentário aberto";
+        let diagnostics = crate::features::diagnostics::analyze(
+            2,
+            "principal.gpt",
+            None,
+            Language::GPortugol,
+            source,
+        );
+        let mut hint = learning_hint(source, 3, Language::GPortugol);
+        merge_editor_diagnostics(&mut hint, &diagnostics);
+
+        let warnings = hint
+            .problems
+            .iter()
+            .filter(|problem| {
+                problem.kind == crate::features::learning::LearningProblemKind::StaticAnalysis
+                    && problem.message == "Comentário de bloco sem fechamento"
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(
+            warnings[0].suggestion.as_deref(),
+            Some("Adicione `*/` para fechar o comentário de bloco.")
+        );
+    }
+
+    #[test]
     fn atomic_save_replaces_file_contents_without_leaving_temporary_files() {
         let directory = std::env::temp_dir().join(format!(
             "potoo-atomic-save-{}-{}",

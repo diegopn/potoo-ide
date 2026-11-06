@@ -8,6 +8,9 @@ use crate::features::execution::{
 use crate::languages::model::{Language, SourceDiagnosticKind};
 use potoo_gportugol_interpreter::parse;
 
+#[path = "../../../tests/learning/coverage_matrix_tests.rs"]
+mod coverage_matrix_tests;
+
 #[test]
 fn learning_hint_tracks_active_line_and_updated_condition() {
     let source = "algoritmo \"votacao\"\nvar\nidade: inteiro\ninicio\nescreva(\"idade?\")\nleia(idade)\nse idade >= 18 entao\nescreval(\"sim\")\nfimse\nfimalgoritmo";
@@ -289,7 +292,7 @@ fn learning_hint_recommends_import_for_known_jerimum_calls() {
         );
         assert!(
             hint.problems.iter().any(|problem| {
-                problem.kind == LearningProblemKind::PossibleLogic
+                problem.kind == LearningProblemKind::StaticAnalysis
                     && problem.severity == LearningSeverity::Warning
                     && problem.message.contains("biblioteca Jerimum")
                     && problem.message.contains("use \"jerimum\"")
@@ -734,8 +737,11 @@ fn shared_runtime_diagnostics_are_shown_only_on_their_selected_source_line() {
             selected.problems.iter().any(|problem| {
                 problem.kind == LearningProblemKind::Runtime
                     && problem.message == "índice fora dos limites"
+                    && problem.line == 2
+                    && problem.column == 4
+                    && problem.suggestion.is_none()
             }),
-            "{fixture} lost the runtime diagnostic: {:?}",
+            "{fixture} lost or guessed advice for the runtime diagnostic: {:?}",
             selected.problems
         );
         assert!(
@@ -947,6 +953,18 @@ fn real_type_diagnostics_reach_learning_for_profiles_that_report_types() {
             "{fixture} lost its parser/checker type diagnostic: {:?}",
             hint.problems
         );
+        let problem = hint
+            .problems
+            .iter()
+            .find(|problem| {
+                problem.kind == LearningProblemKind::Type
+                    && problem.text == LearningProblemText::InterpreterDiagnostic
+                    && problem.line == diagnostic.line
+                    && problem.column == diagnostic.column
+            })
+            .unwrap_or_else(|| panic!("{fixture} changed the original type diagnostic location"));
+        assert_eq!(problem.message, diagnostic.message, "{fixture}");
+        assert_eq!(problem.suggestion, None, "{fixture}");
     }
 
     let visualg_diagnostics = (Language::Visualg.profile().diagnostics)(

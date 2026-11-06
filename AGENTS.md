@@ -15,8 +15,11 @@
 ## Structure
 
 - `src/main.rs` initializes GTK, registers bundled fonts and icons, loads the application stylesheet, and starts the Relm4 application.
-- `src/app.rs` assembles the main window, application state, dialogs, and interactions.
-- Reusable UI modules live in `src/components/`; keep component-specific view and model code with its component where practical.
+- `src/app/mod.rs` exposes the main window. The main-window state and workflows live under `src/app/window/`, with dialogs in `src/app/window/dialogs/` and localization in `src/app/window/localization/`.
+- `src/app/window/component.rs` connects the Relm4 component. Its initialization, update handling, and view synchronization live in `src/app/window/component/`.
+- Reusable UI components live in `src/ui/components/`; keep component-specific view and model code with its component where practical.
+- Cross-cutting application features live in `src/features/`, including execution, diagnostics, debugging, learning, and media.
+- Language profiles and integrations live in `src/languages/`, with dialect-specific code grouped under each language or dialect directory.
 - `data/potoo.css` contains the GTK styling and light/dark color tokens.
 
 ## Interface and visual design

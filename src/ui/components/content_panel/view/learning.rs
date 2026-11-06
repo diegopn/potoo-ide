@@ -177,6 +177,9 @@ pub(crate) fn show_learning_problems(
             crate::features::learning::LearningProblemKind::Runtime => {
                 tr(language, "Erro durante a execução")
             }
+            crate::features::learning::LearningProblemKind::StaticAnalysis => {
+                tr(language, "Aviso de análise")
+            }
             crate::features::learning::LearningProblemKind::Analysis => {
                 tr(language, "Análise incompleta")
             }
@@ -288,10 +291,19 @@ pub(crate) fn localize_learning_problem(
         }
         LearningProblemText::InterpreterDiagnostic => {
             if language == UiLanguage::Portuguese {
-                return (problem.message.clone(), problem.suggestion.clone());
+                let message = match problem.message.as_str() {
+                    "division by zero" => "divisão por zero".to_owned(),
+                    "integer division by zero" => "divisão inteira por zero".to_owned(),
+                    _ => problem.message.clone(),
+                };
+                return (message, problem.suggestion.clone());
             }
+            let suggestion = problem
+                .suggestion
+                .as_deref()
+                .and_then(|suggestion| translate_interpreter_suggestion(suggestion, language));
             if let Some(message) = translate_interpreter_diagnostic(&problem.message, language) {
-                return (message, None);
+                return (message, suggestion);
             }
 
             let summary = match problem.kind {
@@ -300,6 +312,7 @@ pub(crate) fn localize_learning_problem(
                     "O interpretador encontrou uma incompatibilidade de tipos nesta linha."
                 }
                 LearningProblemKind::Runtime => "A execução encontrou um problema nesta linha.",
+                LearningProblemKind::StaticAnalysis => "A análise encontrou um aviso nesta linha.",
                 LearningProblemKind::Analysis => "A análise não foi concluída para esta linha.",
                 LearningProblemKind::Logic => "Índice fora dos limites",
                 LearningProblemKind::PossibleLogic => "Possível problema lógico",
@@ -309,7 +322,10 @@ pub(crate) fn localize_learning_problem(
                 "Detalhe original do interpretador (português): {message}",
             )
             .replace("{message}", &problem.message);
-            (tr(language, summary).to_owned(), Some(detail))
+            (
+                tr(language, summary).to_owned(),
+                suggestion.or(Some(detail)),
+            )
         }
         LearningProblemText::AnalysisIncomplete => (
             tr(
@@ -326,6 +342,11 @@ fn translate_interpreter_diagnostic(message: &str, language: UiLanguage) -> Opti
     let translated = match message {
         "divisão por zero" => ("Division by zero", "División por cero"),
         "divisão inteira por zero" => ("Integer division by zero", "División entera por cero"),
+        "division by zero" => ("Division by zero", "División por cero"),
+        "integer division by zero" => ("Integer division by zero", "División entera por cero"),
+        "Comentário de bloco sem fechamento" => {
+            ("Unclosed block comment", "Comentario de bloque sin cerrar")
+        }
         "resto de divisão por zero" => ("Remainder by zero", "Resto de una división por cero"),
         "estouro na operação inteira" => (
             "Integer operation overflow.",
@@ -370,7 +391,9 @@ fn translate_interpreter_diagnostic(message: &str, language: UiLanguage) -> Opti
             "Índice de vector fuera de los límites",
         ),
         "variável não declarada" => ("Variable is not declared", "La variable no está declarada"),
-        "esperada uma expressão" => ("Expected an expression", "Se esperaba una expresión"),
+        "esperada uma expressão" | "esperava uma expressão" => {
+            ("Expected an expression", "Se esperaba una expresión")
+        }
         "esperado um identificador" => ("Expected an identifier", "Se esperaba un identificador"),
         "esperado o nome da função" => (
             "Expected the function name",
@@ -514,6 +537,36 @@ fn translate_interpreter_diagnostic(message: &str, language: UiLanguage) -> Opti
         UiLanguage::Spanish => translated.1.to_owned(),
         UiLanguage::Portuguese => message.to_owned(),
     })
+}
+
+fn translate_interpreter_suggestion(suggestion: &str, language: UiLanguage) -> Option<String> {
+    match suggestion {
+        "Confira se o divisor pode ser zero antes de fazer a divisão." => Some(
+            tr(
+                language,
+                "Confira se o divisor pode ser zero antes de fazer a divisão.",
+            )
+            .to_owned(),
+        ),
+        "Adicione `*/` para fechar o comentário de bloco." => {
+            Some(tr(language, "Adicione `*/` para fechar o comentário de bloco.").to_owned())
+        }
+        "Informe o valor ou a expressão que será exibida após `escreva`." => Some(
+            tr(
+                language,
+                "Informe o valor ou a expressão que será exibida após `escreva`.",
+            )
+            .to_owned(),
+        ),
+        "Informe o valor ou a expressão que será exibida após `imprima`." => Some(
+            tr(
+                language,
+                "Informe o valor ou a expressão que será exibida após `imprima`.",
+            )
+            .to_owned(),
+        ),
+        _ => None,
+    }
 }
 
 fn translate_expected_token(message: &str, language: UiLanguage) -> Option<String> {
@@ -753,7 +806,7 @@ mod tests {
         let problem = learning_hint(source, 2, Language::Potigol)
             .problems
             .into_iter()
-            .find(|problem| problem.kind == LearningProblemKind::PossibleLogic)
+            .find(|problem| problem.kind == LearningProblemKind::StaticAnalysis)
             .expect("a typed Jerimum call without its import should be reported");
 
         let (english, _) = localize_learning_problem(&problem, UiLanguage::English);
@@ -763,5 +816,51 @@ mod tests {
         let (spanish, _) = localize_learning_problem(&problem, UiLanguage::Spanish);
         assert!(spanish.contains("biblioteca Jerimum"));
         assert!(spanish.contains("use \"jerimum\""));
+    }
+
+    #[test]
+    fn missing_potigol_output_advice_is_localized_with_its_interpreter_message() {
+        for (source, line, command, english_tip, spanish_tip) in [
+            (
+                "escreva\nescreva 2",
+                1,
+                "escreva",
+                "Provide the value or expression to display after `escreva`.",
+                "Indica el valor o la expresión que se mostrará después de `escreva`.",
+            ),
+            (
+                "imprima\nimprima 2",
+                1,
+                "imprima",
+                "Provide the value or expression to display after `imprima`.",
+                "Indica el valor o la expresión que se mostrará después de `imprima`.",
+            ),
+        ] {
+            let hint = learning_hint(source, line, Language::Potigol);
+            let problem = hint
+                .problems
+                .into_iter()
+                .find(|problem| problem.kind == LearningProblemKind::Syntax)
+                .expect("the empty output statement should remain a syntax problem");
+            assert_eq!((problem.line, problem.column), (line, 1));
+
+            let (english, english_suggestion) =
+                localize_learning_problem(&problem, UiLanguage::English);
+            assert_eq!(english, "Expected an expression", "{command}");
+            assert_eq!(
+                english_suggestion.as_deref(),
+                Some(english_tip),
+                "{command}"
+            );
+
+            let (spanish, spanish_suggestion) =
+                localize_learning_problem(&problem, UiLanguage::Spanish);
+            assert_eq!(spanish, "Se esperaba una expresión", "{command}");
+            assert_eq!(
+                spanish_suggestion.as_deref(),
+                Some(spanish_tip),
+                "{command}"
+            );
+        }
     }
 }

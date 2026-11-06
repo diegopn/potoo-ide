@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use crate::languages::model::{
     SourceConstruct, SourceDiagnostic, SourceDiagnosticKind, SourceDimension, SourceLineAnalysis,
     SourceLineAnalysisOutcome, SourceSymbol,
@@ -28,11 +30,19 @@ pub(crate) fn profile_adapter(
         crate::languages::portugol::g_portugol::syntax_analysis::views::mask_diagnostic_statement,
         is_cancelled,
     );
-    let diagnostics = recovered
+    let mut diagnostics = recovered
         .diagnostics
         .into_iter()
         .map(to_source_diagnostic)
         .collect::<Vec<_>>();
+    if !is_cancelled()
+        && let Some(warning) =
+            crate::languages::portugol::g_portugol::diagnostics::unclosed_block_comment_diagnostic(
+                source,
+            )
+    {
+        diagnostics.push(warning);
+    }
 
     match recovered.status {
         RecoveryStatus::Cancelled => SourceLineAnalysisOutcome::Cancelled,
@@ -57,6 +67,55 @@ pub(crate) fn profile_adapter(
             }
         }
     }
+}
+
+pub(crate) fn profile_declared_array_bounds(
+    source: &str,
+    _masked_source: &str,
+    is_cancelled: &dyn Fn() -> bool,
+) -> Option<HashMap<String, Vec<SourceDimension>>> {
+    if is_cancelled() {
+        return None;
+    }
+    let program = parse(source).ok();
+    if is_cancelled() {
+        return None;
+    }
+    let Some(program) = program else {
+        return Some(HashMap::new());
+    };
+
+    let mut bounds = HashMap::new();
+    let mut ambiguous = HashSet::new();
+    for declaration in program.globals.iter().chain(
+        program
+            .functions
+            .iter()
+            .flat_map(|function| function.locals.iter()),
+    ) {
+        if is_cancelled() {
+            return None;
+        }
+        for symbol in source_symbols(declaration) {
+            if symbol.dimensions.is_empty()
+                || symbol
+                    .dimensions
+                    .iter()
+                    .any(|dimension| dimension.upper_bound.is_none())
+            {
+                continue;
+            }
+            let name = symbol.name.to_lowercase();
+            if ambiguous.contains(&name) {
+                continue;
+            }
+            if bounds.insert(name.clone(), symbol.dimensions).is_some() {
+                bounds.remove(&name);
+                ambiguous.insert(name);
+            }
+        }
+    }
+    if is_cancelled() { None } else { Some(bounds) }
 }
 
 fn to_source_diagnostic(diagnostic: Diagnostic) -> SourceDiagnostic {

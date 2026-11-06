@@ -2,6 +2,7 @@ use super::profile_adapter;
 use crate::languages::model::{
     SourceConstruct, SourceDiagnosticKind, SourceLineAnalysis, SourceLineAnalysisOutcome,
 };
+use crate::languages::project_templates::{ProjectTemplate, ProjectTemplateGroup};
 
 fn analyze_source_line(
     source: &str,
@@ -60,16 +61,23 @@ fn classic_and_jerimum_are_separate_import_aware_fixtures() {
         None
     );
 
-    for (source, line, expects_missing_import) in [
-        ("# use \"jerimum\"\ng.setColor(Cor.VERDE.color)", 2, false),
+    for (source, line, expects_missing_import, jerimum_active) in [
+        (
+            "# use \"jerimum\"\ng.setColor(Cor.VERDE.color)",
+            2,
+            false,
+            false,
+        ),
         (
             " use \"jerimum\"\ndef desenhe(g: Graphics2D): Nada\n  g.setColor(Cor.VERDE.color)\nfim",
             3,
+            false,
             true,
         ),
         (
             "se verdadeiro entao\n  use \"jerimum\"\n  g.setColor(Cor.VERDE.color)\nfim",
             3,
+            false,
             false,
         ),
     ] {
@@ -85,8 +93,8 @@ fn classic_and_jerimum_are_separate_import_aware_fixtures() {
         assert_eq!(call.construct, SourceConstruct::MethodCall);
         assert_eq!(
             call.call.as_ref().and_then(|call| call.library.as_deref()),
-            None,
-            "comments and nested imports do not activate Jerimum"
+            jerimum_active.then_some("jerimum"),
+            "only an active top-level import activates Jerimum"
         );
     }
 }
@@ -116,6 +124,66 @@ fn classic_and_jerimum_recover_a_valid_line_after_the_first_error() {
             (expected.span.start.line, expected.span.start.column)
         );
         assert_eq!(diagnostics[0].line, error_line);
+    }
+}
+
+#[test]
+fn jerimum_game_project_remains_a_potigol_variant_with_a_valid_imported_sample() {
+    let template = ProjectTemplate::PotigolJerimum;
+    assert_eq!(
+        template.language(),
+        crate::languages::model::Language::Potigol
+    );
+    assert_eq!(template.group(), ProjectTemplateGroup::Potigol);
+    assert_eq!(template.order(), 1);
+    assert_eq!(template.file_name(), "principal.poti");
+    assert_eq!(template.new_file_sample(), template.sample());
+
+    let source = template.sample();
+    assert!(source.starts_with("use \"jerimum\"\n"));
+    assert!(source.contains("jogo.iniciar("));
+    let line = source
+        .lines()
+        .position(|line| line.contains("g.fillRect("))
+        .expect("the game sample should draw its player")
+        + 1;
+    let (analysis, diagnostics) = analyze_source_line(source, line);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    let call = analysis
+        .expect("the sample's graphics operation should be recognized")
+        .call
+        .expect("the graphics operation should retain its call facts");
+    assert_eq!(call.member, "fillRect");
+    assert_eq!(call.library.as_deref(), Some("jerimum"));
+}
+
+#[test]
+fn missing_output_argument_keeps_the_same_location_in_learning_and_editor_diagnostics() {
+    for (source, error_line, expected_line) in [
+        ("escreva\nescreva 2", 1, 1),
+        ("use \"jerimum\"\nescreva\nescreva 2", 2, 2),
+        ("imprima\nimprima 2", 1, 1),
+        ("use \"jerimum\"\nimprima\nimprima 2", 2, 2),
+    ] {
+        let editor = (crate::languages::model::Language::Potigol
+            .profile()
+            .diagnostics)(source)
+        .into_iter()
+        .find(|diagnostic| diagnostic.kind == SourceDiagnosticKind::Syntax)
+        .expect("the missing output expression should have a syntax diagnostic");
+        let (_, learning_diagnostics) = analyze_source_line(source, error_line);
+        let learning = learning_diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.kind == SourceDiagnosticKind::Syntax)
+            .expect("the learning view should keep the same syntax diagnostic");
+
+        assert_eq!(
+            (learning.line, learning.column),
+            (editor.line, editor.column),
+            "{source}"
+        );
+        assert_eq!((editor.line, editor.column), (expected_line, 1), "{source}");
+        assert_eq!(learning.message, editor.message, "{source}");
     }
 }
 

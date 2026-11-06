@@ -438,8 +438,9 @@ fn insert_unique_array_bounds(
 }
 
 pub(crate) fn profile_declared_array_bounds(
-    source: &str,
+    _source: &str,
+    masked_source: &str,
     is_cancelled: &dyn Fn() -> bool,
 ) -> Option<HashMap<String, Vec<SourceDimension>>> {
-    declared_array_bounds(source, &|| is_cancelled())
+    declared_array_bounds(masked_source, &|| is_cancelled())
 }

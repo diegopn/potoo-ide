@@ -23,6 +23,7 @@ pub(crate) enum LearningProblemKind {
     Syntax,
     Type,
     Runtime,
+    StaticAnalysis,
     Analysis,
     Logic,
     PossibleLogic,

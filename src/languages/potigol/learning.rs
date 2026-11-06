@@ -31,7 +31,7 @@ pub(crate) fn profile_adapter(
     let mut diagnostics = recovered
         .diagnostics
         .into_iter()
-        .map(to_source_diagnostic)
+        .map(|diagnostic| to_source_diagnostic(source, diagnostic))
         .collect::<Vec<_>>();
 
     match recovered.status {
@@ -65,19 +65,21 @@ pub(crate) fn profile_adapter(
     }
 }
 
-fn to_source_diagnostic(diagnostic: Diagnostic) -> SourceDiagnostic {
+fn to_source_diagnostic(source: &str, diagnostic: Diagnostic) -> SourceDiagnostic {
     let kind = match diagnostic.kind {
         DiagnosticKind::Lexical => SourceDiagnosticKind::Lexical,
         DiagnosticKind::Syntax => SourceDiagnosticKind::Syntax,
         DiagnosticKind::Type => SourceDiagnosticKind::Type,
         DiagnosticKind::Runtime => SourceDiagnosticKind::Runtime,
     };
-    SourceDiagnostic::at_line(
+    let (line, column) = crate::languages::potigol::diagnostics::missing_output_argument_location(
+        source,
         kind,
-        diagnostic.message,
+        &diagnostic.message,
         diagnostic.span.start.line,
-        diagnostic.span.start.column,
     )
+    .unwrap_or((diagnostic.span.start.line, diagnostic.span.start.column));
+    SourceDiagnostic::at_line(kind, diagnostic.message, line, column)
 }
 
 fn analyze_program_line(
@@ -101,8 +103,7 @@ fn analyze_program_line(
 
 fn jerimum_imported(program: &Program) -> bool {
     program.statements.iter().any(|statement| {
-        statement.span.start.column == 1
-            && matches!(&statement.kind, StmtKind::Import(name) if name.eq_ignore_ascii_case("jerimum"))
+        matches!(&statement.kind, StmtKind::Import(name) if name.eq_ignore_ascii_case("jerimum"))
     })
 }
 
@@ -118,7 +119,7 @@ fn missing_jerimum_import_diagnostic(
         return None;
     }
     let confirmed_jerimum_call = match (call.receiver.as_deref(), call.member.as_str()) {
-        (Some("jogo"), "iniciar") => call.arguments.len() == 6,
+        (Some("jogo"), "iniciar") => call.arguments.len() <= 6,
         (Some("Desenho"), "incluir") => call.arguments.len() == 2,
         (Some(receiver), "setColor" | "fillRect" | "drawString") => {
             graphics_receiver_at_line(program, analysis.line, Some(receiver))

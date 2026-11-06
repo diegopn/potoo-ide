@@ -162,8 +162,8 @@ where
             line: diagnostic.line,
             column: diagnostic.column,
             text: LearningProblemText::InterpreterDiagnostic,
+            suggestion: diagnostic_suggestion(kind, &message),
             message,
-            suggestion: None,
         });
     }
     if facts.topic == LearningTopic::Decision
@@ -307,12 +307,31 @@ fn learning_diagnostic_problems(
                 diagnostic.line,
                 diagnostic.column,
             );
-            diagnostic_problem(
+            let output_command = source
+                .lines()
+                .nth(diagnostic.line.saturating_sub(1))
+                .map(str::trim)
+                .filter(|command| matches!(*command, "escreva" | "imprima"));
+            let output_suggestion = (language == Language::Potigol
+                && category == crate::features::diagnostics::DiagnosticCategory::Syntax
+                && message == "esperava uma expressão"
+                && output_command.is_some())
+            .then(|| {
+                format!(
+                    "Informe o valor ou a expressão que será exibida após `{}`.",
+                    output_command.expect("the output command was checked")
+                )
+            });
+            let mut problem = diagnostic_problem(
                 learning_problem_kind(category),
                 diagnostic.line,
                 diagnostic.column,
                 message,
-            )
+            );
+            if output_suggestion.is_some() {
+                problem.suggestion = output_suggestion;
+            }
+            problem
         })
         .collect()
 }

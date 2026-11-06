@@ -67,6 +67,86 @@ fn translates_common_runtime_diagnostics_into_english_and_spanish() {
 }
 
 #[test]
+fn localizes_a_specific_division_by_zero_next_step() {
+    let problem = LearningProblem {
+        kind: LearningProblemKind::Runtime,
+        suggestion: Some("Confira se o divisor pode ser zero antes de fazer a divisão.".to_owned()),
+        ..syntax_problem("divisão por zero")
+    };
+
+    assert_eq!(
+        localize_learning_problem(&problem, UiLanguage::Portuguese)
+            .1
+            .as_deref(),
+        Some("Confira se o divisor pode ser zero antes de fazer a divisão.")
+    );
+    assert_eq!(
+        localize_learning_problem(&problem, UiLanguage::English)
+            .1
+            .as_deref(),
+        Some("Check whether the divisor can be zero before dividing.")
+    );
+    assert_eq!(
+        localize_learning_problem(&problem, UiLanguage::Spanish)
+            .1
+            .as_deref(),
+        Some("Comprueba si el divisor puede ser cero antes de dividir.")
+    );
+
+    let english_diagnostic = LearningProblem {
+        message: "division by zero".to_owned(),
+        ..problem
+    };
+    assert_eq!(
+        localize_learning_problem(&english_diagnostic, UiLanguage::Portuguese).0,
+        "divisão por zero"
+    );
+    assert_eq!(
+        localize_learning_problem(&english_diagnostic, UiLanguage::English).0,
+        "Division by zero"
+    );
+    assert_eq!(
+        localize_learning_problem(&english_diagnostic, UiLanguage::Spanish).0,
+        "División por cero"
+    );
+}
+
+#[test]
+fn localizes_the_gportugol_unclosed_comment_warning_and_next_step() {
+    let problem = LearningProblem {
+        kind: LearningProblemKind::StaticAnalysis,
+        severity: LearningSeverity::Warning,
+        line: 3,
+        column: 3,
+        text: LearningProblemText::InterpreterDiagnostic,
+        message: "Comentário de bloco sem fechamento".to_owned(),
+        suggestion: Some("Adicione `*/` para fechar o comentário de bloco.".to_owned()),
+    };
+
+    assert_eq!(
+        localize_learning_problem(&problem, UiLanguage::Portuguese),
+        (
+            "Comentário de bloco sem fechamento".to_owned(),
+            Some("Adicione `*/` para fechar o comentário de bloco.".to_owned())
+        )
+    );
+    assert_eq!(
+        localize_learning_problem(&problem, UiLanguage::English),
+        (
+            "Unclosed block comment".to_owned(),
+            Some("Add `*/` to close the block comment.".to_owned())
+        )
+    );
+    assert_eq!(
+        localize_learning_problem(&problem, UiLanguage::Spanish),
+        (
+            "Comentario de bloque sin cerrar".to_owned(),
+            Some("Añade `*/` para cerrar el comentario de bloque.".to_owned())
+        )
+    );
+}
+
+#[test]
 fn keeps_unknown_interpreter_detail_labeled_in_portuguese() {
     let problem = syntax_problem("diagnóstico novo do interpretador");
     let (message, detail) = localize_learning_problem(&problem, UiLanguage::English);
