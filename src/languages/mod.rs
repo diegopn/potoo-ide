@@ -35,10 +35,7 @@ mod syntax_analysis_tests {
     #[test]
     fn every_language_view_masks_only_the_diagnostic_statement() {
         let source = "before; bad @; after\nsecond line";
-        let views = [
-            calango::syntax_analysis::views::mask_diagnostic_statement,
-            potigol::syntax_analysis::views::mask_diagnostic_statement,
-        ];
+        let views = [potigol::syntax_analysis::views::mask_diagnostic_statement];
 
         for view in views {
             let recovered = view(source, 1, 13);
@@ -47,6 +44,22 @@ mod syntax_analysis_tests {
             assert!(recovered.contains("after"), "{recovered:?}");
             assert!(recovered.ends_with("second line"), "{recovered:?}");
         }
+
+        let calango_source =
+            "algoritmo teste;\nprincipal\nescreva(1);\n@;\nescreva(2);\nfimPrincipal";
+        let diagnostic = potoo_calango_interpreter::parse(calango_source)
+            .expect_err("the selected statement is invalid")
+            .remove(0);
+        let recovered = calango::syntax_analysis::views::mask_diagnostic_statement(
+            calango_source,
+            diagnostic.line,
+            diagnostic.column,
+        )
+        .expect("the semicolon statement boundary should be safe");
+        assert!(recovered.contains("escreva(1);"), "{recovered:?}");
+        assert!(!recovered.contains('@'), "{recovered:?}");
+        assert!(recovered.contains("escreva(2);"), "{recovered:?}");
+        assert!(potoo_calango_interpreter::parse(&recovered).is_ok());
 
         let visualg_source = "algoritmo \"teste\"\ninicio\nescreva(1)\n@\nescreva(2)\nfimalgoritmo";
         let recovered = portugol::visualg::syntax_analysis::views::mask_diagnostic_statement(

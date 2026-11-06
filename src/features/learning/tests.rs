@@ -50,6 +50,27 @@ fn visualg_learning_marks_an_unclosed_multiline_expression_incomplete() {
 }
 
 #[test]
+fn calango_learning_marks_an_ambiguous_expression_incomplete() {
+    let source = "algoritmo analise;\nprincipal\nescreva(1 + @;\nfimPrincipal";
+    let expected = potoo_calango_interpreter::parse(source)
+        .expect_err("the invalid character is inside an unclosed expression")
+        .remove(0);
+    let hint = learning_hint(source, expected.line, Language::Calango);
+
+    assert_eq!(hint.topic, LearningTopic::Unrecognized);
+    assert!(hint.problems.iter().any(|problem| {
+        problem.text == LearningProblemText::InterpreterDiagnostic
+            && problem.line == expected.line
+            && problem.column == expected.column
+    }));
+    assert!(hint.problems.iter().any(|problem| {
+        problem.kind == LearningProblemKind::Analysis
+            && problem.severity == LearningSeverity::Warning
+            && problem.text == LearningProblemText::AnalysisIncomplete
+    }));
+}
+
+#[test]
 fn loop_condition_experiment_always_changes_a_zero_threshold() {
     for (condition, expected) in [("idade > 0", "idade > 2"), ("idade > -1", "idade > -3")] {
         let source = format!(

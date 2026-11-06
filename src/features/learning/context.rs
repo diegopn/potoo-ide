@@ -117,11 +117,11 @@ fn instruction_payload(line: &str, command: &str) -> Option<String> {
     {
         return None;
     }
-    let mut payload = trimmed[command_end..].trim_start();
+    let mut payload = trim_statement_end(&trimmed[command_end..])?;
     if payload.starts_with('(') && payload.ends_with(')') {
         payload = &payload[1..payload.len() - 1];
     }
-    trim_statement_end(payload).and_then(nonempty)
+    nonempty(payload)
 }
 
 fn nonempty_list(values: &[String]) -> Option<String> {

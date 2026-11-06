@@ -184,12 +184,16 @@ se */ z"#;
                     escape: Some('\\'),
                     doubled_delimiter: false,
                     allows_newlines: false,
+                    allows_escaped_newlines: false,
+                    allows_carriage_returns: false,
                 },
                 QuoteRule {
                     delimiter: '\'',
                     escape: None,
                     doubled_delimiter: true,
                     allows_newlines: false,
+                    allows_escaped_newlines: false,
+                    allows_carriage_returns: false,
                 },
             ],
             hyphenated_words: &["fim-se"],
@@ -246,6 +250,8 @@ se */ z"#;
                 escape: Some('\\'),
                 doubled_delimiter: false,
                 allows_newlines: true,
+                allows_escaped_newlines: false,
+                allows_carriage_returns: false,
             }],
             hyphenated_words: &[],
             line_endings: LineEndingPolicy::Universal,
@@ -284,6 +290,8 @@ se */ z"#;
                 escape: None,
                 doubled_delimiter: false,
                 allows_newlines: false,
+                allows_escaped_newlines: false,
+                allows_carriage_returns: false,
             }],
             hyphenated_words: &[],
             ignore_leading_bom: false,
@@ -856,6 +864,8 @@ pub(crate) struct QuoteRule {
     pub(crate) escape: Option<char>,
     pub(crate) doubled_delimiter: bool,
     pub(crate) allows_newlines: bool,
+    pub(crate) allows_escaped_newlines: bool,
+    pub(crate) allows_carriage_returns: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1051,13 +1061,23 @@ pub(crate) fn tokenize(source: &str, config: &LexerConfig<'_>) -> Vec<SourceToke
                 let Some(current) = char_at(source, offset) else {
                     break;
                 };
-                if !rule.allows_newlines && current == '\r' {
+                if !rule.allows_newlines && !rule.allows_carriage_returns && current == '\r' {
                     break;
                 }
                 if rule.escape == Some(current) {
                     advance_character(&mut offset, &mut column, current);
-                    if newline_width(source, offset, config.line_endings).is_some()
-                        || (!rule.allows_newlines && char_at(source, offset) == Some('\r'))
+                    if let Some(width) = newline_width(source, offset, config.line_endings) {
+                        if !rule.allows_escaped_newlines {
+                            break;
+                        }
+                        offset += width;
+                        line += 1;
+                        column = 1;
+                        continue;
+                    }
+                    if !rule.allows_newlines
+                        && !rule.allows_carriage_returns
+                        && char_at(source, offset) == Some('\r')
                     {
                         break;
                     }

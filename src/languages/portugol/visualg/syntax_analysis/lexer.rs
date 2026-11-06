@@ -13,6 +13,8 @@ pub(super) const CONFIG: LexerConfig<'static> = LexerConfig {
         escape: None,
         doubled_delimiter: true,
         allows_newlines: false,
+        allows_escaped_newlines: false,
+        allows_carriage_returns: false,
     }],
     hyphenated_words: &[],
     ignore_leading_bom: false,

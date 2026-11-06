@@ -1754,6 +1754,84 @@ fn visualg_debugger_fails_closed_inside_incomplete_routines_and_expressions() {
 }
 
 #[test]
+fn calango_debugger_preserves_same_line_prefix_and_interpreter_coordinates() {
+    let source = "algoritmo depura;\r\nprincipal\r\nescreval(\"ação\"); @; escreval(\"DEPOIS\");\r\nfimPrincipal";
+    let expected = potoo_calango_interpreter::parse(source)
+        .expect_err("the invalid token should follow a complete output statement")
+        .remove(0);
+    let (output, pauses, result, stopped) =
+        collect_static_debug_pause_for(source, Language::Calango, ControlAction::Step);
+
+    assert_eq!(output, "ação\n");
+    assert!(!stopped);
+    let final_pause = pauses.last().expect("debugging should reach the error");
+    assert_eq!(
+        (final_pause.line, final_pause.column),
+        (expected.line, expected.column)
+    );
+    let diagnostics = result.expect_err("the original lexical diagnostic should remain");
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].kind, ExecutionDiagnosticKind::Lexical);
+    assert_eq!(diagnostics[0].message, expected.message);
+    assert_eq!(
+        (diagnostics[0].line, diagnostics[0].column),
+        (expected.line, expected.column)
+    );
+}
+
+#[test]
+fn calango_debugger_fails_closed_for_truncated_loops_and_called_routines() {
+    let sources = [
+        "algoritmo loop;\nprincipal\ninteiro i;\npara (i de 1 ate 3 passo 1) faca\nescreval(\"DENTRO\");\n@;\nfimPara\nfimPrincipal",
+        "algoritmo rotina;\nprincipal\navisar();\nfimPrincipal\nprocedimento avisar()\nescreval(\"DENTRO\");\n@;\nfimProcedimento",
+    ];
+
+    for source in sources {
+        let expected = potoo_calango_interpreter::parse(source)
+            .expect_err("the incomplete block should contain a lexical error")
+            .remove(0);
+        let (output, pauses, result, stopped) =
+            collect_static_debug_pause_for(source, Language::Calango, ControlAction::Continue);
+
+        assert!(output.is_empty(), "an incomplete block ran: {output:?}");
+        assert!(!stopped);
+        assert_eq!(pauses.len(), 1);
+        assert_eq!(
+            (pauses[0].line, pauses[0].column),
+            (expected.line, expected.column)
+        );
+        assert_eq!(
+            pauses[0].pause_reason,
+            Some(crate::features::execution::DebugPauseReason::StaticErrorNotReached)
+        );
+        let diagnostics = result.expect_err("the original source error should remain");
+        assert_eq!(diagnostics[0].kind, ExecutionDiagnosticKind::Lexical);
+        assert_eq!(diagnostics[0].message, expected.message);
+        assert_eq!(
+            (diagnostics[0].line, diagnostics[0].column),
+            (expected.line, expected.column)
+        );
+    }
+}
+
+#[test]
+fn calango_debugger_keeps_an_earlier_runtime_failure_ahead_of_a_static_error() {
+    let source =
+        "algoritmo erro;\nprincipal\ninteiro valores[1];\nescreva(valores[2]); @;\nfimPrincipal";
+    let static_diagnostic = potoo_calango_interpreter::parse(source)
+        .expect_err("the invalid token should be diagnosed")
+        .remove(0);
+    let (_output, _pauses, diagnostics, stopped) =
+        collect_static_debug_pause_for(source, Language::Calango, ControlAction::Step);
+
+    assert!(!stopped);
+    let diagnostics = diagnostics.expect_err("the valid prefix has an earlier runtime fault");
+    assert_eq!(diagnostics[0].kind, ExecutionDiagnosticKind::Runtime);
+    assert_eq!(diagnostics[0].line, static_diagnostic.line);
+    assert!(diagnostics[0].column < static_diagnostic.column);
+}
+
+#[test]
 fn mapler_debugger_reports_an_earlier_same_line_runtime_failure_first() {
     let source =
         "variaveis valores: vetor [1..2] de inteiro;\ninicio\nescrever valores[3]; @;\nfim.";

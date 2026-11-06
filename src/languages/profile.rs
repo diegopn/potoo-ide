@@ -177,12 +177,12 @@ static PROFILES: [LanguageProfile; 6] = [
         without_literals_and_comments:
             crate::languages::calango::syntax_analysis::views::without_literals_and_comments,
         declared_array_bounds: Some(crate::languages::calango::learning::profile_declared_array_bounds),
-        debugger_prefix: Some(DebuggerPrefixAdapter::Legacy(
+        debugger_prefix: Some(DebuggerPrefixAdapter::Safe(
             crate::languages::calango::syntax_analysis::views::debugger_prefix,
         )),
         completion: Some(&crate::languages::calango::completion::ADAPTER),
         execution: crate::languages::calango::runtime::execute,
-        learning: Some(LearningAdapter::Legacy(
+        learning: Some(LearningAdapter::Recovering(
             crate::languages::calango::learning::profile_adapter,
         )),
         default_template: ProjectTemplate::Calango,
@@ -317,13 +317,10 @@ mod tests {
                 crate::languages::calango::syntax_analysis::views::is_blank_or_line_comment,
                 crate::languages::calango::syntax_analysis::views::without_literals_and_comments,
                 Some(crate::languages::calango::learning::profile_declared_array_bounds),
-                Some(
-                    crate::languages::calango::syntax_analysis::views::debugger_prefix
-                        as DebuggerPrefix,
-                ),
+                None,
                 crate::languages::calango::runtime::execute,
                 &crate::languages::calango::completion::ADAPTER,
-                Some(crate::languages::calango::learning::profile_adapter as Learning),
+                None,
             ),
             (
                 Language::Mapler,
@@ -387,6 +384,7 @@ mod tests {
                         Language::Portugol
                             | Language::Visualg
                             | Language::GPortugol
+                            | Language::Calango
                             | Language::Mapler
                     ) => {}
                 (Some(DebuggerPrefixAdapter::Legacy(actual)), Some(expected)) => {
@@ -409,6 +407,7 @@ mod tests {
                         Language::Portugol
                             | Language::Visualg
                             | Language::GPortugol
+                            | Language::Calango
                             | Language::Mapler
                     ) => {}
                 (Some(LearningAdapter::Legacy(actual)), Some(expected)) => {
@@ -441,9 +440,9 @@ mod tests {
         let fixtures = [
             (Language::Portugol, "Portugol Studio 2.0", true),
             (Language::GPortugol, "G-Portugol", true),
+            (Language::Calango, "Calango", true),
             (Language::Mapler, "Mapler", true),
             (Language::Visualg, "VisuAlg", true),
-            (Language::Calango, "Calango", false),
             (Language::Potigol, "Potigol Classic", false),
             (Language::Potigol, "Potigol Jerimum", false),
         ];
@@ -464,7 +463,7 @@ mod tests {
                 );
                 if matches!(
                     language,
-                    Language::Visualg | Language::GPortugol | Language::Mapler
+                    Language::Visualg | Language::GPortugol | Language::Mapler | Language::Calango
                 ) {
                     let Some(DebuggerPrefixAdapter::Safe(debugger_prefix)) =
                         profile.debugger_prefix
@@ -476,6 +475,7 @@ mod tests {
                             Language::Visualg => crate::languages::portugol::visualg::syntax_analysis::views::debugger_prefix,
                             Language::GPortugol => crate::languages::portugol::g_portugol::syntax_analysis::views::debugger_prefix,
                             Language::Mapler => crate::languages::portugol::mapler::syntax_analysis::views::debugger_prefix,
+                            Language::Calango => crate::languages::calango::syntax_analysis::views::debugger_prefix,
                             _ => unreachable!("only migrated profiles are checked here"),
                         };
                     assert!(std::ptr::fn_addr_eq(
@@ -499,6 +499,7 @@ mod tests {
                         Language::Mapler => {
                             crate::languages::portugol::mapler::learning::profile_adapter
                         }
+                        Language::Calango => crate::languages::calango::learning::profile_adapter,
                         _ => unreachable!("only migrated profiles are checked here"),
                     };
                     assert!(std::ptr::fn_addr_eq(learning, expected_learning));

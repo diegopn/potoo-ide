@@ -577,7 +577,7 @@ pub(super) fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (Strin
                 .name
                 .as_deref()
                 .and_then(|name| name.split_whitespace().next())
-                == Some("repita") =>
+                .is_some_and(|name| matches!(name, "repita" | "faca")) =>
         {
             text("Altere a condição e confirme que o bloco executa antes da verificação.")
         }

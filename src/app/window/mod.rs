@@ -752,6 +752,87 @@ fim";
     }
 
     #[test]
+    fn calango_copy_uses_program_routine_and_statement_facts() {
+        let source = "algoritmo aula;\nprocedimento mostrar(texto nome)\nescreval(nome);\nfimProcedimento\nfuncao inteiro dobrar(inteiro valor)\nretorna valor * 2;\nfimFuncao\nprincipal\ninteiro pontos;\npontos = 2;\nleia(pontos);\nescreval(pontos);\nse (pontos > 0) entao\npontos = pontos + 1;\nfimSe\npara (pontos de 1 ate 2 passo 1) faca\nescreval(pontos);\nfimPara\nfaca\npontos = pontos - 1;\nenquanto pontos > 0;\nfimPrincipal";
+
+        let program = learning_hint(source, 1, Language::Calango);
+        assert_eq!(program.topic, LearningTopic::Program);
+        assert!(
+            learning_copy(&program, UiLanguage::Portuguese)
+                .0
+                .contains("programa")
+        );
+
+        let procedure = learning_hint(source, 2, Language::Calango);
+        assert_eq!(procedure.topic, LearningTopic::Procedure);
+        let (procedure_text, _, procedure_experiment) =
+            learning_copy(&procedure, UiLanguage::Portuguese);
+        assert!(procedure_text.contains("`mostrar`"));
+        assert!(procedure_text.contains("procedimento"));
+        assert!(procedure_experiment.contains("`nome`"));
+
+        let function = learning_hint(source, 5, Language::Calango);
+        assert_eq!(function.topic, LearningTopic::Function);
+        let (function_text, _, _) = learning_copy(&function, UiLanguage::Portuguese);
+        assert!(function_text.contains("`dobrar`"));
+        assert!(function_text.contains("`inteiro`"));
+
+        let assignment = learning_hint(source, 10, Language::Calango);
+        let (assignment_text, _, assignment_experiment) =
+            learning_copy(&assignment, UiLanguage::Portuguese);
+        assert_eq!(assignment.topic, LearningTopic::Assignment);
+        assert!(assignment_text.contains("`=`"));
+        assert!(assignment_text.contains("`pontos`"));
+        assert!(assignment_experiment.contains("`pontos`"));
+
+        let input = learning_hint(source, 11, Language::Calango);
+        assert_eq!(input.topic, LearningTopic::Input);
+        assert!(
+            learning_copy(&input, UiLanguage::Portuguese)
+                .0
+                .contains("`leia`")
+        );
+        assert!(
+            learning_copy(&input, UiLanguage::Portuguese)
+                .0
+                .contains("`pontos`")
+        );
+
+        let output = learning_hint(source, 12, Language::Calango);
+        assert_eq!(output.topic, LearningTopic::Output);
+        let (output_text, _, output_experiment) = learning_copy(&output, UiLanguage::Portuguese);
+        assert!(output_text.contains("`escreval`"));
+        assert!(output_text.contains("encerra a linha"));
+        assert!(output_experiment.contains("`pontos`"));
+
+        let for_loop = learning_hint(source, 16, Language::Calango);
+        assert_eq!(for_loop.topic, LearningTopic::Loop);
+        let (for_text, _, for_experiment) = learning_copy(&for_loop, UiLanguage::Portuguese);
+        assert!(for_text.contains("`para`"));
+        assert!(for_experiment.contains("limite do `para`"));
+
+        let do_while = learning_hint(source, 19, Language::Calango);
+        assert_eq!(do_while.topic, LearningTopic::Loop);
+        assert_eq!(do_while.name.as_deref(), Some("faca"));
+        let (do_while_text, _, do_while_experiment) =
+            learning_copy(&do_while, UiLanguage::Portuguese);
+        assert!(do_while_text.contains("`faca`"));
+        assert!(do_while_text.contains("depois de executar"));
+        assert!(do_while_experiment.contains("antes da verificação"));
+
+        let unknown = learning_hint(
+            "algoritmo aula;\nprincipal\n@@\nfimPrincipal",
+            3,
+            Language::Calango,
+        );
+        let (_, unknown_concept, unknown_experiment) =
+            learning_copy(&unknown, UiLanguage::Portuguese);
+        assert_eq!(unknown.topic, LearningTopic::Unrecognized);
+        assert!(unknown_concept.is_empty());
+        assert!(unknown_experiment.is_empty());
+    }
+
+    #[test]
     fn mapler_declarations_use_mapler_type_spelling_and_explain_the_value() {
         let source = "variaveis\nativo: logico;\ninicio\nfim.";
         let hint = learning_hint(source, 2, Language::Mapler);
