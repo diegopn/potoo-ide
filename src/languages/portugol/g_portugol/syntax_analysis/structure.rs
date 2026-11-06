@@ -40,7 +40,7 @@ const DEBUGGER_CLOSE_RULES: StatementRules<'static> = StatementRules {
 
 const MASK_RULES: MaskRules = MaskRules::byte_offsets(Some('\u{00a0}'), None);
 
-pub(super) fn statement_range(source: &str, line: usize, column: usize) -> Option<Range<usize>> {
+pub(crate) fn statement_range(source: &str, line: usize, column: usize) -> Option<Range<usize>> {
     let tokens = lexer::tokens(source);
     let index = SourceIndex::new_ignoring_leading_bom(source);
     shared_statement_range(source, &tokens, line, column, &STRUCTURE_RULES, &index)

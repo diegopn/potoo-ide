@@ -24,7 +24,7 @@ const DEBUGGER_CLOSE_RULES: StatementRules<'static> = StatementRules {
     case_sensitive_keywords: true,
 };
 
-pub(super) fn statement_range(source: &str, line: usize, column: usize) -> Option<Range<usize>> {
+pub(crate) fn statement_range(source: &str, line: usize, column: usize) -> Option<Range<usize>> {
     let tokens = lexer::tokens(source);
     let index = SourceIndex::new_lf_only(source);
     statement_range_with_index(source, &tokens, line, column, &STATEMENT_RULES, &index)

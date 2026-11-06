@@ -28,7 +28,7 @@ const DEBUGGER_CLOSE_RULES: StatementRules<'static> = StatementRules {
     case_sensitive_keywords: false,
 };
 
-pub(super) fn statement_range(source: &str, line: usize, column: usize) -> Option<Range<usize>> {
+pub(crate) fn statement_range(source: &str, line: usize, column: usize) -> Option<Range<usize>> {
     shared_statement_range(
         source,
         &lexer::tokens(source),

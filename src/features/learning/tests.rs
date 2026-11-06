@@ -2,8 +2,10 @@ use super::{
     LearningProblemKind, LearningProblemText, LearningSeverity, LearningTopic, learning_hint,
     learning_hint_with_runtime,
 };
-use crate::features::execution::{DiagnosticKind as ExecutionDiagnosticKind, ExecutionDiagnostic};
-use crate::languages::model::Language;
+use crate::features::execution::{
+    DiagnosticKind as ExecutionDiagnosticKind, ExecutionDiagnostic, ExecutionEvent,
+};
+use crate::languages::model::{Language, SourceDiagnosticKind};
 use potoo_gportugol_interpreter::parse;
 
 #[test]
@@ -146,6 +148,50 @@ fn learning_hint_uses_ast_for_all_supported_languages_and_keeps_unknown_lines_un
 
     let unknown = learning_hint("??", 1, Language::Potigol);
     assert_eq!(unknown.topic, LearningTopic::Unrecognized);
+}
+
+#[test]
+fn learning_expression_stops_at_the_selected_semicolon_statement() {
+    let cases = [
+        (
+            "algoritmo aula;\nprincipal\nescreva(\"a;b\"); escreva(\"depois\");\nfimPrincipal",
+            3,
+            Language::Calango,
+            LearningTopic::Output,
+            "\"a;b\"",
+        ),
+        (
+            "algoritmo aula;\ninício\nimprima(\"a;b\"); imprima(\"depois\");\nfim",
+            3,
+            Language::GPortugol,
+            LearningTopic::Output,
+            "\"a;b\"",
+        ),
+        (
+            "variaveis\n x: inteiro;\ninicio\nescrever \"a;b\"; escrever \"depois\";\nfim.",
+            4,
+            Language::Mapler,
+            LearningTopic::Output,
+            "\"a;b\"",
+        ),
+        (
+            "algoritmo aula;\nprincipal\nx = 1; escreva(2);\nfimPrincipal",
+            3,
+            Language::Calango,
+            LearningTopic::Assignment,
+            "1",
+        ),
+    ];
+
+    for (source, line, language, expected_topic, expected_expression) in cases {
+        let hint = learning_hint(source, line, language);
+        assert_eq!(hint.topic, expected_topic, "{language:?}: {source}");
+        assert_eq!(
+            hint.expression.as_deref(),
+            Some(expected_expression),
+            "{language:?}: {source}"
+        );
+    }
 }
 
 #[test]
@@ -479,7 +525,7 @@ fn learning_hint_reports_line_specific_syntax_and_possible_logic_problems() {
 }
 
 #[test]
-fn parser_errors_stay_on_their_line_across_all_supported_dialects() {
+fn lexical_errors_stay_on_their_line_across_all_supported_dialects() {
     let cases = [
         ("escreva \"ok\"\n@\n", 2, Language::Potigol),
         ("use \"jerimum\"\nescreva \"ok\"\n@\n", 3, Language::Potigol),
@@ -601,7 +647,7 @@ fn potigol_field_assignment_advice_uses_potigol_syntax_in_the_learning_panel() {
 }
 
 #[test]
-fn runtime_diagnostics_are_shown_only_on_their_source_line_for_every_fixture_mode() {
+fn shared_runtime_diagnostics_are_shown_only_on_their_selected_source_line() {
     let fixtures = [
         ("Portugol Studio 2.0", Language::Portugol),
         ("G-Portugol", Language::GPortugol),
@@ -685,31 +731,149 @@ fn reports_only_proven_constant_indexes_outside_declared_bounds() {
 }
 
 #[test]
-fn type_diagnostics_keep_their_own_learning_category_for_every_fixture_mode() {
-    let fixtures = [
-        ("Portugol Studio 2.0", Language::Portugol),
-        ("G-Portugol", Language::GPortugol),
-        ("Mapler", Language::Mapler),
-        ("VisuAlg", Language::Visualg),
-        ("Calango", Language::Calango),
-        ("Potigol Classic", Language::Potigol),
-        ("Potigol Jerimum", Language::Potigol),
+fn parser_syntax_diagnostics_are_preserved_for_supported_fixture_modes() {
+    let cases = [
+        (
+            "Portugol Studio 2.0",
+            Language::Portugol,
+            "programa {\n funcao inicio() {\n  inteiro = 1\n  escreva(\"depois\")\n }\n}",
+            3,
+        ),
+        (
+            "G-Portugol",
+            Language::GPortugol,
+            "algoritmo erro;\ninício\n  imprima(1 + );\n  imprima(2);\nfim",
+            3,
+        ),
+        (
+            "Mapler",
+            Language::Mapler,
+            "variaveis\ninicio\nescrever 1 + ;\nescrever \"depois\";\nfim.",
+            3,
+        ),
+        (
+            "VisuAlg",
+            Language::Visualg,
+            "algoritmo \"erro\"\ninicio\nescreval(1 + )\nescreval(2)\nfimalgoritmo",
+            3,
+        ),
+        (
+            "Calango",
+            Language::Calango,
+            "algoritmo erro;\nprincipal\nescreval(1 + );\nescreval(2);\nfimPrincipal",
+            3,
+        ),
+        (
+            "Potigol Classic",
+            Language::Potigol,
+            "escreva\nescreva 2",
+            1,
+        ),
+        (
+            "Potigol Jerimum",
+            Language::Potigol,
+            "use \"jerimum\"\nescreva\nescreva 2",
+            2,
+        ),
     ];
-    let diagnostics = [ExecutionDiagnostic {
-        kind: ExecutionDiagnosticKind::Type,
-        message: "tipos incompatíveis: esperava Inteiro, recebeu Lógico".to_owned(),
-        line: 1,
-        column: 5,
-    }];
 
-    for (fixture, language) in fixtures {
-        let hint = learning_hint_with_runtime("valor = 1 + verdadeiro", 1, language, &diagnostics);
+    for (fixture, language, source, error_line) in cases {
+        let diagnostics = (language.profile().diagnostics)(source);
         assert!(
-            hint.problems
-                .iter()
-                .any(|problem| problem.kind == LearningProblemKind::Type),
-            "{fixture} changed the type diagnostic category: {:?}",
+            diagnostics.iter().any(|diagnostic| {
+                diagnostic.kind == SourceDiagnosticKind::Syntax && diagnostic.line == error_line
+            }),
+            "{fixture} did not report a parser syntax diagnostic on line {error_line}: {diagnostics:?}"
+        );
+        let hint = learning_hint(source, error_line, language);
+        assert_eq!(hint.topic, LearningTopic::Unrecognized, "{fixture}");
+        assert!(
+            hint.problems.iter().any(|problem| {
+                problem.kind == LearningProblemKind::Syntax && problem.line == error_line
+            }),
+            "{fixture} did not preserve its selected-line syntax diagnostic: {:?}",
             hint.problems
         );
     }
+}
+
+#[test]
+fn real_type_diagnostics_reach_learning_for_profiles_that_report_types() {
+    let cases = [
+        (
+            "Portugol Studio 2.0",
+            Language::Portugol,
+            "programa {\n funcao inicio() {\n  se (falso) { funcao_inexistente() }\n }\n}",
+        ),
+        (
+            "G-Portugol",
+            Language::GPortugol,
+            "algoritmo erro;\ninício\n  imprima(nao_existe);\nfim",
+        ),
+        (
+            "Mapler",
+            Language::Mapler,
+            "variaveis valor: real;\ninicio\nvalor <- 2 + 2;\nfim.",
+        ),
+        (
+            "Calango",
+            Language::Calango,
+            "algoritmo erro;\nprincipal\ncaracter c;\nleia(c);\nfimPrincipal",
+        ),
+        (
+            "Potigol Classic",
+            Language::Potigol,
+            "valor = 1 + verdadeiro",
+        ),
+        (
+            "Potigol Jerimum",
+            Language::Potigol,
+            "use \"jerimum\"\nvalor = 1 + verdadeiro",
+        ),
+    ];
+
+    for (fixture, language, source) in cases {
+        let program =
+            crate::features::execution::start(source.to_owned(), language, None, None, false);
+        let diagnostics = loop {
+            match program
+                .events
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .unwrap_or_else(|error| panic!("{fixture} type-check execution: {error}"))
+            {
+                ExecutionEvent::Finished { result, .. } => {
+                    break match result {
+                        Err(diagnostics) => diagnostics,
+                        Ok(()) => {
+                            panic!("{fixture} fixture unexpectedly executed without diagnostics")
+                        }
+                    };
+                }
+                _ => {}
+            }
+        };
+        let diagnostic = diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.kind == ExecutionDiagnosticKind::Type)
+            .unwrap_or_else(|| {
+                panic!("{fixture} fixture did not produce a real type diagnostic: {diagnostics:?}")
+            });
+        let hint = learning_hint_with_runtime(source, diagnostic.line, language, &diagnostics);
+        assert!(
+            hint.problems.iter().any(|problem| {
+                problem.kind == LearningProblemKind::Type && problem.line == diagnostic.line
+            }),
+            "{fixture} lost its parser/checker type diagnostic: {:?}",
+            hint.problems
+        );
+    }
+
+    let visualg_diagnostics = (Language::Visualg.profile().diagnostics)(
+        "algoritmo \"tipo\"\ninicio\nescreval(1 + verdadeiro)\nfimalgoritmo",
+    );
+    assert!(
+        visualg_diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.kind != SourceDiagnosticKind::Type)
+    );
 }

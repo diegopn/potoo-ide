@@ -56,7 +56,8 @@ where
             problems: Vec::new(),
         });
     }
-    let code_line = (language.profile().source_line_code)(source, one_based_line);
+    let profile = language.profile();
+    let code_line = (profile.source_line_code)(source, one_based_line);
     let line = code_line.trim();
     let (facts, column, mut problems) = match language.profile().learning {
         Some(adapter) => {
@@ -69,6 +70,9 @@ where
     if is_cancelled() {
         return None;
     }
+    let statement = (profile.source_statement_range)(source, one_based_line, column)
+        .and_then(|range| source.get(range))
+        .unwrap_or(line);
     let mut facts = facts.unwrap_or_else(unrecognized_facts);
     if matches!(facts.topic, LearningTopic::Call | LearningTopic::Input) && facts.call.is_none() {
         facts.call = call_from_source(source, one_based_line, column);
@@ -83,10 +87,10 @@ where
         facts.topic = LearningTopic::LibraryCall;
     }
     let expression = match facts.topic {
-        LearningTopic::Decision => Some(extract_condition(line)),
-        LearningTopic::Loop => loop_condition(line),
+        LearningTopic::Decision => Some(extract_condition(statement)),
+        LearningTopic::Loop => loop_condition(statement),
         _ => expression_for_line(
-            line,
+            statement,
             facts.topic,
             language,
             facts.name.as_deref(),
@@ -99,7 +103,7 @@ where
             .flatten();
     let target = if facts.topic == LearningTopic::Input {
         input_target(
-            line,
+            statement,
             language,
             facts.call.as_ref(),
             &facts.variables,
@@ -152,13 +156,13 @@ where
         });
     }
     if facts.topic == LearningTopic::Decision
-        && let Some(problem) = constant_condition_problem(line, one_based_line)
+        && let Some(problem) = constant_condition_problem(statement, one_based_line)
     {
         problems.push(problem);
     }
     if facts.topic != LearningTopic::Variable && facts.topic != LearningTopic::Unrecognized {
         let index_problems =
-            constant_index_problems(source, line, one_based_line, language, &is_cancelled)?;
+            constant_index_problems(source, statement, one_based_line, language, &is_cancelled)?;
         problems.extend(index_problems);
     }
     if is_cancelled() {

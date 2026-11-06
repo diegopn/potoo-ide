@@ -20,7 +20,7 @@ const STATEMENT_RULES: StatementRules<'static> = StatementRules {
     case_sensitive_keywords: true,
 };
 
-pub(super) fn statement_range(source: &str, line: usize, column: usize) -> Option<Range<usize>> {
+pub(crate) fn statement_range(source: &str, line: usize, column: usize) -> Option<Range<usize>> {
     let tokens = lexer::tokens(source);
     let index = SourceIndex::new(source);
     statement_range_with_next_line_continuations(
@@ -108,6 +108,7 @@ mod tests {
     use super::{debugger_prefix, mask_diagnostic_statement, statement_range};
     use crate::languages::source::SourceIndex;
     use potoo_potigol_interpreter::parse;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn statement_range_selects_a_line_statement_and_preserves_unicode_positions() {
@@ -205,5 +206,35 @@ mod tests {
         )
         .expect("the complete continued expression can be masked");
         assert!(parse(&masked).is_ok(), "{masked:?}");
+    }
+
+    #[test]
+    fn long_comment_runs_keep_potigol_continuation_scanning_linear() {
+        fn median_scan_time(comment_lines: usize) -> Duration {
+            let source = format!(
+                "escreva 1\n{}+ @\nescreva 2",
+                "# comentário\n".repeat(comment_lines)
+            );
+            let line = comment_lines + 2;
+            let mut samples = Vec::with_capacity(3);
+            for _ in 0..3 {
+                let started = Instant::now();
+                let range =
+                    statement_range(&source, line, 3).expect("the continued statement has a range");
+                assert!(source[range].starts_with("escreva 1\n"));
+                samples.push(started.elapsed());
+            }
+            samples.sort_unstable();
+            samples[1]
+        }
+
+        let _ = median_scan_time(1_000);
+        let small = median_scan_time(12_000);
+        let large = median_scan_time(24_000);
+
+        assert!(
+            large < small.saturating_mul(3),
+            "doubling the comment run should stay near linear: 12k={small:?}, 24k={large:?}"
+        );
     }
 }

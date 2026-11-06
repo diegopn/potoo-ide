@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::Range;
 
 use crate::features::execution::{ExecutionDiagnostic, WorkerIo};
 use crate::languages::completion::CompletionAdapter;
@@ -8,6 +9,7 @@ use crate::languages::model::{
 
 pub(crate) type DiagnosticAdapter = fn(&str) -> Vec<SourceDiagnostic>;
 pub(crate) type SourceLineCodeAdapter = fn(&str, usize) -> String;
+pub(crate) type SourceStatementRangeAdapter = fn(&str, usize, usize) -> Option<Range<usize>>;
 pub(crate) type BlankCommentAdapter = fn(&str, usize) -> bool;
 pub(crate) type LiteralMaskAdapter = fn(&str) -> String;
 pub(crate) type ArrayBoundsAdapter =
@@ -27,6 +29,7 @@ pub(crate) struct LanguageProfile {
     pub(crate) keywords: &'static [&'static str],
     pub(crate) diagnostics: DiagnosticAdapter,
     pub(crate) source_line_code: SourceLineCodeAdapter,
+    pub(crate) source_statement_range: SourceStatementRangeAdapter,
     pub(crate) is_blank_or_line_comment: BlankCommentAdapter,
     pub(crate) without_literals_and_comments: LiteralMaskAdapter,
     pub(crate) declared_array_bounds: Option<ArrayBoundsAdapter>,
@@ -49,6 +52,8 @@ static PROFILES: [LanguageProfile; 6] = [
         diagnostics: crate::languages::portugol::studio_20::diagnostics::analyze,
         source_line_code:
             crate::languages::portugol::studio_20::syntax_analysis::views::source_line_code,
+        source_statement_range:
+            crate::languages::portugol::studio_20::syntax_analysis::structure::statement_range,
         is_blank_or_line_comment:
             crate::languages::portugol::studio_20::syntax_analysis::views::is_blank_or_line_comment,
         without_literals_and_comments:
@@ -75,6 +80,8 @@ static PROFILES: [LanguageProfile; 6] = [
         diagnostics: crate::languages::portugol::visualg::diagnostics::analyze,
         source_line_code:
             crate::languages::portugol::visualg::syntax_analysis::views::source_line_code,
+        source_statement_range:
+            crate::languages::portugol::visualg::syntax_analysis::structure::statement_range,
         is_blank_or_line_comment:
             crate::languages::portugol::visualg::syntax_analysis::views::is_blank_or_line_comment,
         without_literals_and_comments:
@@ -100,6 +107,8 @@ static PROFILES: [LanguageProfile; 6] = [
         keywords: crate::languages::potigol::completion::LANGUAGE_KEYWORDS,
         diagnostics: crate::languages::potigol::diagnostics::analyze,
         source_line_code: crate::languages::potigol::syntax_analysis::views::source_line_code,
+        source_statement_range:
+            crate::languages::potigol::syntax_analysis::structure::statement_range,
         is_blank_or_line_comment:
             crate::languages::potigol::syntax_analysis::views::is_blank_or_line_comment,
         without_literals_and_comments:
@@ -122,6 +131,8 @@ static PROFILES: [LanguageProfile; 6] = [
         diagnostics: crate::languages::portugol::g_portugol::diagnostics::analyze,
         source_line_code:
             crate::languages::portugol::g_portugol::syntax_analysis::views::source_line_code,
+        source_statement_range:
+            crate::languages::portugol::g_portugol::syntax_analysis::structure::statement_range,
         is_blank_or_line_comment:
             crate::languages::portugol::g_portugol::syntax_analysis::views::is_blank_or_line_comment,
         without_literals_and_comments:
@@ -145,6 +156,8 @@ static PROFILES: [LanguageProfile; 6] = [
         keywords: crate::languages::calango::completion::LANGUAGE_KEYWORDS,
         diagnostics: crate::languages::calango::diagnostics::analyze,
         source_line_code: crate::languages::calango::syntax_analysis::views::source_line_code,
+        source_statement_range:
+            crate::languages::calango::syntax_analysis::structure::statement_range,
         is_blank_or_line_comment:
             crate::languages::calango::syntax_analysis::views::is_blank_or_line_comment,
         without_literals_and_comments:
@@ -167,6 +180,8 @@ static PROFILES: [LanguageProfile; 6] = [
         diagnostics: crate::languages::portugol::mapler::diagnostics::analyze,
         source_line_code:
             crate::languages::portugol::mapler::syntax_analysis::views::source_line_code,
+        source_statement_range:
+            crate::languages::portugol::mapler::syntax_analysis::structure::statement_range,
         is_blank_or_line_comment:
             crate::languages::portugol::mapler::syntax_analysis::views::is_blank_or_line_comment,
         without_literals_and_comments:
@@ -410,6 +425,31 @@ mod tests {
 
         for (language, fixture) in fixtures {
             let profile = language.profile();
+            let expected_statement_range: SourceStatementRangeAdapter = match language {
+                Language::Portugol => {
+                    crate::languages::portugol::studio_20::syntax_analysis::structure::statement_range
+                }
+                Language::GPortugol => {
+                    crate::languages::portugol::g_portugol::syntax_analysis::structure::statement_range
+                }
+                Language::Calango => {
+                    crate::languages::calango::syntax_analysis::structure::statement_range
+                }
+                Language::Mapler => {
+                    crate::languages::portugol::mapler::syntax_analysis::structure::statement_range
+                }
+                Language::Visualg => {
+                    crate::languages::portugol::visualg::syntax_analysis::structure::statement_range
+                }
+                Language::Potigol => {
+                    crate::languages::potigol::syntax_analysis::structure::statement_range
+                }
+            };
+            assert!(
+                std::ptr::fn_addr_eq(profile.source_statement_range, expected_statement_range),
+                "{fixture}"
+            );
+
             let actual_debugger = profile
                 .debugger_prefix
                 .unwrap_or_else(|| panic!("{fixture} needs a debugger adapter"));

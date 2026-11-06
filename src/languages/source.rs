@@ -1457,12 +1457,18 @@ pub(crate) fn statement_range_with_next_line_continuations(
     let mut statement_end = 0;
     let (mut parentheses, mut brackets, mut braces) = (0usize, 0usize, 0usize);
     let mut previous: Option<&SourceToken> = None;
+    let mut next_non_newline = vec![None; tokens.len()];
+    let mut next_token = None;
+    for token_index in (0..tokens.len()).rev() {
+        next_non_newline[token_index] = next_token;
+        if tokens[token_index].kind != SourceTokenKind::Newline {
+            next_token = Some(token_index);
+        }
+    }
 
     for (token_index, token) in tokens.iter().enumerate() {
         if token.kind == SourceTokenKind::Newline {
-            let next_token = tokens[token_index + 1..]
-                .iter()
-                .find(|next| next.kind != SourceTokenKind::Newline);
+            let next_token = next_non_newline[token_index].and_then(|next| tokens.get(next));
             let continued = parentheses > 0
                 || brackets > 0
                 || (!rules.brace_delimited_blocks && braces > 0)

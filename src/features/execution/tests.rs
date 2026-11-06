@@ -1071,23 +1071,24 @@ struct CoverageEvidence(&'static str);
 
 struct DebuggerRecoveryCoverage {
     fixture: &'static str,
-    diagnostics: [CoverageEvidence; 4],
+    diagnostics: [CoverageEvidence; 2],
+    type_diagnostic: Option<CoverageEvidence>,
+    type_not_applicable_reason: Option<&'static str>,
     structure: CoverageEvidence,
     source_formats: [CoverageEvidence; 2],
     consumers: [CoverageEvidence; 2],
 }
 
-const SHARED_DIAGNOSTIC_COVERAGE: [CoverageEvidence; 4] = [
+const SHARED_DIAGNOSTIC_COVERAGE: [CoverageEvidence; 2] = [
     CoverageEvidence("debugger_reaches_nested_lexical_errors_in_every_language_profile"),
-    CoverageEvidence("parser_errors_stay_on_their_line_across_all_supported_dialects"),
-    CoverageEvidence("type_diagnostics_keep_their_own_learning_category_for_every_fixture_mode"),
-    CoverageEvidence(
-        "runtime_diagnostics_are_shown_only_on_their_source_line_for_every_fixture_mode",
-    ),
+    CoverageEvidence("parser_syntax_diagnostics_are_preserved_for_supported_fixture_modes"),
 ];
 
+const SHARED_RUNTIME_DIAGNOSTIC_COVERAGE: CoverageEvidence =
+    CoverageEvidence("shared_runtime_diagnostics_are_shown_only_on_their_selected_source_line");
+
 const SHARED_CONSUMER_COVERAGE: [CoverageEvidence; 2] = [
-    CoverageEvidence("parser_errors_stay_on_their_line_across_all_supported_dialects"),
+    CoverageEvidence("parser_syntax_diagnostics_are_preserved_for_supported_fixture_modes"),
     CoverageEvidence("debugger_reaches_nested_lexical_errors_in_every_language_profile"),
 ];
 
@@ -1095,13 +1096,17 @@ const DEBUGGER_RECOVERY_COVERAGE: [DebuggerRecoveryCoverage; 7] = [
     DebuggerRecoveryCoverage {
         fixture: "Portugol Studio 2.0",
         diagnostics: SHARED_DIAGNOSTIC_COVERAGE,
+        type_diagnostic: Some(CoverageEvidence(
+            "real_type_diagnostics_reach_learning_for_profiles_that_report_types",
+        )),
+        type_not_applicable_reason: None,
         structure: CoverageEvidence(
             "portugol_debugger_does_not_run_a_truncated_loop_before_a_static_error",
         ),
         source_formats: [
             CoverageEvidence("shared_rules_ignore_braces_and_keywords_inside_strings_and_comments"),
             CoverageEvidence(
-                "source_index_maps_unicode_tabs_crlf_eof_without_accepting_invalid_coordinates",
+                "source_index_maps_unicode_tabs_crlf_and_eof_without_accepting_invalid_coordinates",
             ),
         ],
         consumers: SHARED_CONSUMER_COVERAGE,
@@ -1109,6 +1114,10 @@ const DEBUGGER_RECOVERY_COVERAGE: [DebuggerRecoveryCoverage; 7] = [
     DebuggerRecoveryCoverage {
         fixture: "G-Portugol",
         diagnostics: SHARED_DIAGNOSTIC_COVERAGE,
+        type_diagnostic: Some(CoverageEvidence(
+            "real_type_diagnostics_reach_learning_for_profiles_that_report_types",
+        )),
+        type_not_applicable_reason: None,
         structure: CoverageEvidence(
             "gportugol_debugger_does_not_execute_truncated_loops_before_static_errors",
         ),
@@ -1121,13 +1130,17 @@ const DEBUGGER_RECOVERY_COVERAGE: [DebuggerRecoveryCoverage; 7] = [
     DebuggerRecoveryCoverage {
         fixture: "Mapler",
         diagnostics: SHARED_DIAGNOSTIC_COVERAGE,
+        type_diagnostic: Some(CoverageEvidence(
+            "real_type_diagnostics_reach_learning_for_profiles_that_report_types",
+        )),
+        type_not_applicable_reason: None,
         structure: CoverageEvidence(
             "mapler_debugger_does_not_execute_truncated_loops_before_static_errors",
         ),
         source_formats: [
             CoverageEvidence("mapler_comments_end_only_at_lf_and_keep_parser_coordinates"),
             CoverageEvidence(
-                "source_index_maps_unicode_tabs_crlf_eof_without_accepting_invalid_coordinates",
+                "source_index_maps_unicode_tabs_crlf_and_eof_without_accepting_invalid_coordinates",
             ),
         ],
         consumers: SHARED_CONSUMER_COVERAGE,
@@ -1135,6 +1148,10 @@ const DEBUGGER_RECOVERY_COVERAGE: [DebuggerRecoveryCoverage; 7] = [
     DebuggerRecoveryCoverage {
         fixture: "VisuAlg",
         diagnostics: SHARED_DIAGNOSTIC_COVERAGE,
+        type_diagnostic: None,
+        type_not_applicable_reason: Some(
+            "The VisuAlg interpreter's diagnostic adapter reports lexical, syntax, and runtime kinds; its diagnostic enum has no Type variant.",
+        ),
         structure: CoverageEvidence("visualg_debugger_does_not_execute_truncated_loop_bodies"),
         source_formats: [
             CoverageEvidence("visualg_line_views_follow_crlf_and_bare_cr_boundaries"),
@@ -1145,6 +1162,10 @@ const DEBUGGER_RECOVERY_COVERAGE: [DebuggerRecoveryCoverage; 7] = [
     DebuggerRecoveryCoverage {
         fixture: "Calango",
         diagnostics: SHARED_DIAGNOSTIC_COVERAGE,
+        type_diagnostic: Some(CoverageEvidence(
+            "real_type_diagnostics_reach_learning_for_profiles_that_report_types",
+        )),
+        type_not_applicable_reason: None,
         structure: CoverageEvidence(
             "calango_debugger_fails_closed_for_truncated_loops_and_called_routines",
         ),
@@ -1159,6 +1180,10 @@ const DEBUGGER_RECOVERY_COVERAGE: [DebuggerRecoveryCoverage; 7] = [
     DebuggerRecoveryCoverage {
         fixture: "Potigol Classic",
         diagnostics: SHARED_DIAGNOSTIC_COVERAGE,
+        type_diagnostic: Some(CoverageEvidence(
+            "real_type_diagnostics_reach_learning_for_profiles_that_report_types",
+        )),
+        type_not_applicable_reason: None,
         structure: CoverageEvidence(
             "potigol_classic_and_jerimum_do_not_execute_truncated_loop_prefixes",
         ),
@@ -1173,6 +1198,10 @@ const DEBUGGER_RECOVERY_COVERAGE: [DebuggerRecoveryCoverage; 7] = [
     DebuggerRecoveryCoverage {
         fixture: "Potigol Jerimum",
         diagnostics: SHARED_DIAGNOSTIC_COVERAGE,
+        type_diagnostic: Some(CoverageEvidence(
+            "real_type_diagnostics_reach_learning_for_profiles_that_report_types",
+        )),
+        type_not_applicable_reason: None,
         structure: CoverageEvidence(
             "potigol_classic_and_jerimum_do_not_execute_truncated_loop_prefixes",
         ),
@@ -1185,6 +1214,31 @@ const DEBUGGER_RECOVERY_COVERAGE: [DebuggerRecoveryCoverage; 7] = [
         consumers: SHARED_CONSUMER_COVERAGE,
     },
 ];
+
+const COVERAGE_TEST_SOURCES: [&str; 10] = [
+    include_str!("tests.rs"),
+    include_str!("../learning/tests.rs"),
+    include_str!("../../languages/source.rs"),
+    include_str!("../../languages/portugol/studio_20/syntax_analysis/structure.rs"),
+    include_str!("../../languages/portugol/g_portugol/syntax_analysis/lexer.rs"),
+    include_str!("../../languages/portugol/mapler/syntax_analysis/lexer.rs"),
+    include_str!("../../languages/portugol/visualg/syntax_analysis/views.rs"),
+    include_str!("../../languages/portugol/visualg/syntax_analysis/lexer.rs"),
+    include_str!("../../languages/calango/syntax_analysis/views.rs"),
+    include_str!("../../languages/calango/syntax_analysis/lexer.rs"),
+];
+
+const POTIGOL_COVERAGE_TEST_SOURCES: [&str; 1] = [include_str!(
+    "../../languages/potigol/syntax_analysis/lexer.rs"
+)];
+
+fn coverage_test_exists(name: &str) -> bool {
+    let definition = format!("fn {name}(");
+    COVERAGE_TEST_SOURCES
+        .iter()
+        .chain(POTIGOL_COVERAGE_TEST_SOURCES.iter())
+        .any(|source| source.contains(&definition))
+}
 
 #[test]
 fn debugger_and_learning_coverage_matrix_names_all_seven_fixture_modes() {
@@ -1200,17 +1254,33 @@ fn debugger_and_learning_coverage_matrix_names_all_seven_fixture_modes() {
     assert_eq!(DEBUGGER_RECOVERY_COVERAGE.len(), expected.len());
     let actual = DEBUGGER_RECOVERY_COVERAGE.map(|entry| entry.fixture);
     assert_eq!(actual.as_slice(), expected.as_slice());
+    let CoverageEvidence(shared_runtime_test) = SHARED_RUNTIME_DIAGNOSTIC_COVERAGE;
+    assert!(
+        coverage_test_exists(shared_runtime_test),
+        "shared runtime consumer points to missing test {shared_runtime_test}"
+    );
 
     for entry in DEBUGGER_RECOVERY_COVERAGE {
+        assert_eq!(
+            entry.type_diagnostic.is_some(),
+            entry.type_not_applicable_reason.is_none(),
+            "{} must name either type-diagnostic evidence or an explicit reason",
+            entry.fixture
+        );
         for evidence in entry
             .diagnostics
             .into_iter()
             .chain([entry.structure])
             .chain(entry.source_formats)
             .chain(entry.consumers)
+            .chain(entry.type_diagnostic)
         {
             match evidence {
-                CoverageEvidence(name) => assert!(name.contains('_'), "{}: {name}", entry.fixture),
+                CoverageEvidence(name) => assert!(
+                    coverage_test_exists(name),
+                    "{} points to missing test {name}",
+                    entry.fixture
+                ),
             }
         }
     }
