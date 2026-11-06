@@ -1,3 +1,4 @@
+use super::diagnostics;
 use super::*;
 
 #[cfg(test)]
@@ -123,49 +124,13 @@ where
     } else {
         None
     };
-    for diagnostic in runtime_diagnostics
-        .iter()
-        .filter(|diagnostic| diagnostic.line == one_based_line)
-    {
-        let category = match diagnostic.kind {
-            ExecutionDiagnosticKind::Lexical => {
-                crate::features::diagnostics::DiagnosticCategory::Lexical
-            }
-            ExecutionDiagnosticKind::Syntax => {
-                crate::features::diagnostics::DiagnosticCategory::Syntax
-            }
-            ExecutionDiagnosticKind::Type => crate::features::diagnostics::DiagnosticCategory::Type,
-            ExecutionDiagnosticKind::Runtime => {
-                crate::features::diagnostics::DiagnosticCategory::Runtime
-            }
-        };
-        let kind = learning_problem_kind(category);
-        let message = crate::features::diagnostics::adapt_diagnostic_message(
-            language,
-            source,
-            category,
-            &diagnostic.message,
-            diagnostic.line,
-            diagnostic.column,
-        );
-        if problems.iter().any(|problem: &LearningProblem| {
-            problem.kind == kind
-                && problem.line == diagnostic.line
-                && problem.column == diagnostic.column
-                && problem.message == message
-        }) {
-            continue;
-        }
-        problems.push(LearningProblem {
-            kind,
-            severity: LearningSeverity::Error,
-            line: diagnostic.line,
-            column: diagnostic.column,
-            text: LearningProblemText::InterpreterDiagnostic,
-            suggestion: diagnostic_suggestion(kind, &message),
-            message,
-        });
-    }
+    diagnostics::append_runtime_diagnostics(
+        &mut problems,
+        language,
+        source,
+        one_based_line,
+        runtime_diagnostics,
+    );
     if facts.topic == LearningTopic::Decision
         && let Some(problem) = constant_condition_problem(statement, one_based_line)
     {
@@ -236,7 +201,7 @@ fn recovering_learning_result(
             Some(RecoveringLearningResult {
                 facts,
                 column,
-                problems: learning_diagnostic_problems(
+                problems: diagnostics::learning_diagnostic_problems(
                     language,
                     source,
                     selected_line,
@@ -249,8 +214,12 @@ fn recovering_learning_result(
                 .iter()
                 .find(|diagnostic| diagnostic.line == selected_line)
                 .map_or(1, |diagnostic| diagnostic.column.max(1));
-            let mut problems =
-                learning_diagnostic_problems(language, source, selected_line, diagnostics);
+            let mut problems = diagnostics::learning_diagnostic_problems(
+                language,
+                source,
+                selected_line,
+                diagnostics,
+            );
             problems.push(LearningProblem {
                 kind: LearningProblemKind::Analysis,
                 severity: LearningSeverity::Warning,
@@ -270,70 +239,6 @@ fn recovering_learning_result(
         }
         SourceLineAnalysisOutcome::Cancelled => None,
     }
-}
-
-fn learning_diagnostic_problems(
-    language: Language,
-    source: &str,
-    selected_line: usize,
-    diagnostics: Vec<crate::languages::model::SourceDiagnostic>,
-) -> Vec<LearningProblem> {
-    diagnostics
-        .into_iter()
-        .filter(|diagnostic| diagnostic.line == selected_line)
-        .map(|diagnostic| {
-            let category = match diagnostic.kind {
-                crate::languages::model::SourceDiagnosticKind::Lexical => {
-                    crate::features::diagnostics::DiagnosticCategory::Lexical
-                }
-                crate::languages::model::SourceDiagnosticKind::Syntax => {
-                    crate::features::diagnostics::DiagnosticCategory::Syntax
-                }
-                crate::languages::model::SourceDiagnosticKind::Type => {
-                    crate::features::diagnostics::DiagnosticCategory::Type
-                }
-                crate::languages::model::SourceDiagnosticKind::Runtime => {
-                    crate::features::diagnostics::DiagnosticCategory::Runtime
-                }
-                crate::languages::model::SourceDiagnosticKind::StaticAnalysis => {
-                    crate::features::diagnostics::DiagnosticCategory::StaticAnalysis
-                }
-            };
-            let message = crate::features::diagnostics::adapt_diagnostic_message(
-                language,
-                source,
-                category,
-                &diagnostic.message,
-                diagnostic.line,
-                diagnostic.column,
-            );
-            let output_command = source
-                .lines()
-                .nth(diagnostic.line.saturating_sub(1))
-                .map(str::trim)
-                .filter(|command| matches!(*command, "escreva" | "imprima"));
-            let output_suggestion = (language == Language::Potigol
-                && category == crate::features::diagnostics::DiagnosticCategory::Syntax
-                && message == "esperava uma expressão"
-                && output_command.is_some())
-            .then(|| {
-                format!(
-                    "Informe o valor ou a expressão que será exibida após `{}`.",
-                    output_command.expect("the output command was checked")
-                )
-            });
-            let mut problem = diagnostic_problem(
-                learning_problem_kind(category),
-                diagnostic.line,
-                diagnostic.column,
-                message,
-            );
-            if output_suggestion.is_some() {
-                problem.suggestion = output_suggestion;
-            }
-            problem
-        })
-        .collect()
 }
 
 #[cfg(test)]

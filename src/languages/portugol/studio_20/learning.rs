@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::languages::{
+    array_bounds::insert_unique_bounds,
     model::{
         SourceConstruct, SourceDiagnostic, SourceDiagnosticKind, SourceDimension,
         SourceLineAnalysis, SourceLineAnalysisOutcome, SourceSymbol,
@@ -410,30 +411,21 @@ fn read_array_declarations(
                 .iter()
                 .all(|dimension| dimension.upper_bound.is_some())
         {
-            insert_unique_array_bounds(arrays, ambiguous, &name, dimensions);
+            insert_unique_bounds(
+                arrays,
+                ambiguous,
+                &name,
+                dimensions,
+                crate::languages::model::Language::Portugol
+                    .profile()
+                    .case_sensitive_identifiers,
+            );
         }
         cursor = skip_to_top_level_comma(characters, cursor);
         if characters.get(cursor) != Some(&',') {
             break;
         }
         cursor += 1;
-    }
-}
-
-fn insert_unique_array_bounds(
-    arrays: &mut HashMap<String, Vec<SourceDimension>>,
-    ambiguous: &mut HashSet<String>,
-    name: &str,
-    dimensions: Vec<SourceDimension>,
-) {
-    let name = name.to_owned();
-    if ambiguous.contains(&name) {
-        return;
-    }
-    if arrays.remove(&name).is_some() {
-        ambiguous.insert(name);
-    } else {
-        arrays.insert(name, dimensions);
     }
 }
 

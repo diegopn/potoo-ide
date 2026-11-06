@@ -23,7 +23,7 @@ use self::localization::{ThemePreference, theme_is_dark};
 #[cfg(test)]
 use self::localization::{UI_TRANSLATION_KEYS, translate_known_text};
 pub(crate) use self::localization::{UiLanguage, tr};
-pub(crate) use self::messages::{MainWindowMsg, RightPanelSection};
+pub(crate) use self::messages::{MainWindowMsg, RightPanelSection, should_persist_after};
 use self::persistence::*;
 use self::project::*;
 #[cfg(test)]

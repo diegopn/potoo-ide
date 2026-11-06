@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::languages::array_bounds::insert_unique_bounds;
 use crate::languages::model::{
     SourceConstruct, SourceDiagnostic, SourceDiagnosticKind, SourceDimension, SourceLineAnalysis,
     SourceLineAnalysisOutcome, SourceSymbol,
@@ -105,14 +106,15 @@ pub(crate) fn profile_declared_array_bounds(
             {
                 continue;
             }
-            let name = symbol.name;
-            if ambiguous.contains(&name) {
-                continue;
-            }
-            if bounds.insert(name.clone(), symbol.dimensions).is_some() {
-                bounds.remove(&name);
-                ambiguous.insert(name);
-            }
+            insert_unique_bounds(
+                &mut bounds,
+                &mut ambiguous,
+                &symbol.name,
+                symbol.dimensions,
+                crate::languages::model::Language::GPortugol
+                    .profile()
+                    .case_sensitive_identifiers,
+            );
         }
     }
     if is_cancelled() { None } else { Some(bounds) }

@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::languages::{
+    array_bounds::insert_unique_bounds,
     model::{
         SourceConstruct, SourceDiagnostic, SourceDiagnosticKind, SourceDimension,
         SourceLineAnalysis, SourceLineAnalysisOutcome, SourceSymbol,
@@ -351,7 +352,15 @@ pub(crate) fn declared_array_bounds(
             continue;
         }
         for name in variables {
-            insert_unique_array_bounds(&mut arrays, &mut ambiguous, &name, dimensions.clone());
+            insert_unique_bounds(
+                &mut arrays,
+                &mut ambiguous,
+                &name,
+                dimensions.clone(),
+                crate::languages::model::Language::Visualg
+                    .profile()
+                    .case_sensitive_identifiers,
+            );
         }
     }
     Some(arrays)
@@ -387,23 +396,6 @@ fn read_dimensions(characters: &[char], cursor: &mut usize) -> Option<Vec<Source
             }
             _ => return None,
         }
-    }
-}
-
-fn insert_unique_array_bounds(
-    arrays: &mut HashMap<String, Vec<SourceDimension>>,
-    ambiguous: &mut HashSet<String>,
-    name: &str,
-    dimensions: Vec<SourceDimension>,
-) {
-    let name = name.to_lowercase();
-    if ambiguous.contains(&name) {
-        return;
-    }
-    if arrays.remove(&name).is_some() {
-        ambiguous.insert(name);
-    } else {
-        arrays.insert(name, dimensions);
     }
 }
 

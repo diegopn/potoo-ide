@@ -78,3 +78,30 @@ pub(super) fn point_array_argument(
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn integer_arguments_report_missing_values() {
+        assert_eq!(
+            integer_argument(&[], 0),
+            Err("argumento 1 deve ser inteiro".to_owned())
+        );
+    }
+
+    #[test]
+    fn graphics_dimensions_keep_the_supported_range() {
+        assert_eq!(checked_dimension(1), Ok(1));
+        assert_eq!(checked_dimension(8192), Ok(8192));
+        assert_eq!(
+            checked_dimension(0),
+            Err("a dimensão deve estar entre 1 e 8192 pixels".to_owned())
+        );
+        assert_eq!(
+            checked_dimension(8193),
+            Err("a dimensão deve estar entre 1 e 8192 pixels".to_owned())
+        );
+    }
+}

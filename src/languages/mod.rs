@@ -1,3 +1,4 @@
+pub(crate) mod array_bounds;
 pub(crate) mod calango;
 pub(crate) mod completion;
 pub(crate) mod model;

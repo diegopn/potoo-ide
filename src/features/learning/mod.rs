@@ -1,6 +1,7 @@
 mod analysis;
 pub(crate) mod catalog;
 mod context;
+mod diagnostics;
 mod facts;
 mod model;
 mod problems;
@@ -21,7 +22,7 @@ pub(crate) use model::*;
 use self::context::{expression_for_line, input_target, loop_condition};
 use self::facts::{call_from_source, learning_facts, unrecognized_facts};
 use self::problems::*;
-use crate::features::execution::{DiagnosticKind as ExecutionDiagnosticKind, ExecutionDiagnostic};
+use crate::features::execution::ExecutionDiagnostic;
 use crate::languages::{
     model::{Language, SourceDimension},
     source::{read_identifier, read_integer, skip_spaces},

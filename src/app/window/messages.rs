@@ -85,3 +85,60 @@ pub(crate) enum MainWindowMsg {
     },
     PersistRecovery(u64),
 }
+
+pub(crate) fn should_persist_after(message: &MainWindowMsg) -> bool {
+    matches!(
+        message,
+        MainWindowMsg::ProjectSelected(_)
+            | MainWindowMsg::RecentSelected(_)
+            | MainWindowMsg::ProjectSwitchDecision(_)
+            | MainWindowMsg::ProjectScanCompleted { .. }
+            | MainWindowMsg::DocumentReadCompleted { .. }
+            | MainWindowMsg::CreateProject(_, _, _)
+            | MainWindowMsg::CreateFile(_, _, _)
+            | MainWindowMsg::CreateFolder(_, _)
+            | MainWindowMsg::RenameProjectItemConfirmed(_, _)
+            | MainWindowMsg::DeleteProjectItemConfirmed(_)
+            | MainWindowMsg::OpenFile(_)
+            | MainWindowMsg::OpenMaplerText(_)
+            | MainWindowMsg::ActivateDocument(_)
+            | MainWindowMsg::CloseDocument(_)
+            | MainWindowMsg::CloseDocumentDecision(_, _)
+            | MainWindowMsg::SaveAndCloseDocument(_)
+            | MainWindowMsg::SaveCurrent
+            | MainWindowMsg::SaveAsSelected(_, _)
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MainWindowMsg, RightPanelSection, should_persist_after};
+    use std::path::PathBuf;
+
+    #[test]
+    fn persists_after_project_and_document_updates() {
+        let messages = [
+            MainWindowMsg::ProjectSelected(PathBuf::new()),
+            MainWindowMsg::CloseDocumentDecision(7, false),
+            MainWindowMsg::SaveCurrent,
+        ];
+
+        for message in messages {
+            assert!(should_persist_after(&message));
+        }
+    }
+
+    #[test]
+    fn skips_persistence_for_transient_updates() {
+        let messages = [
+            MainWindowMsg::Run,
+            MainWindowMsg::SourceChanged(String::from("escreva(1)")),
+            MainWindowMsg::SelectRightPanel(RightPanelSection::Learning),
+            MainWindowMsg::PersistRecovery(1),
+        ];
+
+        for message in messages {
+            assert!(!should_persist_after(&message));
+        }
+    }
+}
