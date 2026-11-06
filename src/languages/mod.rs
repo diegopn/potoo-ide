@@ -37,7 +37,6 @@ mod syntax_analysis_tests {
         let source = "before; bad @; after\nsecond line";
         let views = [
             calango::syntax_analysis::views::mask_diagnostic_statement,
-            portugol::g_portugol::syntax_analysis::views::mask_diagnostic_statement,
             portugol::mapler::syntax_analysis::views::mask_diagnostic_statement,
             portugol::visualg::syntax_analysis::views::mask_diagnostic_statement,
             potigol::syntax_analysis::views::mask_diagnostic_statement,
@@ -50,6 +49,14 @@ mod syntax_analysis_tests {
             assert!(recovered.contains("after"), "{recovered:?}");
             assert!(recovered.ends_with("second line"), "{recovered:?}");
         }
+
+        let recovered =
+            portugol::g_portugol::syntax_analysis::views::mask_diagnostic_statement(source, 1, 13)
+                .expect("the G-Portugol statement boundary should be safe");
+        assert!(recovered.starts_with("before;"), "{recovered:?}");
+        assert!(!recovered.contains("bad @"), "{recovered:?}");
+        assert!(recovered.contains("after"), "{recovered:?}");
+        assert!(recovered.ends_with("second line"), "{recovered:?}");
 
         let portugol_source = "programa {\n funcao inicio() {\n  escreva(\"before\")\n  @\n  escreva(\"after\")\n }\n}";
         let recovered = portugol::studio_20::syntax_analysis::views::mask_diagnostic_statement(

@@ -73,8 +73,8 @@ mod shared_source_tests {
     use std::cell::Cell;
 
     use super::{
-        LexerConfig, MaskRules, QuoteRule, RecoveryStatus, SourceIndex, SourceTokenKind,
-        StatementRules, close_open_blocks, mask_range_preserving_positions,
+        LexerConfig, LineCommentTerminator, MaskRules, QuoteRule, RecoveryStatus, SourceIndex,
+        SourceTokenKind, StatementRules, close_open_blocks, mask_range_preserving_positions,
         mask_range_preserving_positions_with_rules, recover_parse, statement_range, token_text,
         tokenize,
     };
@@ -109,18 +109,44 @@ mod shared_source_tests {
     #[test]
     fn source_index_treats_empty_input_and_a_trailing_newline_as_real_lines() {
         let empty = SourceIndex::new("");
+        assert_eq!(empty.line_count(), 1);
+        assert_eq!(empty.line_text(1), Some(""));
         assert_eq!(empty.line_column_to_byte(1, 1), Some(0));
         assert_eq!(empty.line_column_to_byte(1, 2), None);
         assert_eq!(empty.line_column_to_byte(2, 1), None);
         assert_eq!(empty.byte_to_line_column(0), Some((1, 1)));
 
         let trailing_newline = SourceIndex::new("a\n");
+        assert_eq!(trailing_newline.line_count(), 2);
+        assert_eq!(trailing_newline.line_text(2), Some(""));
         assert_eq!(trailing_newline.line_column_to_byte(2, 1), Some(2));
         assert_eq!(trailing_newline.byte_to_line_column(2), Some((2, 1)));
 
         let carriage_return = SourceIndex::new("a\rb");
+        assert_eq!(carriage_return.line_count(), 2);
+        assert_eq!(carriage_return.line_text(1), Some("a"));
+        assert_eq!(carriage_return.line_text(2), Some("b"));
         assert_eq!(carriage_return.line_column_to_byte(2, 1), Some(2));
         assert_eq!(carriage_return.byte_to_line_column(2), Some((2, 1)));
+
+        let mixed = SourceIndex::new("a\r\nb\rc\n");
+        assert_eq!(mixed.line_count(), 4);
+        assert_eq!(mixed.line_text(1), Some("a"));
+        assert_eq!(mixed.line_text(2), Some("b"));
+        assert_eq!(mixed.line_text(3), Some("c"));
+        assert_eq!(mixed.line_text(4), Some(""));
+    }
+
+    #[test]
+    fn source_index_can_ignore_a_leading_bom_for_language_coordinates() {
+        let source = "\u{feff}ação\r\nfim";
+        let index = SourceIndex::new_ignoring_leading_bom(source);
+
+        assert_eq!(index.line_text(1), Some("ação"));
+        assert_eq!(index.line_column_to_byte(1, 1), Some(3));
+        assert_eq!(index.line_column_to_byte(1, 2), Some(4));
+        assert_eq!(index.byte_to_line_column(3), Some((1, 1)));
+        assert_eq!(index.line_column_to_byte(2, 1), Some(11));
     }
 
     #[test]
@@ -137,14 +163,18 @@ se */ z"#;
                     delimiter: '"',
                     escape: Some('\\'),
                     doubled_delimiter: false,
+                    allows_newlines: false,
                 },
                 QuoteRule {
                     delimiter: '\'',
                     escape: None,
                     doubled_delimiter: true,
+                    allows_newlines: false,
                 },
             ],
-            hyphenated_identifiers: true,
+            hyphenated_words: &["fim-se"],
+            line_comment_terminator: LineCommentTerminator::AnyNewline,
+            ignore_leading_bom: false,
         };
 
         let tokens = tokenize(source, &config);
@@ -184,13 +214,52 @@ se */ z"#;
     }
 
     #[test]
+    fn tokenizer_supports_language_specific_comment_and_quote_line_rules() {
+        let source = "a\r// comentário\r/*\n@";
+        let config = LexerConfig {
+            line_comments: &["//"],
+            line_comment_terminator: LineCommentTerminator::LfOrCrlf,
+            block_comments: &[("/*", "*/")],
+            quote_rules: &[QuoteRule {
+                delimiter: '\'',
+                escape: Some('\\'),
+                doubled_delimiter: false,
+                allows_newlines: true,
+            }],
+            hyphenated_words: &[],
+            ignore_leading_bom: false,
+        };
+
+        let tokens = tokenize(source, &config);
+        let at = tokens
+            .iter()
+            .find(|token| token.kind == SourceTokenKind::Symbol('@'))
+            .expect("the code after the line comment remains tokenized");
+        assert_eq!((at.line, at.column), (4, 1));
+        let literal_source = "'b\nc' @";
+        let literal_tokens = tokenize(literal_source, &config);
+        let literal = literal_tokens
+            .iter()
+            .find(|token| token.kind == SourceTokenKind::Literal)
+            .expect("a single-quoted literal may span lines in this dialect");
+        assert_eq!(token_text(literal_source, literal), Some("'b\nc'"));
+        let after_literal = literal_tokens
+            .iter()
+            .find(|token| token.kind == SourceTokenKind::Symbol('@'))
+            .expect("code after the multiline literal remains tokenized");
+        assert_eq!((after_literal.line, after_literal.column), (2, 4));
+    }
+
+    #[test]
     fn statement_range_respects_nested_delimiters_semicolons_and_line_continuations() {
         let source = "first; second(x; y); third\nvalue = a +\n  b\nnext";
         let config = LexerConfig {
             line_comments: &[],
+            line_comment_terminator: LineCommentTerminator::AnyNewline,
             block_comments: &[],
             quote_rules: &[],
-            hyphenated_identifiers: false,
+            hyphenated_words: &[],
+            ignore_leading_bom: false,
         };
         let tokens = tokenize(source, &config);
         let rules = StatementRules {
@@ -223,9 +292,11 @@ se */ z"#;
         let source = "if outer then\n  if inner then\n    broken @; after\n  end if\nend if";
         let config = LexerConfig {
             line_comments: &[],
+            line_comment_terminator: LineCommentTerminator::AnyNewline,
             block_comments: &[],
             quote_rules: &[],
-            hyphenated_identifiers: false,
+            hyphenated_words: &[],
+            ignore_leading_bom: false,
         };
         let tokens = tokenize(source, &config);
         let rules = StatementRules {
@@ -246,9 +317,11 @@ se */ z"#;
         let source = "program begin\n  if then\n    work()";
         let config = LexerConfig {
             line_comments: &[],
+            line_comment_terminator: LineCommentTerminator::AnyNewline,
             block_comments: &[],
             quote_rules: &[],
-            hyphenated_identifiers: false,
+            hyphenated_words: &[],
+            ignore_leading_bom: false,
         };
         let tokens = tokenize(source, &config);
         let rules = StatementRules {
@@ -524,9 +597,20 @@ pub(crate) struct SourceIndex<'a> {
 
 impl<'a> SourceIndex<'a> {
     pub(crate) fn new(source: &'a str) -> Self {
-        let mut line_starts = vec![0];
+        Self::with_first_line_start(source, 0)
+    }
+
+    pub(crate) fn new_ignoring_leading_bom(source: &'a str) -> Self {
+        let first_line_start = source
+            .strip_prefix('\u{feff}')
+            .map_or(0, |without_bom| source.len() - without_bom.len());
+        Self::with_first_line_start(source, first_line_start)
+    }
+
+    fn with_first_line_start(source: &'a str, first_line_start: usize) -> Self {
+        let mut line_starts = vec![first_line_start];
         let bytes = source.as_bytes();
-        let mut offset = 0;
+        let mut offset = first_line_start;
         while offset < bytes.len() {
             match bytes[offset] {
                 b'\r' if bytes.get(offset + 1) == Some(&b'\n') => offset += 2,
@@ -544,19 +628,29 @@ impl<'a> SourceIndex<'a> {
         }
     }
 
+    pub(crate) fn line_count(&self) -> usize {
+        self.line_starts.len()
+    }
+
+    pub(crate) fn line_text(&self, line: usize) -> Option<&'a str> {
+        let start = *self.line_starts.get(line.checked_sub(1)?)?;
+        let next_start = self
+            .line_starts
+            .get(line)
+            .copied()
+            .unwrap_or(self.source.len());
+        self.source
+            .get(start..line_content_end(self.source, start, next_start))
+    }
+
     pub(crate) fn line_column_to_byte(&self, line: usize, column: usize) -> Option<usize> {
         if line == 0 || column == 0 {
             return None;
         }
         let line_index = line - 1;
         let start = *self.line_starts.get(line_index)?;
-        let next_start = self
-            .line_starts
-            .get(line_index + 1)
-            .copied()
-            .unwrap_or(self.source.len());
-        let end = line_content_end(self.source, start, next_start);
-        let text = self.source.get(start..end)?;
+        let text = self.line_text(line)?;
+        let end = start + text.len();
         let target_character = column - 1;
 
         for (character_index, (byte_offset, _)) in text.char_indices().enumerate() {
@@ -624,14 +718,23 @@ pub(crate) struct QuoteRule {
     pub(crate) delimiter: char,
     pub(crate) escape: Option<char>,
     pub(crate) doubled_delimiter: bool,
+    pub(crate) allows_newlines: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LineCommentTerminator {
+    AnyNewline,
+    LfOrCrlf,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct LexerConfig<'a> {
     pub(crate) line_comments: &'a [&'a str],
+    pub(crate) line_comment_terminator: LineCommentTerminator,
     pub(crate) block_comments: &'a [(&'a str, &'a str)],
     pub(crate) quote_rules: &'a [QuoteRule],
-    pub(crate) hyphenated_identifiers: bool,
+    pub(crate) hyphenated_words: &'a [&'a str],
+    pub(crate) ignore_leading_bom: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -650,7 +753,14 @@ pub(crate) fn token_text<'a>(source: &'a str, token: &SourceToken) -> Option<&'a
 
 pub(crate) fn tokenize(source: &str, config: &LexerConfig<'_>) -> Vec<SourceToken> {
     let mut tokens = Vec::new();
-    let (mut offset, mut line, mut column) = (0, 1, 1);
+    let mut offset = if config.ignore_leading_bom {
+        source
+            .strip_prefix('\u{feff}')
+            .map_or(0, |without_bom| source.len() - without_bom.len())
+    } else {
+        0
+    };
+    let (mut line, mut column) = (1, 1);
 
     while offset < source.len() {
         if newline_width(source, offset).is_some() {
@@ -674,7 +784,17 @@ pub(crate) fn tokenize(source: &str, config: &LexerConfig<'_>) -> Vec<SourceToke
             .max_by_key(|comment| comment.len())
         {
             advance_text(&mut offset, &mut column, comment);
-            while offset < source.len() && newline_width(source, offset).is_none() {
+            while offset < source.len()
+                && !line_comment_ends(source, offset, config.line_comment_terminator)
+            {
+                if config.line_comment_terminator == LineCommentTerminator::LfOrCrlf
+                    && source[offset..].starts_with('\r')
+                {
+                    offset += 1;
+                    line += 1;
+                    column = 1;
+                    continue;
+                }
                 let Some(current) = char_at(source, offset) else {
                     break;
                 };
@@ -717,15 +837,25 @@ pub(crate) fn tokenize(source: &str, config: &LexerConfig<'_>) -> Vec<SourceToke
             let start_column = column;
             advance_character(&mut offset, &mut column, character);
 
-            while offset < source.len() && newline_width(source, offset).is_none() {
+            while offset < source.len() {
+                if let Some(width) = newline_width(source, offset) {
+                    if !rule.allows_newlines {
+                        break;
+                    }
+                    offset += width;
+                    line += 1;
+                    column = 1;
+                    continue;
+                }
                 let Some(current) = char_at(source, offset) else {
                     break;
                 };
                 if rule.escape == Some(current) {
                     advance_character(&mut offset, &mut column, current);
-                    if let Some(escaped) = char_at(source, offset)
-                        && newline_width(source, offset).is_none()
-                    {
+                    if newline_width(source, offset).is_some() {
+                        break;
+                    }
+                    if let Some(escaped) = char_at(source, offset) {
                         advance_character(&mut offset, &mut column, escaped);
                     }
                     continue;
@@ -758,16 +888,25 @@ pub(crate) fn tokenize(source: &str, config: &LexerConfig<'_>) -> Vec<SourceToke
             let start = offset;
             let start_line = line;
             let start_column = column;
+
+            if let Some(keyword) = config.hyphenated_words.iter().find(|keyword| {
+                source[offset..].starts_with(**keyword)
+                    && char_at(source, offset + keyword.len())
+                        .is_none_or(|next| !is_word_continue(next))
+            }) {
+                advance_text(&mut offset, &mut column, keyword);
+                tokens.push(SourceToken {
+                    kind: SourceTokenKind::Word,
+                    byte_range: start..offset,
+                    line: start_line,
+                    column: start_column,
+                });
+                continue;
+            }
+
             advance_character(&mut offset, &mut column, character);
             while let Some(current) = char_at(source, offset) {
                 if is_word_continue(current) {
-                    advance_character(&mut offset, &mut column, current);
-                    continue;
-                }
-                if config.hyphenated_identifiers
-                    && current == '-'
-                    && char_at(source, offset + current.len_utf8()).is_some_and(is_word_continue)
-                {
                     advance_character(&mut offset, &mut column, current);
                     continue;
                 }
@@ -795,6 +934,15 @@ pub(crate) fn tokenize(source: &str, config: &LexerConfig<'_>) -> Vec<SourceToke
     }
 
     tokens
+}
+
+fn line_comment_ends(source: &str, offset: usize, terminator: LineCommentTerminator) -> bool {
+    match terminator {
+        LineCommentTerminator::AnyNewline => newline_width(source, offset).is_some(),
+        LineCommentTerminator::LfOrCrlf => {
+            source[offset..].starts_with('\n') || source[offset..].starts_with("\r\n")
+        }
+    }
 }
 
 fn char_at(source: &str, offset: usize) -> Option<char> {
@@ -858,6 +1006,17 @@ pub(crate) fn statement_range(
     rules: &StatementRules<'_>,
 ) -> Option<Range<usize>> {
     let index = SourceIndex::new(source);
+    statement_range_with_index(source, tokens, line, column, rules, &index)
+}
+
+pub(crate) fn statement_range_with_index(
+    source: &str,
+    tokens: &[SourceToken],
+    line: usize,
+    column: usize,
+    rules: &StatementRules<'_>,
+    index: &SourceIndex<'_>,
+) -> Option<Range<usize>> {
     let target = index.line_column_to_byte(line, column)?;
     let mut ranges = Vec::new();
     let mut statement_start = None;

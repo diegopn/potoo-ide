@@ -3,6 +3,7 @@ use super::{
 };
 use crate::features::execution::{DiagnosticKind as ExecutionDiagnosticKind, ExecutionDiagnostic};
 use crate::languages::model::Language;
+use potoo_gportugol_interpreter::parse;
 
 #[test]
 fn learning_hint_tracks_active_line_and_updated_condition() {
@@ -336,6 +337,65 @@ fn gportugol_learning_hint_reports_syntax_errors_on_the_selected_line() {
     assert!(hint.problems.iter().any(|problem| {
         problem.kind == LearningProblemKind::Syntax && problem.line == 3 && problem.column > 0
     }));
+}
+
+#[test]
+fn gportugol_line_comment_with_bare_cr_does_not_hide_the_next_line_error() {
+    let source = "algoritmo teste;\rinício\r// comentário\r/*\n@;\rimprima(1);\rfim";
+    let expected = parse(source)
+        .expect_err("the token after the line comment should be invalid")
+        .remove(0);
+    assert_eq!(expected.span.start.line, 5);
+    assert_eq!(expected.span.start.column, 1);
+
+    let hint = learning_hint(source, expected.span.start.line, Language::GPortugol);
+    assert_eq!(hint.topic, LearningTopic::Unrecognized);
+    assert!(
+        hint.problems
+            .iter()
+            .any(|problem| problem.line == 5 && problem.column == 1),
+        "the original lexical diagnostic must stay visible: {:?}",
+        hint.problems
+    );
+}
+
+#[test]
+fn gportugol_multiline_character_literal_does_not_hide_the_following_error() {
+    let source = "algoritmo teste;\ninício\nimprima('\n');\n@;\nimprima(1);\nfim";
+    let expected = parse(source)
+        .expect_err("the standalone invalid token should be diagnosed")
+        .remove(0);
+    assert_eq!(expected.span.start.line, 5);
+    assert_eq!(expected.span.start.column, 1);
+
+    let hint = learning_hint(source, expected.span.start.line, Language::GPortugol);
+    assert_eq!(hint.topic, LearningTopic::Unrecognized);
+    assert!(
+        hint.problems.iter().any(|problem| {
+            problem.line == expected.span.start.line && problem.column == expected.span.start.column
+        }),
+        "the original diagnostic must survive recovery: {:?}",
+        hint.problems
+    );
+}
+
+#[test]
+fn gportugol_bom_keeps_first_line_diagnostics_aligned_during_recovery() {
+    let source = "\u{feff}algoritmo teste; início imprima(1); @; imprima(2); fim";
+    let expected = parse(source)
+        .expect_err("the invalid token should be diagnosed")
+        .remove(0);
+    let hint = learning_hint(source, expected.span.start.line, Language::GPortugol);
+
+    assert_eq!(expected.span.start.line, 1);
+    assert_eq!(hint.topic, LearningTopic::Unrecognized);
+    assert!(
+        hint.problems.iter().any(|problem| {
+            problem.line == expected.span.start.line && problem.column == expected.span.start.column
+        }),
+        "the BOM must not shift the original diagnostic: {:?}",
+        hint.problems
+    );
 }
 
 #[test]

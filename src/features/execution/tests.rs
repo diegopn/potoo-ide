@@ -1451,6 +1451,112 @@ fn gportugol_debugger_reports_variables() {
 }
 
 #[test]
+fn gportugol_debugger_does_not_execute_truncated_loops_before_static_errors() {
+    let sources = [
+        "algoritmo loop;\nvariáveis i: inteiro; fim-variáveis\ninício\n enquanto verdadeiro faça\n  imprima(\"DENTRO\"); @\n  imprima(\"DEPOIS\");\n fim-enquanto\nfim",
+        "algoritmo loop;\nvariáveis i: inteiro; fim-variáveis\ninício\n para i de 1 até 2 faça\n  imprima(\"DENTRO\"); @\n  imprima(\"DEPOIS\");\n fim-para\nfim",
+        "algoritmo loop;\ninício\n repita\n  imprima(\"DENTRO\"); @\n até verdadeiro;\nfim",
+    ];
+
+    for source in sources {
+        let expected = potoo_gportugol_interpreter::parse(source)
+            .expect_err("the loop body contains a lexical error")
+            .remove(0);
+        let (output, debugger_lines, diagnostics, stopped) = collect_debug_error(start(
+            source.to_owned(),
+            Language::GPortugol,
+            None,
+            None,
+            true,
+        ));
+
+        assert!(
+            output.is_empty(),
+            "a prefix cut inside an open loop must not execute its body: {output:?}"
+        );
+        assert!(!stopped);
+        assert_eq!(debugger_lines.last(), Some(&expected.span.start.line));
+        assert_eq!(diagnostics[0].kind, ExecutionDiagnosticKind::Lexical);
+        assert_eq!(diagnostics[0].message, expected.message);
+        assert_eq!(diagnostics[0].line, expected.span.start.line);
+        assert_eq!(diagnostics[0].column, expected.span.start.column);
+    }
+}
+
+#[test]
+fn gportugol_debugger_executes_the_valid_prefix_once_before_a_static_error() {
+    let source = "algoritmo teste;\ninício\n imprima(\"ANTES\");\n imprima(\"ação\"); @; imprima(\"DEPOIS\");\nfim";
+    let expected = potoo_gportugol_interpreter::parse(source)
+        .expect_err("the standalone invalid token should be diagnosed")
+        .remove(0);
+    assert_eq!(expected.span.start.column, 19);
+    let (output, debugger_lines, diagnostics, stopped) = collect_debug_error(start(
+        source.to_owned(),
+        Language::GPortugol,
+        None,
+        None,
+        true,
+    ));
+
+    assert_eq!(output, "ANTES\nação\n");
+    assert!(!output.contains("DEPOIS"));
+    assert!(!stopped);
+    assert!(debugger_lines.contains(&expected.span.start.line));
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].kind, ExecutionDiagnosticKind::Lexical);
+    assert_eq!(diagnostics[0].message, expected.message);
+    assert_eq!(diagnostics[0].line, expected.span.start.line);
+    assert_eq!(diagnostics[0].column, expected.span.start.column);
+}
+
+#[test]
+fn gportugol_debugger_does_not_run_a_truncated_function_called_by_the_main_block() {
+    let source = "algoritmo teste;\ninício\nimprima(f());\nfim\nfunção f(): inteiro\ninício\nimprima(\"antes\");\n@;\nretorne 1;\nfim";
+    let expected = potoo_gportugol_interpreter::parse(source)
+        .expect_err("the invalid function body should prevent execution")
+        .remove(0);
+    let (output, debugger_lines, diagnostics, stopped) = collect_debug_error(start(
+        source.to_owned(),
+        Language::GPortugol,
+        None,
+        None,
+        true,
+    ));
+
+    assert!(
+        output.is_empty(),
+        "an incomplete function must not run through its caller: {output:?}"
+    );
+    assert!(!stopped);
+    assert_eq!(debugger_lines.last(), Some(&expected.span.start.line));
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].message, expected.message);
+    assert_eq!(diagnostics[0].line, expected.span.start.line);
+    assert_eq!(diagnostics[0].column, expected.span.start.column);
+}
+
+#[test]
+fn gportugol_debugger_recognizes_subtraction_after_the_if_keyword() {
+    let source = "algoritmo teste;\ninício\nse-1 < 0 então\nimprima(\"ANTES\");\n@;\nfim-se\nfim";
+    let expected = potoo_gportugol_interpreter::parse(source)
+        .expect_err("the invalid token should be diagnosed")
+        .remove(0);
+    let (output, debugger_lines, diagnostics, stopped) = collect_debug_error(start(
+        source.to_owned(),
+        Language::GPortugol,
+        None,
+        None,
+        true,
+    ));
+
+    assert_eq!(output, "ANTES\n");
+    assert!(!stopped);
+    assert!(debugger_lines.contains(&expected.span.start.line));
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].message, expected.message);
+}
+
+#[test]
 fn stopping_potigol_interrupts_a_cpu_bound_loop() {
     let source = "var i := 0\nenquanto i < 1000000000 faça\n  i := i + 1\nfim";
     let program = start(source.into(), Language::Potigol, None, None, false);

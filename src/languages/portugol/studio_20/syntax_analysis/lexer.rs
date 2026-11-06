@@ -1,21 +1,27 @@
-use crate::languages::source::{LexerConfig, QuoteRule, SourceToken, tokenize};
+use crate::languages::source::{
+    LexerConfig, LineCommentTerminator, QuoteRule, SourceToken, tokenize,
+};
 
 pub(super) const SHARED_CONFIG: LexerConfig<'static> = LexerConfig {
     line_comments: &["//"],
+    line_comment_terminator: LineCommentTerminator::AnyNewline,
     block_comments: &[("/*", "*/")],
     quote_rules: &[
         QuoteRule {
             delimiter: '"',
             escape: Some('\\'),
             doubled_delimiter: false,
+            allows_newlines: false,
         },
         QuoteRule {
             delimiter: '\'',
             escape: Some('\\'),
             doubled_delimiter: false,
+            allows_newlines: false,
         },
     ],
-    hyphenated_identifiers: false,
+    hyphenated_words: &[],
+    ignore_leading_bom: false,
 };
 
 pub(super) fn shared_tokens(source: &str) -> Vec<SourceToken> {

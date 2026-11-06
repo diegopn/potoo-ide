@@ -152,12 +152,12 @@ static PROFILES: [LanguageProfile; 6] = [
         without_literals_and_comments:
             crate::languages::portugol::g_portugol::syntax_analysis::views::without_literals_and_comments,
         declared_array_bounds: None,
-        debugger_prefix: Some(DebuggerPrefixAdapter::Legacy(
+        debugger_prefix: Some(DebuggerPrefixAdapter::Safe(
             crate::languages::portugol::g_portugol::syntax_analysis::views::debugger_prefix,
         )),
         completion: Some(&crate::languages::portugol::g_portugol::completion::ADAPTER),
         execution: crate::languages::portugol::g_portugol::runtime::execute,
-        learning: Some(LearningAdapter::Legacy(
+        learning: Some(LearningAdapter::Recovering(
             crate::languages::portugol::g_portugol::learning::profile_adapter,
         )),
         default_template: ProjectTemplate::GPortugol,
@@ -308,15 +308,10 @@ mod tests {
                 crate::languages::portugol::g_portugol::syntax_analysis::views::is_blank_or_line_comment,
                 crate::languages::portugol::g_portugol::syntax_analysis::views::without_literals_and_comments,
                 None,
-                Some(
-                    crate::languages::portugol::g_portugol::syntax_analysis::views::debugger_prefix
-                        as DebuggerPrefix,
-                ),
+                None,
                 crate::languages::portugol::g_portugol::runtime::execute,
                 &crate::languages::portugol::g_portugol::completion::ADAPTER,
-                Some(
-                    crate::languages::portugol::g_portugol::learning::profile_adapter as Learning,
-                ),
+                None,
             ),
             (
                 Language::Calango,
@@ -392,7 +387,8 @@ mod tests {
                 _ => panic!("array-bound adapter mismatch for {language:?}"),
             }
             match (profile.debugger_prefix, expected_debugger_prefix) {
-                (Some(DebuggerPrefixAdapter::Safe(_)), None) if language == Language::Portugol => {}
+                (Some(DebuggerPrefixAdapter::Safe(_)), None)
+                    if matches!(language, Language::Portugol | Language::GPortugol) => {}
                 (Some(DebuggerPrefixAdapter::Legacy(actual)), Some(expected)) => {
                     assert!(std::ptr::fn_addr_eq(actual, expected), "{language:?}");
                 }
@@ -407,7 +403,8 @@ mod tests {
                 completion
             ));
             match (profile.learning, expected_learning) {
-                (Some(LearningAdapter::Recovering(_)), None) if language == Language::Portugol => {}
+                (Some(LearningAdapter::Recovering(_)), None)
+                    if matches!(language, Language::Portugol | Language::GPortugol) => {}
                 (Some(LearningAdapter::Legacy(actual)), Some(expected)) => {
                     assert!(std::ptr::fn_addr_eq(actual, expected), "{language:?}");
                 }
@@ -434,10 +431,10 @@ mod tests {
     }
 
     #[test]
-    fn only_portugol_studio_has_migrated_from_the_legacy_adapter_path() {
+    fn portugol_studio_and_gportugol_use_the_shared_adapter_path() {
         let fixtures = [
             (Language::Portugol, "Portugol Studio 2.0", true),
-            (Language::GPortugol, "G-Portugol", false),
+            (Language::GPortugol, "G-Portugol", true),
             (Language::Mapler, "Mapler", false),
             (Language::Visualg, "VisuAlg", false),
             (Language::Calango, "Calango", false),
@@ -459,6 +456,29 @@ mod tests {
                     matches!(profile.learning, Some(LearningAdapter::Recovering(_))),
                     "{fixture} should use shared recovery"
                 );
+                if language == Language::GPortugol {
+                    let Some(DebuggerPrefixAdapter::Safe(debugger_prefix)) =
+                        profile.debugger_prefix
+                    else {
+                        panic!("G-Portugol should register its safe debugger adapter");
+                    };
+                    let expected_debugger_prefix: fn(&str, usize, usize) -> Option<String> =
+                        crate::languages::portugol::g_portugol::syntax_analysis::views::debugger_prefix;
+                    assert!(std::ptr::fn_addr_eq(
+                        debugger_prefix,
+                        expected_debugger_prefix
+                    ));
+                    let Some(LearningAdapter::Recovering(learning)) = profile.learning else {
+                        panic!("G-Portugol should register its recovering learning adapter");
+                    };
+                    let expected_learning: fn(
+                        &str,
+                        usize,
+                        &dyn Fn() -> bool,
+                    ) -> SourceLineAnalysisOutcome =
+                        crate::languages::portugol::g_portugol::learning::profile_adapter;
+                    assert!(std::ptr::fn_addr_eq(learning, expected_learning));
+                }
             } else {
                 assert!(
                     matches!(
