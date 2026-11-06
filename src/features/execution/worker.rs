@@ -54,24 +54,14 @@ pub(crate) fn start(
                         .iter()
                         .any(|diagnostic| diagnostic.kind != DiagnosticKind::Runtime) =>
             {
-                let (resolution, location) =
-                    crate::features::debugging::executable_prefix(language, &source, &diagnostics);
-                match resolution {
-                    crate::features::debugging::DebuggerPrefixResolution::Unsupported => {
-                        Err(diagnostics)
+                match crate::features::debugging::diagnostic_location(&diagnostics) {
+                    Some(location) => {
+                        let prefix = crate::features::debugging::executable_prefix(
+                            language, &source, location.0, location.1,
+                        );
+                        execute_debugger_prefix(language, prefix, location, diagnostics, &mut io)
                     }
-                    crate::features::debugging::DebuggerPrefixResolution::Legacy(prefix) => {
-                        execute_legacy_debug_prefix(
-                            language,
-                            &prefix,
-                            location,
-                            diagnostics,
-                            &mut io,
-                        )
-                    }
-                    crate::features::debugging::DebuggerPrefixResolution::Safe(prefix) => {
-                        execute_safe_debug_prefix(language, prefix, location, diagnostics, &mut io)
-                    }
+                    None => Err(diagnostics),
                 }
             }
             result => result,
@@ -95,39 +85,7 @@ pub(crate) fn start(
     }
 }
 
-fn execute_legacy_debug_prefix(
-    language: Language,
-    prefix: &str,
-    location: (usize, usize),
-    diagnostics: Vec<ExecutionDiagnostic>,
-    io: &mut WorkerIo,
-) -> Result<(), Vec<ExecutionDiagnostic>> {
-    let prefix_has_static_errors =
-        crate::features::diagnostics::analyze(0, "<debugger-prefix>", None, language, prefix)
-            .iter()
-            .any(|diagnostic| {
-                diagnostic.severity == crate::features::diagnostics::DiagnosticSeverity::Error
-                    && diagnostic.category
-                        != crate::features::diagnostics::DiagnosticCategory::Runtime
-            });
-    if prefix.is_empty() || prefix_has_static_errors {
-        return Err(diagnostics);
-    }
-
-    match execute_source(language, prefix, io) {
-        Ok(()) => pause_at_location(location, DebugPauseReason::Debug, diagnostics, io),
-        Err(prefix_diagnostics)
-            if prefix_diagnostics.iter().any(|diagnostic| {
-                diagnostic.kind == DiagnosticKind::Runtime && diagnostic.line < location.0
-            }) =>
-        {
-            Err(prefix_diagnostics)
-        }
-        Err(_) => Err(diagnostics),
-    }
-}
-
-fn execute_safe_debug_prefix(
+fn execute_debugger_prefix(
     language: Language,
     prefix: Option<String>,
     location: (usize, usize),

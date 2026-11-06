@@ -510,6 +510,280 @@ mod ui_language_tests {
         }
     }
 
+    const COPY_AUDIT_TOPICS: [LearningTopic; 14] = [
+        LearningTopic::Function,
+        LearningTopic::Procedure,
+        LearningTopic::Decision,
+        LearningTopic::Loop,
+        LearningTopic::Input,
+        LearningTopic::Output,
+        LearningTopic::Variable,
+        LearningTopic::Assignment,
+        LearningTopic::Call,
+        LearningTopic::LibraryCall,
+        LearningTopic::Import,
+        LearningTopic::Return,
+        LearningTopic::Program,
+        LearningTopic::Unrecognized,
+    ];
+
+    #[derive(Clone, Copy)]
+    struct CopySectionEvidence {
+        explanation: fn(),
+        concept: fn(),
+        experiment: fn(),
+    }
+
+    struct ProfileCopyAudit {
+        fixture: &'static str,
+        recognized_topics: &'static [LearningTopic],
+        not_applicable_reason: &'static str,
+        profile_tests: &'static [&'static str],
+        dialect_copy_tests: &'static [fn()],
+        sections: CopySectionEvidence,
+    }
+
+    const COMMON_COPY_SECTIONS: CopySectionEvidence = CopySectionEvidence {
+        explanation: learning_copy_covers_every_topic_with_explicit_facts,
+        concept: learning_copy_covers_every_topic_with_explicit_facts,
+        experiment: learning_copy_covers_every_topic_with_explicit_facts,
+    };
+
+    const PROFILE_COPY_AUDIT: [ProfileCopyAudit; 7] = [
+        ProfileCopyAudit {
+            fixture: "Portugol Studio 2.0",
+            recognized_topics: &[
+                LearningTopic::Program,
+                LearningTopic::Function,
+                LearningTopic::Decision,
+                LearningTopic::Loop,
+                LearningTopic::Input,
+                LearningTopic::Output,
+                LearningTopic::Variable,
+                LearningTopic::Assignment,
+                LearningTopic::Call,
+                LearningTopic::Return,
+                LearningTopic::Unrecognized,
+            ],
+            not_applicable_reason: "The Studio 2.0 learning adapter does not emit a separate Procedure or Import fact, and the learning catalog has no verified Studio 2.0 library calls.",
+            profile_tests: &[
+                "learning_hint_uses_ast_for_all_supported_languages_and_keeps_unknown_lines_unknown",
+                "learning_hint_reports_line_specific_syntax_and_possible_logic_problems",
+            ],
+            dialect_copy_tests: &[
+                learning_copy_teaches_dialect_types_and_array_shapes,
+                learning_copy_explains_output_line_behavior_in_each_dialect,
+                learning_copy_uses_each_dialects_assignment_operator_and_target,
+                learning_copy_uses_each_dialects_condition_and_loop_kind,
+            ],
+            sections: COMMON_COPY_SECTIONS,
+        },
+        ProfileCopyAudit {
+            fixture: "G-Portugol",
+            recognized_topics: &[
+                LearningTopic::Program,
+                LearningTopic::Function,
+                LearningTopic::Decision,
+                LearningTopic::Loop,
+                LearningTopic::Input,
+                LearningTopic::Output,
+                LearningTopic::Variable,
+                LearningTopic::Assignment,
+                LearningTopic::Call,
+                LearningTopic::Return,
+                LearningTopic::Unrecognized,
+            ],
+            not_applicable_reason: "The G-Portugol adapter has no Procedure, Import, or catalog-backed LibraryCall topic in its current AST mapping.",
+            profile_tests: &["gportugol_learning_hint_identifies_constructs_and_symbols"],
+            dialect_copy_tests: &[
+                learning_copy_uses_gportugol_terms_and_types,
+                learning_copy_explains_output_line_behavior_in_each_dialect,
+                learning_copy_uses_each_dialects_assignment_operator_and_target,
+                learning_copy_uses_each_dialects_condition_and_loop_kind,
+            ],
+            sections: COMMON_COPY_SECTIONS,
+        },
+        ProfileCopyAudit {
+            fixture: "Mapler",
+            recognized_topics: &[
+                LearningTopic::Decision,
+                LearningTopic::Loop,
+                LearningTopic::Input,
+                LearningTopic::Output,
+                LearningTopic::Variable,
+                LearningTopic::Assignment,
+                LearningTopic::Call,
+                LearningTopic::Unrecognized,
+            ],
+            not_applicable_reason: "The Mapler adapter maps module calls and statements; its current AST facts do not represent program headers, routines, returns, imports, or a library catalog.",
+            profile_tests: &[
+                "learning_hint_maps_dialect_specific_routine_and_array_facts",
+                "learning_hint_uses_ast_for_all_supported_languages_and_keeps_unknown_lines_unknown",
+            ],
+            dialect_copy_tests: &[
+                learning_copy_explains_output_line_behavior_in_each_dialect,
+                learning_copy_uses_each_dialects_assignment_operator_and_target,
+                learning_copy_uses_each_dialects_condition_and_loop_kind,
+            ],
+            sections: COMMON_COPY_SECTIONS,
+        },
+        ProfileCopyAudit {
+            fixture: "VisuAlg",
+            recognized_topics: &[
+                LearningTopic::Program,
+                LearningTopic::Function,
+                LearningTopic::Procedure,
+                LearningTopic::Decision,
+                LearningTopic::Loop,
+                LearningTopic::Input,
+                LearningTopic::Output,
+                LearningTopic::Variable,
+                LearningTopic::Assignment,
+                LearningTopic::Call,
+                LearningTopic::Return,
+                LearningTopic::Unrecognized,
+            ],
+            not_applicable_reason: "The current VisuAlg profile has no verified library import catalog for LearningTopic::Import or LearningTopic::LibraryCall.",
+            profile_tests: &["learning_hint_maps_dialect_specific_routine_and_array_facts"],
+            dialect_copy_tests: &[
+                visualg_copy_teaches_routines_and_each_loop_form,
+                learning_copy_explains_output_line_behavior_in_each_dialect,
+                learning_copy_uses_each_dialects_assignment_operator_and_target,
+                learning_copy_uses_each_dialects_condition_and_loop_kind,
+            ],
+            sections: COMMON_COPY_SECTIONS,
+        },
+        ProfileCopyAudit {
+            fixture: "Calango",
+            recognized_topics: &[
+                LearningTopic::Program,
+                LearningTopic::Function,
+                LearningTopic::Procedure,
+                LearningTopic::Decision,
+                LearningTopic::Loop,
+                LearningTopic::Input,
+                LearningTopic::Output,
+                LearningTopic::Variable,
+                LearningTopic::Assignment,
+                LearningTopic::Call,
+                LearningTopic::Return,
+                LearningTopic::Unrecognized,
+            ],
+            not_applicable_reason: "The current Calango profile has no verified library import catalog for LearningTopic::Import or LearningTopic::LibraryCall.",
+            profile_tests: &["learning_hint_maps_dialect_specific_routine_and_array_facts"],
+            dialect_copy_tests: &[
+                calango_copy_uses_program_routine_and_statement_facts,
+                learning_copy_explains_output_line_behavior_in_each_dialect,
+                learning_copy_uses_each_dialects_assignment_operator_and_target,
+                learning_copy_uses_each_dialects_condition_and_loop_kind,
+            ],
+            sections: COMMON_COPY_SECTIONS,
+        },
+        ProfileCopyAudit {
+            fixture: "Potigol Classic",
+            recognized_topics: &[
+                LearningTopic::Function,
+                LearningTopic::Decision,
+                LearningTopic::Loop,
+                LearningTopic::Input,
+                LearningTopic::Output,
+                LearningTopic::Variable,
+                LearningTopic::Assignment,
+                LearningTopic::Call,
+                LearningTopic::Import,
+                LearningTopic::Return,
+                LearningTopic::Unrecognized,
+            ],
+            not_applicable_reason: "Classic has no explicit program or procedure AST node; Jerimum LibraryCall facts require the active top-level import and are not applicable here.",
+            profile_tests: &[
+                "potigol_input_builtins_are_all_explained_as_input",
+                "learning_hint_recognizes_jerimum_calls_only_when_the_library_is_imported",
+            ],
+            dialect_copy_tests: &[
+                potigol_classic_and_jerimum_copy_remain_import_aware,
+                learning_copy_explains_potigol_input_types_and_dialects,
+                learning_copy_uses_each_dialects_assignment_operator_and_target,
+                learning_copy_uses_each_dialects_condition_and_loop_kind,
+            ],
+            sections: COMMON_COPY_SECTIONS,
+        },
+        ProfileCopyAudit {
+            fixture: "Potigol Jerimum",
+            recognized_topics: &[
+                LearningTopic::Function,
+                LearningTopic::Decision,
+                LearningTopic::Loop,
+                LearningTopic::Input,
+                LearningTopic::Output,
+                LearningTopic::Variable,
+                LearningTopic::Assignment,
+                LearningTopic::Call,
+                LearningTopic::LibraryCall,
+                LearningTopic::Import,
+                LearningTopic::Return,
+                LearningTopic::Unrecognized,
+            ],
+            not_applicable_reason: "Potigol Jerimum has no explicit program or separate procedure AST node; other listed topics are supported by the dialect mapper and verified library catalog.",
+            profile_tests: &[
+                "potigol_input_builtins_are_all_explained_as_input",
+                "learning_hint_recognizes_jerimum_calls_only_when_the_library_is_imported",
+            ],
+            dialect_copy_tests: &[
+                potigol_classic_and_jerimum_copy_remain_import_aware,
+                learning_copy_explains_potigol_input_types_and_dialects,
+                learning_copy_uses_each_dialects_assignment_operator_and_target,
+                learning_copy_uses_each_dialects_condition_and_loop_kind,
+            ],
+            sections: COMMON_COPY_SECTIONS,
+        },
+    ];
+
+    #[test]
+    fn copy_audit_matrix_covers_each_profile_topic_and_content_section() {
+        let expected_fixtures = [
+            "Portugol Studio 2.0",
+            "G-Portugol",
+            "Mapler",
+            "VisuAlg",
+            "Calango",
+            "Potigol Classic",
+            "Potigol Jerimum",
+        ];
+        assert_eq!(PROFILE_COPY_AUDIT.len(), expected_fixtures.len());
+        assert_eq!(
+            PROFILE_COPY_AUDIT.map(|entry| entry.fixture).as_slice(),
+            expected_fixtures.as_slice()
+        );
+
+        let shared_copy_test: fn() = learning_copy_covers_every_topic_with_explicit_facts;
+        let mut covered_cells = 0;
+        for entry in PROFILE_COPY_AUDIT {
+            assert!(entry.not_applicable_reason.len() > 30, "{}", entry.fixture);
+            assert!(!entry.profile_tests.is_empty(), "{}", entry.fixture);
+            assert!(!entry.dialect_copy_tests.is_empty(), "{}", entry.fixture);
+
+            for topic in COPY_AUDIT_TOPICS {
+                if entry.recognized_topics.contains(&topic) {
+                    for evidence in [
+                        entry.sections.explanation,
+                        entry.sections.concept,
+                        entry.sections.experiment,
+                    ] {
+                        assert!(std::ptr::fn_addr_eq(evidence, shared_copy_test));
+                        covered_cells += 1;
+                    }
+                } else {
+                    assert!(
+                        !entry.not_applicable_reason.is_empty(),
+                        "{fixture}: {topic:?} needs a profile-specific reason",
+                        fixture = entry.fixture
+                    );
+                }
+            }
+        }
+        assert!(covered_cells >= expected_fixtures.len() * 20);
+    }
+
     #[test]
     fn learning_copy_uses_gportugol_terms_and_types() {
         let source = "algoritmo aula;\n\

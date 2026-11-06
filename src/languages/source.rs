@@ -520,6 +520,7 @@ se */ z"#;
                 .all(char::is_whitespace)
         );
         assert!(mask_range_preserving_positions("😀 x", 0..4).is_some());
+        assert!(mask_range_preserving_positions("😀 x", 1..2).is_none());
         assert!(
             mask_range_preserving_positions_with_rules(
                 "😀 x",
@@ -628,6 +629,49 @@ se */ z"#;
         assert_eq!(parse_calls.get(), 65);
         assert_eq!(mask_calls.get(), 64);
         assert_eq!(outcome.diagnostics.len(), 64);
+    }
+
+    #[test]
+    fn recovery_remains_bounded_for_long_sources_with_many_malformed_statements() {
+        let mut source = String::with_capacity(16_384);
+        for _ in 0..1_024 {
+            source.push_str("bad @\n");
+        }
+        let source_len = source.len();
+        let parse_calls = Cell::new(0);
+        let mask_calls = Cell::new(0);
+
+        let outcome = recover_parse(
+            &source,
+            |candidate| {
+                parse_calls.set(parse_calls.get() + 1);
+                assert_eq!(candidate.len(), source_len);
+                let index = SourceIndex::new(candidate);
+                let first_malformed_line = (1..=index.line_count())
+                    .find(|line| {
+                        index
+                            .line_text(*line)
+                            .is_some_and(|text| !text.trim().is_empty())
+                    })
+                    .expect("many malformed statements remain");
+                Err::<(), _>(vec![(first_malformed_line, 1)])
+            },
+            |diagnostic| *diagnostic,
+            |candidate, line, _| {
+                mask_calls.set(mask_calls.get() + 1);
+                let index = SourceIndex::new(candidate);
+                let start = index.line_column_to_byte(line, 1)?;
+                let length = index.line_text(line)?.len();
+                mask_range_preserving_positions(candidate, start..start + length)
+            },
+            || false,
+        );
+
+        assert_eq!(outcome.status, RecoveryStatus::LimitReached);
+        assert_eq!(parse_calls.get(), 65);
+        assert_eq!(mask_calls.get(), 64);
+        assert_eq!(outcome.diagnostics.len(), 65);
+        assert_eq!(source.len(), source_len);
     }
 
     #[test]

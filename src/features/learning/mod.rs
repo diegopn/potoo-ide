@@ -24,7 +24,6 @@ use self::problems::*;
 use crate::features::execution::{DiagnosticKind as ExecutionDiagnosticKind, ExecutionDiagnostic};
 use crate::languages::{
     model::{Language, SourceDimension},
-    profile::LearningAdapter,
     source::{read_identifier, read_integer, skip_spaces},
 };
 use std::collections::HashMap;

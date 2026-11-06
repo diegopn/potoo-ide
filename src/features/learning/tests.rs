@@ -482,6 +482,7 @@ fn learning_hint_reports_line_specific_syntax_and_possible_logic_problems() {
 fn parser_errors_stay_on_their_line_across_all_supported_dialects() {
     let cases = [
         ("escreva \"ok\"\n@\n", 2, Language::Potigol),
+        ("use \"jerimum\"\nescreva \"ok\"\n@\n", 3, Language::Potigol),
         ("programa {\n @\n}", 2, Language::Portugol),
         (
             "algoritmo \"aula\"\ninicio\n@\nfimalgoritmo",
@@ -600,25 +601,43 @@ fn potigol_field_assignment_advice_uses_potigol_syntax_in_the_learning_panel() {
 }
 
 #[test]
-fn runtime_diagnostics_are_shown_only_on_their_source_line() {
+fn runtime_diagnostics_are_shown_only_on_their_source_line_for_every_fixture_mode() {
+    let fixtures = [
+        ("Portugol Studio 2.0", Language::Portugol),
+        ("G-Portugol", Language::GPortugol),
+        ("Mapler", Language::Mapler),
+        ("VisuAlg", Language::Visualg),
+        ("Calango", Language::Calango),
+        ("Potigol Classic", Language::Potigol),
+        ("Potigol Jerimum", Language::Potigol),
+    ];
     let diagnostics = [ExecutionDiagnostic {
         kind: ExecutionDiagnosticKind::Runtime,
         message: "índice fora dos limites".to_owned(),
         line: 2,
         column: 4,
     }];
-    let source = "programa {\n inteiro x = 1\n}";
-    let selected = learning_hint_with_runtime(source, 2, Language::Portugol, &diagnostics);
-    let other_line = learning_hint_with_runtime(source, 3, Language::Portugol, &diagnostics);
-    assert!(selected.problems.iter().any(|problem| {
-        problem.kind == LearningProblemKind::Runtime && problem.message == "índice fora dos limites"
-    }));
-    assert!(
-        !other_line
-            .problems
-            .iter()
-            .any(|problem| problem.kind == LearningProblemKind::Runtime)
-    );
+    let source = "linha anterior\nlinha atual";
+
+    for (fixture, language) in fixtures {
+        let selected = learning_hint_with_runtime(source, 2, language, &diagnostics);
+        let other_line = learning_hint_with_runtime(source, 1, language, &diagnostics);
+        assert!(
+            selected.problems.iter().any(|problem| {
+                problem.kind == LearningProblemKind::Runtime
+                    && problem.message == "índice fora dos limites"
+            }),
+            "{fixture} lost the runtime diagnostic: {:?}",
+            selected.problems
+        );
+        assert!(
+            !other_line
+                .problems
+                .iter()
+                .any(|problem| problem.kind == LearningProblemKind::Runtime),
+            "{fixture} leaked the runtime diagnostic to another line"
+        );
+    }
 }
 
 #[test]
@@ -666,18 +685,31 @@ fn reports_only_proven_constant_indexes_outside_declared_bounds() {
 }
 
 #[test]
-fn type_diagnostics_keep_their_own_learning_category() {
+fn type_diagnostics_keep_their_own_learning_category_for_every_fixture_mode() {
+    let fixtures = [
+        ("Portugol Studio 2.0", Language::Portugol),
+        ("G-Portugol", Language::GPortugol),
+        ("Mapler", Language::Mapler),
+        ("VisuAlg", Language::Visualg),
+        ("Calango", Language::Calango),
+        ("Potigol Classic", Language::Potigol),
+        ("Potigol Jerimum", Language::Potigol),
+    ];
     let diagnostics = [ExecutionDiagnostic {
         kind: ExecutionDiagnosticKind::Type,
         message: "tipos incompatíveis: esperava Inteiro, recebeu Lógico".to_owned(),
         line: 1,
         column: 5,
     }];
-    let hint =
-        learning_hint_with_runtime("valor = 1 + verdadeiro", 1, Language::Potigol, &diagnostics);
-    assert!(
-        hint.problems
-            .iter()
-            .any(|problem| problem.kind == LearningProblemKind::Type)
-    );
+
+    for (fixture, language) in fixtures {
+        let hint = learning_hint_with_runtime("valor = 1 + verdadeiro", 1, language, &diagnostics);
+        assert!(
+            hint.problems
+                .iter()
+                .any(|problem| problem.kind == LearningProblemKind::Type),
+            "{fixture} changed the type diagnostic category: {:?}",
+            hint.problems
+        );
+    }
 }

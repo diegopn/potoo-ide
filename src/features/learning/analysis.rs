@@ -59,21 +59,7 @@ where
     let code_line = (language.profile().source_line_code)(source, one_based_line);
     let line = code_line.trim();
     let (facts, column, mut problems) = match language.profile().learning {
-        Some(LearningAdapter::Legacy(adapter)) => {
-            match adapter(source, one_based_line, &is_cancelled) {
-                Ok(Some(analysis)) => {
-                    let column = analysis.column;
-                    (Some(learning_facts(analysis)), column, Vec::new())
-                }
-                Ok(None) => (None, 1, Vec::new()),
-                Err(diagnostics) => (
-                    None,
-                    1,
-                    learning_diagnostic_problems(language, source, one_based_line, diagnostics),
-                ),
-            }
-        }
-        Some(LearningAdapter::Recovering(adapter)) => {
+        Some(adapter) => {
             let outcome = adapter(source, one_based_line, &is_cancelled);
             let mapped = recovering_learning_result(outcome, language, source, one_based_line)?;
             (mapped.facts, mapped.column, mapped.problems)

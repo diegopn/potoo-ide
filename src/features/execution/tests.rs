@@ -1066,6 +1066,156 @@ fn debugger_reaches_nested_lexical_errors_in_every_language_profile() {
     }
 }
 
+#[derive(Clone, Copy)]
+struct CoverageEvidence(&'static str);
+
+struct DebuggerRecoveryCoverage {
+    fixture: &'static str,
+    diagnostics: [CoverageEvidence; 4],
+    structure: CoverageEvidence,
+    source_formats: [CoverageEvidence; 2],
+    consumers: [CoverageEvidence; 2],
+}
+
+const SHARED_DIAGNOSTIC_COVERAGE: [CoverageEvidence; 4] = [
+    CoverageEvidence("debugger_reaches_nested_lexical_errors_in_every_language_profile"),
+    CoverageEvidence("parser_errors_stay_on_their_line_across_all_supported_dialects"),
+    CoverageEvidence("type_diagnostics_keep_their_own_learning_category_for_every_fixture_mode"),
+    CoverageEvidence(
+        "runtime_diagnostics_are_shown_only_on_their_source_line_for_every_fixture_mode",
+    ),
+];
+
+const SHARED_CONSUMER_COVERAGE: [CoverageEvidence; 2] = [
+    CoverageEvidence("parser_errors_stay_on_their_line_across_all_supported_dialects"),
+    CoverageEvidence("debugger_reaches_nested_lexical_errors_in_every_language_profile"),
+];
+
+const DEBUGGER_RECOVERY_COVERAGE: [DebuggerRecoveryCoverage; 7] = [
+    DebuggerRecoveryCoverage {
+        fixture: "Portugol Studio 2.0",
+        diagnostics: SHARED_DIAGNOSTIC_COVERAGE,
+        structure: CoverageEvidence(
+            "portugol_debugger_does_not_run_a_truncated_loop_before_a_static_error",
+        ),
+        source_formats: [
+            CoverageEvidence("shared_rules_ignore_braces_and_keywords_inside_strings_and_comments"),
+            CoverageEvidence(
+                "source_index_maps_unicode_tabs_crlf_eof_without_accepting_invalid_coordinates",
+            ),
+        ],
+        consumers: SHARED_CONSUMER_COVERAGE,
+    },
+    DebuggerRecoveryCoverage {
+        fixture: "G-Portugol",
+        diagnostics: SHARED_DIAGNOSTIC_COVERAGE,
+        structure: CoverageEvidence(
+            "gportugol_debugger_does_not_execute_truncated_loops_before_static_errors",
+        ),
+        source_formats: [
+            CoverageEvidence("source_line_code_handles_bare_carriage_returns_and_crlf"),
+            CoverageEvidence("shared_tokens_keep_gportugol_accents_and_hyphenated_closers"),
+        ],
+        consumers: SHARED_CONSUMER_COVERAGE,
+    },
+    DebuggerRecoveryCoverage {
+        fixture: "Mapler",
+        diagnostics: SHARED_DIAGNOSTIC_COVERAGE,
+        structure: CoverageEvidence(
+            "mapler_debugger_does_not_execute_truncated_loops_before_static_errors",
+        ),
+        source_formats: [
+            CoverageEvidence("mapler_comments_end_only_at_lf_and_keep_parser_coordinates"),
+            CoverageEvidence(
+                "source_index_maps_unicode_tabs_crlf_eof_without_accepting_invalid_coordinates",
+            ),
+        ],
+        consumers: SHARED_CONSUMER_COVERAGE,
+    },
+    DebuggerRecoveryCoverage {
+        fixture: "VisuAlg",
+        diagnostics: SHARED_DIAGNOSTIC_COVERAGE,
+        structure: CoverageEvidence("visualg_debugger_does_not_execute_truncated_loop_bodies"),
+        source_formats: [
+            CoverageEvidence("visualg_line_views_follow_crlf_and_bare_cr_boundaries"),
+            CoverageEvidence("shared_tokens_match_visualg_unicode_and_universal_line_coordinates"),
+        ],
+        consumers: SHARED_CONSUMER_COVERAGE,
+    },
+    DebuggerRecoveryCoverage {
+        fixture: "Calango",
+        diagnostics: SHARED_DIAGNOSTIC_COVERAGE,
+        structure: CoverageEvidence(
+            "calango_debugger_fails_closed_for_truncated_loops_and_called_routines",
+        ),
+        source_formats: [
+            CoverageEvidence(
+                "line_views_follow_lf_only_comments_without_truncating_escaped_literals",
+            ),
+            CoverageEvidence("shared_tokens_match_calango_lf_only_unicode_coordinates"),
+        ],
+        consumers: SHARED_CONSUMER_COVERAGE,
+    },
+    DebuggerRecoveryCoverage {
+        fixture: "Potigol Classic",
+        diagnostics: SHARED_DIAGNOSTIC_COVERAGE,
+        structure: CoverageEvidence(
+            "potigol_classic_and_jerimum_do_not_execute_truncated_loop_prefixes",
+        ),
+        source_formats: [
+            CoverageEvidence("only_hash_comments_are_removed_and_eof_comments_keep_their_error"),
+            CoverageEvidence(
+                "token_positions_match_the_parser_for_unicode_newlines_and_bare_carriage_returns",
+            ),
+        ],
+        consumers: SHARED_CONSUMER_COVERAGE,
+    },
+    DebuggerRecoveryCoverage {
+        fixture: "Potigol Jerimum",
+        diagnostics: SHARED_DIAGNOSTIC_COVERAGE,
+        structure: CoverageEvidence(
+            "potigol_classic_and_jerimum_do_not_execute_truncated_loop_prefixes",
+        ),
+        source_formats: [
+            CoverageEvidence("only_hash_comments_are_removed_and_eof_comments_keep_their_error"),
+            CoverageEvidence(
+                "token_positions_match_the_parser_for_unicode_newlines_and_bare_carriage_returns",
+            ),
+        ],
+        consumers: SHARED_CONSUMER_COVERAGE,
+    },
+];
+
+#[test]
+fn debugger_and_learning_coverage_matrix_names_all_seven_fixture_modes() {
+    let expected = [
+        "Portugol Studio 2.0",
+        "G-Portugol",
+        "Mapler",
+        "VisuAlg",
+        "Calango",
+        "Potigol Classic",
+        "Potigol Jerimum",
+    ];
+    assert_eq!(DEBUGGER_RECOVERY_COVERAGE.len(), expected.len());
+    let actual = DEBUGGER_RECOVERY_COVERAGE.map(|entry| entry.fixture);
+    assert_eq!(actual.as_slice(), expected.as_slice());
+
+    for entry in DEBUGGER_RECOVERY_COVERAGE {
+        for evidence in entry
+            .diagnostics
+            .into_iter()
+            .chain([entry.structure])
+            .chain(entry.source_formats)
+            .chain(entry.consumers)
+        {
+            match evidence {
+                CoverageEvidence(name) => assert!(name.contains('_'), "{}: {name}", entry.fixture),
+            }
+        }
+    }
+}
+
 #[test]
 fn streams_output_and_waits_for_portugol_input() {
     let source = r#"programa {
