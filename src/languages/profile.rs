@@ -126,12 +126,12 @@ static PROFILES: [LanguageProfile; 6] = [
         without_literals_and_comments:
             crate::languages::potigol::syntax_analysis::views::without_literals_and_comments,
         declared_array_bounds: None,
-        debugger_prefix: Some(DebuggerPrefixAdapter::Legacy(
+        debugger_prefix: Some(DebuggerPrefixAdapter::Safe(
             crate::languages::potigol::syntax_analysis::views::debugger_prefix,
         )),
         completion: Some(&crate::languages::potigol::completion::ADAPTER),
         execution: crate::languages::potigol::runtime::execute,
-        learning: Some(LearningAdapter::Legacy(
+        learning: Some(LearningAdapter::Recovering(
             crate::languages::potigol::learning::profile_adapter,
         )),
         default_template: ProjectTemplate::PotigolClassic,
@@ -232,27 +232,33 @@ pub(crate) fn for_language(language: Language) -> &'static LanguageProfile {
 mod tests {
     use super::*;
     use crate::features::execution::WorkerIo;
-    use crate::languages::model::SourceDiagnostic;
+    use crate::languages::model::{SourceDiagnostic, SourceLineAnalysisOutcome};
 
     type Diagnostics = fn(&str) -> Vec<SourceDiagnostic>;
     type SourceLineCode = fn(&str, usize) -> String;
     type BlankComment = fn(&str, usize) -> bool;
     type LiteralMask = fn(&str) -> String;
     type ArrayBounds = fn(&str, &dyn Fn() -> bool) -> Option<HashMap<String, Vec<SourceDimension>>>;
-    type DebuggerPrefix = fn(&str, usize, usize) -> String;
+    type DebuggerPrefix = fn(&str, usize, usize) -> Option<String>;
     type Execution =
         fn(&str, &mut WorkerIo) -> Result<(), Vec<crate::features::execution::ExecutionDiagnostic>>;
-    type Learning =
-        fn(
-            &str,
-            usize,
-            &dyn Fn() -> bool,
-        )
-            -> Result<Option<crate::languages::model::SourceLineAnalysis>, Vec<SourceDiagnostic>>;
+    type Learning = fn(&str, usize, &dyn Fn() -> bool) -> SourceLineAnalysisOutcome;
+    type ExpectedProfile = (
+        Language,
+        Diagnostics,
+        SourceLineCode,
+        BlankComment,
+        LiteralMask,
+        Option<ArrayBounds>,
+        Option<DebuggerPrefix>,
+        Execution,
+        &'static CompletionAdapter,
+        Option<Learning>,
+    );
 
     #[test]
     fn language_adapters_point_to_their_dialect_implementations() {
-        let expected = [
+        let expected: [ExpectedProfile; 6] = [
             (
                 Language::Portugol,
                 crate::languages::portugol::studio_20::diagnostics::analyze as Diagnostics,
@@ -290,13 +296,10 @@ mod tests {
                 crate::languages::potigol::syntax_analysis::views::is_blank_or_line_comment,
                 crate::languages::potigol::syntax_analysis::views::without_literals_and_comments,
                 None,
-                Some(
-                    crate::languages::potigol::syntax_analysis::views::debugger_prefix
-                        as DebuggerPrefix,
-                ),
+                None,
                 crate::languages::potigol::runtime::execute,
                 &crate::languages::potigol::completion::ADAPTER,
-                Some(crate::languages::potigol::learning::profile_adapter as Learning),
+                None,
             ),
             (
                 Language::GPortugol,
@@ -386,6 +389,7 @@ mod tests {
                             | Language::GPortugol
                             | Language::Calango
                             | Language::Mapler
+                            | Language::Potigol
                     ) => {}
                 (Some(DebuggerPrefixAdapter::Legacy(actual)), Some(expected)) => {
                     assert!(std::ptr::fn_addr_eq(actual, expected), "{language:?}");
@@ -409,6 +413,7 @@ mod tests {
                             | Language::GPortugol
                             | Language::Calango
                             | Language::Mapler
+                            | Language::Potigol
                     ) => {}
                 (Some(LearningAdapter::Legacy(actual)), Some(expected)) => {
                     assert!(std::ptr::fn_addr_eq(actual, expected), "{language:?}");
@@ -443,8 +448,8 @@ mod tests {
             (Language::Calango, "Calango", true),
             (Language::Mapler, "Mapler", true),
             (Language::Visualg, "VisuAlg", true),
-            (Language::Potigol, "Potigol Classic", false),
-            (Language::Potigol, "Potigol Jerimum", false),
+            (Language::Potigol, "Potigol Classic", true),
+            (Language::Potigol, "Potigol Jerimum", true),
         ];
 
         for (language, fixture, migrated) in fixtures {
@@ -463,7 +468,11 @@ mod tests {
                 );
                 if matches!(
                     language,
-                    Language::Visualg | Language::GPortugol | Language::Mapler | Language::Calango
+                    Language::Visualg
+                        | Language::GPortugol
+                        | Language::Mapler
+                        | Language::Calango
+                        | Language::Potigol
                 ) {
                     let Some(DebuggerPrefixAdapter::Safe(debugger_prefix)) =
                         profile.debugger_prefix
@@ -476,6 +485,7 @@ mod tests {
                             Language::GPortugol => crate::languages::portugol::g_portugol::syntax_analysis::views::debugger_prefix,
                             Language::Mapler => crate::languages::portugol::mapler::syntax_analysis::views::debugger_prefix,
                             Language::Calango => crate::languages::calango::syntax_analysis::views::debugger_prefix,
+                            Language::Potigol => crate::languages::potigol::syntax_analysis::views::debugger_prefix,
                             _ => unreachable!("only migrated profiles are checked here"),
                         };
                     assert!(std::ptr::fn_addr_eq(
@@ -500,6 +510,7 @@ mod tests {
                             crate::languages::portugol::mapler::learning::profile_adapter
                         }
                         Language::Calango => crate::languages::calango::learning::profile_adapter,
+                        Language::Potigol => crate::languages::potigol::learning::profile_adapter,
                         _ => unreachable!("only migrated profiles are checked here"),
                     };
                     assert!(std::ptr::fn_addr_eq(learning, expected_learning));

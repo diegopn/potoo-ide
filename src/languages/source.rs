@@ -199,6 +199,8 @@ se */ z"#;
             hyphenated_words: &["fim-se"],
             line_comment_terminator: LineCommentTerminator::AnyNewline,
             line_endings: LineEndingPolicy::Universal,
+            bare_cr_advances_line_without_separator: false,
+            interpolated_strings: false,
             ignore_leading_bom: false,
         };
 
@@ -255,6 +257,8 @@ se */ z"#;
             }],
             hyphenated_words: &[],
             line_endings: LineEndingPolicy::Universal,
+            bare_cr_advances_line_without_separator: false,
+            interpolated_strings: false,
             ignore_leading_bom: false,
         };
 
@@ -284,6 +288,8 @@ se */ z"#;
             line_comments: &["//"],
             line_comment_terminator: LineCommentTerminator::LfOnly,
             line_endings: LineEndingPolicy::LfOnly,
+            bare_cr_advances_line_without_separator: false,
+            interpolated_strings: false,
             block_comments: &[],
             quote_rules: &[QuoteRule {
                 delimiter: '"',
@@ -324,6 +330,8 @@ se */ z"#;
             quote_rules: &[],
             hyphenated_words: &[],
             line_endings: LineEndingPolicy::Universal,
+            bare_cr_advances_line_without_separator: false,
+            interpolated_strings: false,
             ignore_leading_bom: false,
         };
         let tokens = tokenize(source, &config);
@@ -362,6 +370,8 @@ se */ z"#;
             quote_rules: &[],
             hyphenated_words: &[],
             line_endings: LineEndingPolicy::Universal,
+            bare_cr_advances_line_without_separator: false,
+            interpolated_strings: false,
             ignore_leading_bom: false,
         };
         let tokens = tokenize(source, &config);
@@ -389,6 +399,8 @@ se */ z"#;
             quote_rules: &[],
             hyphenated_words: &[],
             line_endings: LineEndingPolicy::Universal,
+            bare_cr_advances_line_without_separator: false,
+            interpolated_strings: false,
             ignore_leading_bom: false,
         };
         let tokens = tokenize(source, &config);
@@ -415,6 +427,8 @@ se */ z"#;
             quote_rules: &[],
             hyphenated_words: &[],
             line_endings: LineEndingPolicy::Universal,
+            bare_cr_advances_line_without_separator: false,
+            interpolated_strings: false,
             ignore_leading_bom: false,
         };
         let tokens = tokenize(source, &config);
@@ -872,6 +886,7 @@ pub(crate) struct QuoteRule {
 pub(crate) enum LineCommentTerminator {
     AnyNewline,
     LfOrCrlf,
+    LfOrCrlfRejectStandaloneCr,
     LfOnly,
 }
 
@@ -880,6 +895,8 @@ pub(crate) struct LexerConfig<'a> {
     pub(crate) line_comments: &'a [&'a str],
     pub(crate) line_comment_terminator: LineCommentTerminator,
     pub(crate) line_endings: LineEndingPolicy,
+    pub(crate) bare_cr_advances_line_without_separator: bool,
+    pub(crate) interpolated_strings: bool,
     pub(crate) block_comments: &'a [(&'a str, &'a str)],
     pub(crate) quote_rules: &'a [QuoteRule],
     pub(crate) hyphenated_words: &'a [&'a str],
@@ -955,6 +972,15 @@ pub(crate) fn tokenize(source: &str, config: &LexerConfig<'_>) -> Vec<SourceToke
     let (mut line, mut column) = (1, 1);
 
     while offset < source.len() {
+        if config.bare_cr_advances_line_without_separator
+            && source[offset..].starts_with('\r')
+            && !source[offset..].starts_with("\r\n")
+        {
+            offset += 1;
+            line += 1;
+            column = 1;
+            continue;
+        }
         if newline_width(source, offset, config.line_endings).is_some() {
             push_newline(
                 source,
@@ -1086,6 +1112,29 @@ pub(crate) fn tokenize(source: &str, config: &LexerConfig<'_>) -> Vec<SourceToke
                     }
                     continue;
                 }
+                if config.interpolated_strings && rule.delimiter == '"' && current == '{' {
+                    if let Some(end) = interpolation_end(source, offset) {
+                        advance_to_offset(
+                            source,
+                            end,
+                            &mut offset,
+                            &mut line,
+                            &mut column,
+                            config.line_endings,
+                        );
+                    } else {
+                        advance_to_offset(
+                            source,
+                            source.len(),
+                            &mut offset,
+                            &mut line,
+                            &mut column,
+                            config.line_endings,
+                        );
+                        break;
+                    }
+                    continue;
+                }
                 if current == rule.delimiter {
                     let after_delimiter = offset + current.len_utf8();
                     if rule.doubled_delimiter
@@ -1162,6 +1211,96 @@ pub(crate) fn tokenize(source: &str, config: &LexerConfig<'_>) -> Vec<SourceToke
     tokens
 }
 
+fn interpolation_end(source: &str, open_brace: usize) -> Option<usize> {
+    let mut offset = open_brace + 1;
+    let mut nested_braces = 0usize;
+
+    while offset < source.len() {
+        let current = char_at(source, offset)?;
+        if current == '"' {
+            offset = skip_nested_string(source, offset);
+            continue;
+        }
+        if current == '\'' {
+            offset = skip_nested_character(source, offset);
+            continue;
+        }
+        if current == '#' || (current == '/' && source[offset..].starts_with("//")) {
+            while offset < source.len() && !matches!(char_at(source, offset), Some('\r' | '\n')) {
+                offset += char_at(source, offset)?.len_utf8();
+            }
+            continue;
+        }
+
+        match current {
+            '{' => nested_braces = nested_braces.saturating_add(1),
+            '}' if nested_braces == 0 => return Some(offset + current.len_utf8()),
+            '}' => nested_braces -= 1,
+            _ => {}
+        }
+        offset += current.len_utf8();
+    }
+    None
+}
+
+fn skip_nested_string(source: &str, opening_quote: usize) -> usize {
+    let mut offset = opening_quote + 1;
+    while offset < source.len() {
+        let Some(current) = char_at(source, offset) else {
+            return source.len();
+        };
+        if current == '\\' {
+            offset += current.len_utf8();
+            if let Some(escaped) = char_at(source, offset) {
+                offset += escaped.len_utf8();
+            }
+        } else if current == '"' {
+            return offset + current.len_utf8();
+        } else {
+            offset += current.len_utf8();
+        }
+    }
+    source.len()
+}
+
+fn skip_nested_character(source: &str, opening_quote: usize) -> usize {
+    let mut offset = opening_quote + 1;
+    while offset < source.len() {
+        let Some(current) = char_at(source, offset) else {
+            return source.len();
+        };
+        if matches!(current, '\r' | '\n') {
+            return offset;
+        }
+        offset += current.len_utf8();
+        if current == '\'' {
+            return offset;
+        }
+    }
+    source.len()
+}
+
+fn advance_to_offset(
+    source: &str,
+    target: usize,
+    offset: &mut usize,
+    line: &mut usize,
+    column: &mut usize,
+    line_endings: LineEndingPolicy,
+) {
+    while *offset < target {
+        if let Some(width) = newline_width(source, *offset, line_endings) {
+            *offset += width;
+            *line += 1;
+            *column = 1;
+        } else if let Some(current) = char_at(source, *offset) {
+            advance_character(offset, column, current);
+        } else {
+            break;
+        }
+    }
+}
+
 fn line_comment_ends(
     source: &str,
     offset: usize,
@@ -1172,6 +1311,9 @@ fn line_comment_ends(
         LineCommentTerminator::AnyNewline => newline_width(source, offset, line_endings).is_some(),
         LineCommentTerminator::LfOrCrlf => {
             source[offset..].starts_with('\n') || source[offset..].starts_with("\r\n")
+        }
+        LineCommentTerminator::LfOrCrlfRejectStandaloneCr => {
+            source[offset..].starts_with('\r') || source[offset..].starts_with('\n')
         }
         LineCommentTerminator::LfOnly => source[offset..].starts_with('\n'),
     }
@@ -1253,6 +1395,18 @@ pub(crate) fn statement_range_with_index(
     rules: &StatementRules<'_>,
     index: &SourceIndex<'_>,
 ) -> Option<Range<usize>> {
+    statement_range_with_next_line_continuations(source, tokens, line, column, rules, &[], index)
+}
+
+pub(crate) fn statement_range_with_next_line_continuations(
+    source: &str,
+    tokens: &[SourceToken],
+    line: usize,
+    column: usize,
+    rules: &StatementRules<'_>,
+    next_line_continuations: &[&str],
+    index: &SourceIndex<'_>,
+) -> Option<Range<usize>> {
     let target = index.line_column_to_byte(line, column)?;
     let mut ranges = Vec::new();
     let mut statement_start = None;
@@ -1260,8 +1414,11 @@ pub(crate) fn statement_range_with_index(
     let (mut parentheses, mut brackets, mut braces) = (0usize, 0usize, 0usize);
     let mut previous: Option<&SourceToken> = None;
 
-    for token in tokens {
+    for (token_index, token) in tokens.iter().enumerate() {
         if token.kind == SourceTokenKind::Newline {
+            let next_token = tokens[token_index + 1..]
+                .iter()
+                .find(|next| next.kind != SourceTokenKind::Newline);
             let continued = parentheses > 0
                 || brackets > 0
                 || (!rules.brace_delimited_blocks && braces > 0)
@@ -1269,6 +1426,13 @@ pub(crate) fn statement_range_with_index(
                     token_text(source, previous).is_some_and(|text| {
                         rules
                             .multiline_continuations
+                            .iter()
+                            .any(|continuation| keyword_matches(text, continuation, rules))
+                    })
+                })
+                || next_token.is_some_and(|next| {
+                    token_text(source, next).is_some_and(|text| {
+                        next_line_continuations
                             .iter()
                             .any(|continuation| keyword_matches(text, continuation, rules))
                     })

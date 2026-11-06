@@ -7,6 +7,8 @@ pub(super) const CONFIG: LexerConfig<'static> = LexerConfig {
     line_comments: &["//"],
     line_comment_terminator: LineCommentTerminator::LfOnly,
     line_endings: LineEndingPolicy::LfOnly,
+    bare_cr_advances_line_without_separator: false,
+    interpolated_strings: false,
     block_comments: &[],
     quote_rules: &[QuoteRule {
         delimiter: '"',

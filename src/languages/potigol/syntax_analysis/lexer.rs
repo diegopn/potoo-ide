@@ -1,367 +1,159 @@
-use std::ops::Range;
+use crate::languages::source::{
+    LexerConfig, LineCommentTerminator, LineEndingPolicy, QuoteRule, SourceIndex, SourceToken,
+    source_view, tokenize,
+};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum TokenKind {
-    Word,
-    String,
-    Symbol(char),
-    Newline,
+pub(super) const CONFIG: LexerConfig<'static> = LexerConfig {
+    line_comments: &["#"],
+    line_comment_terminator: LineCommentTerminator::LfOrCrlfRejectStandaloneCr,
+    line_endings: LineEndingPolicy::Universal,
+    bare_cr_advances_line_without_separator: true,
+    interpolated_strings: true,
+    block_comments: &[],
+    quote_rules: &[
+        QuoteRule {
+            delimiter: '"',
+            escape: Some('\\'),
+            doubled_delimiter: false,
+            allows_newlines: true,
+            allows_escaped_newlines: false,
+            allows_carriage_returns: true,
+        },
+        QuoteRule {
+            delimiter: '\'',
+            escape: None,
+            doubled_delimiter: false,
+            allows_newlines: false,
+            allows_escaped_newlines: false,
+            allows_carriage_returns: false,
+        },
+    ],
+    hyphenated_words: &[],
+    ignore_leading_bom: false,
+};
+
+pub(super) fn tokens(source: &str) -> Vec<SourceToken> {
+    tokenize(source, &CONFIG)
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct Token {
-    pub(super) kind: TokenKind,
-    pub(super) text: String,
-    pub(super) start: usize,
-    pub(super) end: usize,
-    pub(super) line: usize,
-    pub(super) column: usize,
+pub(crate) fn source_line_code(source: &str, line: usize) -> String {
+    let view = source_view(source, &tokens(source), true);
+    SourceIndex::new(&view)
+        .line_text(line)
+        .unwrap_or("")
+        .to_owned()
 }
 
-const ALLOW_HYPHENATED_WORDS: bool = false;
-const HASH_STARTS_LINE_COMMENT: bool = true;
-
-pub(super) fn tokens(source: &str) -> Vec<Token> {
-    let characters = source.char_indices().collect::<Vec<_>>();
-    let mut result = Vec::new();
-    let (mut cursor, mut line, mut column) = (0, 1, 1);
-
-    while cursor < characters.len() {
-        let (start, character) = characters[cursor];
-
-        if character == '\n' {
-            result.push(Token {
-                kind: TokenKind::Newline,
-                text: "\n".to_owned(),
-                start,
-                end: start + character.len_utf8(),
-                line,
-                column,
-            });
-            cursor += 1;
-            line += 1;
-            column = 1;
-            continue;
-        }
-
-        if character.is_whitespace() {
-            cursor += 1;
-            column += 1;
-            continue;
-        }
-
-        if character == '/' && next_is(&characters, cursor, '/') {
-            cursor += 2;
-            column += 2;
-            while cursor < characters.len() && characters[cursor].1 != '\n' {
-                column += 1;
-                cursor += 1;
-            }
-            continue;
-        }
-
-        if HASH_STARTS_LINE_COMMENT && character == '#' {
-            while cursor < characters.len() && characters[cursor].1 != '\n' {
-                column += 1;
-                cursor += 1;
-            }
-            continue;
-        }
-
-        if character == '/' && next_is(&characters, cursor, '*') {
-            cursor += 2;
-            column += 2;
-            while cursor < characters.len() {
-                let (offset, current) = characters[cursor];
-                if current == '*' && next_is(&characters, cursor, '/') {
-                    cursor += 2;
-                    column += 2;
-                    break;
-                }
-                if current == '\n' {
-                    result.push(Token {
-                        kind: TokenKind::Newline,
-                        text: "\n".to_owned(),
-                        start: offset,
-                        end: offset + current.len_utf8(),
-                        line,
-                        column,
-                    });
-                    cursor += 1;
-                    line += 1;
-                    column = 1;
-                } else {
-                    cursor += 1;
-                    column += 1;
-                }
-            }
-            continue;
-        }
-
-        if matches!(character, '"' | '\'') {
-            let delimiter = character;
-            let mut text = String::new();
-            cursor += 1;
-            column += 1;
-            let mut escaped = false;
-            while cursor < characters.len() {
-                let current = characters[cursor].1;
-                cursor += 1;
-                if current == '\n' {
-                    line += 1;
-                    column = 1;
-                } else {
-                    column += 1;
-                }
-                if escaped {
-                    text.push(current);
-                    escaped = false;
-                } else if current == '\\' {
-                    escaped = true;
-                } else if current == delimiter {
-                    break;
-                } else {
-                    text.push(current);
-                }
-            }
-            let end = characters
-                .get(cursor.saturating_sub(1))
-                .map_or(source.len(), |(offset, current)| {
-                    offset + current.len_utf8()
-                });
-            result.push(Token {
-                kind: TokenKind::String,
-                text,
-                start,
-                end,
-                line: line_for_offset(source, start),
-                column: column_for_offset(source, start),
-            });
-            continue;
-        }
-
-        if is_word_character(character) {
-            let start_line = line;
-            let start_column = column;
-            let mut word = String::new();
-            while cursor < characters.len() {
-                let current = characters[cursor].1;
-                let accepted = is_word_character(current)
-                    || (ALLOW_HYPHENATED_WORDS
-                        && current == '-'
-                        && cursor + 1 < characters.len()
-                        && is_word_character(characters[cursor + 1].1));
-                if !accepted {
-                    break;
-                }
-                word.push(current);
-                cursor += 1;
-                column += 1;
-            }
-            let end = characters
-                .get(cursor.saturating_sub(1))
-                .map_or(source.len(), |(offset, current)| {
-                    offset + current.len_utf8()
-                });
-            result.push(Token {
-                kind: TokenKind::Word,
-                text: normalize_word(&word),
-                start,
-                end,
-                line: start_line,
-                column: start_column,
-            });
-            continue;
-        }
-
-        result.push(Token {
-            kind: TokenKind::Symbol(character),
-            text: character.to_string(),
-            start,
-            end: start + character.len_utf8(),
-            line,
-            column,
-        });
-        cursor += 1;
-        column += 1;
-    }
-
-    result
+pub(crate) fn without_literals_and_comments(source: &str) -> String {
+    source_view(source, &tokens(source), false)
 }
 
-pub(super) fn without_literals_and_comments(source: &str) -> String {
-    let mut result = source
-        .chars()
-        .map(|character| {
-            if matches!(character, '\n' | '\r') {
-                character
-            } else {
-                ' '
-            }
-        })
-        .collect::<Vec<_>>();
+#[cfg(test)]
+mod tests {
+    use super::tokens;
+    use crate::languages::source::{SourceIndex, SourceTokenKind, token_text};
+    use potoo_potigol_interpreter::parse;
 
-    let mut byte_cursor = 0;
-    let mut character_cursor = 0;
-    for token in tokens(source) {
-        while byte_cursor < token.start {
-            let character = source[byte_cursor..]
-                .chars()
-                .next()
-                .expect("token offset must be within the source");
-            byte_cursor += character.len_utf8();
-            character_cursor += 1;
-        }
-        if matches!(token.kind, TokenKind::String | TokenKind::Newline) {
-            continue;
-        }
-        let start = character_cursor;
-        let mut token_character_count = 0;
-        for (offset, character) in source[token.start..token.end].chars().enumerate() {
-            result[start + offset] = character;
-            token_character_count += 1;
-        }
-        character_cursor += token_character_count;
-        byte_cursor = token.end;
-    }
+    #[test]
+    fn token_positions_match_the_parser_for_unicode_newlines_and_bare_carriage_returns() {
+        for source in ["escreva \"ação\"\r\n@\r\n", "escreva 1\r@"] {
+            let expected = parse(source)
+                .expect_err("the source contains an invalid token")
+                .remove(0);
+            let at = tokens(source)
+                .into_iter()
+                .find(|token| token.kind == SourceTokenKind::Symbol('@'))
+                .expect("the invalid token remains visible");
 
-    result.into_iter().collect()
-}
-
-pub(super) fn line_without_comments(source: &str, selected_line: usize) -> String {
-    let mut result = String::new();
-    let mut line = 1usize;
-    let mut in_block_comment = false;
-    let mut in_line_comment = false;
-    let mut quote = None;
-    let mut escaped = false;
-    let mut characters = source.chars().peekable();
-
-    while let Some(character) = characters.next() {
-        let selected = line == selected_line;
-        if character == '\n' {
-            if selected {
-                return result;
-            }
-            line += 1;
-            in_line_comment = false;
-            quote = None;
-            escaped = false;
-            continue;
-        }
-
-        if in_line_comment {
-            if selected {
-                result.push(' ');
-            }
-            continue;
-        }
-        if in_block_comment {
-            if character == '*' && characters.peek() == Some(&'/') {
-                characters.next();
-                if selected {
-                    result.push_str("  ");
-                }
-                in_block_comment = false;
-            } else if selected {
-                result.push(' ');
-            }
-            continue;
-        }
-        if let Some(delimiter) = quote {
-            if selected {
-                result.push(character);
-            }
-            if escaped {
-                escaped = false;
-            } else if character == '\\' {
-                escaped = true;
-            } else if character == delimiter {
-                quote = None;
-            }
-            continue;
-        }
-
-        if character == '/' && characters.peek() == Some(&'*') {
-            characters.next();
-            in_block_comment = true;
-            if selected {
-                result.push_str("  ");
-            }
-        } else if character == '/' && characters.peek() == Some(&'/') {
-            characters.next();
-            in_line_comment = true;
-            if selected {
-                result.push_str("  ");
-            }
-        } else if HASH_STARTS_LINE_COMMENT && character == '#' {
-            in_line_comment = true;
-            if selected {
-                result.push(' ');
-            }
-        } else {
-            if selected {
-                result.push(character);
-            }
-            if matches!(character, '\'' | '"') {
-                quote = Some(character);
-            }
+            assert_eq!(
+                (at.line, at.column),
+                (expected.span.start.line, expected.span.start.column),
+                "{source:?}"
+            );
+            assert_eq!(
+                SourceIndex::new(source).byte_to_line_column(at.byte_range.start),
+                Some((expected.span.start.line, expected.span.start.column)),
+                "{source:?}"
+            );
         }
     }
 
-    result
-}
+    #[test]
+    fn only_hash_comments_are_removed_and_eof_comments_keep_their_error() {
+        let source = "# comentário\r\n@\n";
+        let expected = parse(source)
+            .expect_err("the token after the valid comment is invalid")
+            .remove(0);
+        let at = tokens(source)
+            .into_iter()
+            .find(|token| token.kind == SourceTokenKind::Symbol('@'))
+            .expect("the token after CRLF remains visible");
+        assert_eq!(
+            (at.line, at.column),
+            (expected.span.start.line, expected.span.start.column)
+        );
 
-pub(super) fn normalize_word(value: &str) -> String {
-    value
-        .to_lowercase()
-        .replace('á', "a")
-        .replace('à', "a")
-        .replace('ã', "a")
-        .replace('â', "a")
-        .replace('é', "e")
-        .replace('ê', "e")
-        .replace('í', "i")
-        .replace('ó', "o")
-        .replace('ô', "o")
-        .replace('õ', "o")
-        .replace('ú', "u")
-        .replace('ç', "c")
-}
+        let unterminated = "# comentário";
+        let expected = parse(unterminated)
+            .expect_err("the comment requires LF or CRLF")
+            .remove(0);
+        assert!(tokens(unterminated).is_empty());
+        assert_eq!(
+            (expected.span.start.line, expected.span.start.column),
+            (1, 1)
+        );
 
-fn is_word_character(character: char) -> bool {
-    character.is_alphanumeric() || character == '_'
-}
+        let malformed = "# comentário\r@\n";
+        let expected = parse(malformed)
+            .expect_err("a standalone CR is not a valid comment terminator")
+            .remove(0);
+        assert_eq!(
+            (expected.span.start.line, expected.span.start.column),
+            (1, 1)
+        );
+        let malformed_tokens = tokens(malformed);
+        let at = malformed_tokens
+            .iter()
+            .find(|token| token.kind == SourceTokenKind::Symbol('@'))
+            .expect("code after the malformed comment remains visible");
+        assert_eq!((at.line, at.column), (2, 1));
 
-fn next_is(characters: &[(usize, char)], cursor: usize, expected: char) -> bool {
-    characters
-        .get(cursor + 1)
-        .is_some_and(|(_, character)| *character == expected)
-}
+        let slash_comment = "escreva 1 // não é comentário\n";
+        assert!(
+            tokens(slash_comment)
+                .iter()
+                .any(|token| { token.kind == SourceTokenKind::Symbol('/') })
+        );
+    }
 
-fn line_for_offset(source: &str, offset: usize) -> usize {
-    source[..offset.min(source.len())]
-        .chars()
-        .filter(|character| *character == '\n')
-        .count()
-        + 1
-}
+    #[test]
+    fn interpolated_text_keeps_nested_strings_and_comment_markers_atomic() {
+        for source in [
+            r#"escreva "valor {"a;b"}"
+@
+"#,
+            "escreva \"valor {1 # ; } comentário\n + 2}\"\n@\n",
+            "escreva \"valor {1 // ; } comentário\n + 2}\"\n@\n",
+        ] {
+            let expected = parse(source)
+                .expect_err("the token after the complete interpolated string is invalid")
+                .remove(0);
+            let tokens = tokens(source);
+            let literal = tokens
+                .iter()
+                .find(|token| token.kind == SourceTokenKind::Literal)
+                .expect("the outer string remains one literal token");
+            let at = tokens
+                .iter()
+                .find(|token| token.kind == SourceTokenKind::Symbol('@'))
+                .expect("the invalid token after the string remains visible");
 
-fn column_for_offset(source: &str, offset: usize) -> usize {
-    source[..offset.min(source.len())]
-        .rsplit('\n')
-        .next()
-        .map_or(1, |line| line.chars().count() + 1)
-}
-
-pub(super) fn mask_range(source: &str, range: Range<usize>) -> String {
-    let mut output = String::with_capacity(source.len());
-    for (offset, character) in source.char_indices() {
-        if offset >= range.start && offset < range.end && !matches!(character, '\n' | '\r') {
-            output.push(' ');
-        } else {
-            output.push(character);
+            assert!(token_text(source, literal).unwrap().contains("}"));
+            assert_eq!(
+                (at.line, at.column),
+                (expected.span.start.line, expected.span.start.column),
+                "{source:?}"
+            );
         }
     }
-    output
 }

@@ -170,6 +170,21 @@ fn blank_and_comment_lines_have_no_construct_or_problem_in_every_dialect() {
         !incomplete_potigol_comment.problems.is_empty(),
         "keep the Potigol parser's EOF diagnostic for an unterminated comment"
     );
+
+    let malformed_source = "# comentário\r@\n";
+    let expected = potoo_potigol_interpreter::parse(malformed_source)
+        .expect_err("a standalone CR is an invalid comment terminator")
+        .remove(0);
+    let malformed = learning_hint(malformed_source, 1, Language::Potigol);
+    assert!(
+        malformed.problems.iter().any(|problem| {
+            problem.kind == LearningProblemKind::Syntax
+                && problem.line == expected.span.start.line
+                && problem.column == expected.span.start.column
+                && problem.message == expected.message
+        }),
+        "the learning panel must keep the parser's exact comment diagnostic"
+    );
 }
 
 #[test]

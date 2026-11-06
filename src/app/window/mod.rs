@@ -1029,6 +1029,53 @@ fim";
     }
 
     #[test]
+    fn potigol_classic_and_jerimum_copy_remain_import_aware() {
+        let assignment = learning_copy(
+            &learning_hint("pontos := pontos + 1", 1, Language::Potigol),
+            UiLanguage::Portuguese,
+        );
+        assert!(assignment.0.contains("`:=`"));
+        assert!(assignment.0.contains("`pontos`"));
+
+        let typed_input =
+            learning_hint("var idade: Inteiro := leia_inteiro()", 1, Language::Potigol);
+        assert_eq!(typed_input.topic, LearningTopic::Input);
+        let input_copy = learning_copy(&typed_input, UiLanguage::Portuguese);
+        assert!(input_copy.0.contains("`leia_inteiro`"));
+        assert!(input_copy.0.contains("`idade`"));
+
+        let unimported = learning_hint("g.setColor(Cor.VERDE.color)", 1, Language::Potigol);
+        assert_eq!(unimported.topic, LearningTopic::Call);
+        assert_eq!(
+            unimported
+                .call
+                .as_ref()
+                .and_then(|call| call.library.as_deref()),
+            None
+        );
+        let unimported_copy = learning_copy(&unimported, UiLanguage::Portuguese);
+        assert!(!unimported_copy.0.contains("biblioteca Jerimum"));
+        assert!(!unimported_copy.1.to_lowercase().contains("jerimum"));
+        assert!(unimported_copy.2.contains("`g.setColor(Cor.VERDE.color)`"));
+
+        let imported =
+            "use \"jerimum\"\ndef desenhe(g: Graphics2D): Nada\n  g.setColor(Cor.VERDE.color)\nfim";
+        let import_copy = learning_copy(
+            &learning_hint(imported, 1, Language::Potigol),
+            UiLanguage::Portuguese,
+        );
+        assert!(import_copy.0.contains("jerimum"));
+
+        let jerimum = learning_copy(
+            &learning_hint(imported, 3, Language::Potigol),
+            UiLanguage::Portuguese,
+        );
+        assert!(jerimum.0.contains("setColor define"));
+        assert!(jerimum.1.contains("contexto gráfico"));
+        assert!(jerimum.2.contains("Troque o argumento de cor"));
+    }
+
+    #[test]
     fn learning_copy_avoids_claims_for_unknown_lines_and_uses_neutral_procedure_concept() {
         let potigol = learning_copy(
             &learning_hint("soma = 1 + 2", 1, Language::Potigol),

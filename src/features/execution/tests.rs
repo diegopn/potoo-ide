@@ -1832,6 +1832,147 @@ fn calango_debugger_keeps_an_earlier_runtime_failure_ahead_of_a_static_error() {
 }
 
 #[test]
+fn potigol_classic_and_jerimum_pause_at_first_line_errors_with_exact_diagnostics() {
+    let cases = [
+        ("Potigol Classic", "@\nescreva \"DEPOIS\"", 1),
+        (
+            "Potigol Jerimum",
+            "use \"jerimum\"\n@\nescreva \"DEPOIS\"",
+            2,
+        ),
+    ];
+
+    for (fixture, source, error_line) in cases {
+        let expected = potoo_potigol_interpreter::parse(source)
+            .expect_err("the first executable line contains an invalid token")
+            .remove(0);
+        let (output, pauses, result, stopped) =
+            collect_static_debug_pause_for(source, Language::Potigol, ControlAction::Step);
+
+        assert!(output.is_empty(), "{fixture}: {output:?}");
+        assert!(!stopped, "{fixture}");
+        let error_pause = pauses
+            .iter()
+            .rev()
+            .find(|pause| {
+                (pause.line, pause.column) == (expected.span.start.line, expected.span.start.column)
+            })
+            .unwrap_or_else(|| panic!("{fixture} should reach its static error: {pauses:?}"));
+        assert_eq!(
+            (error_pause.line, error_pause.column),
+            (expected.span.start.line, expected.span.start.column),
+            "{fixture}"
+        );
+        assert_eq!(error_pause.line, error_line, "{fixture}");
+        let diagnostics = result.expect_err("the original source diagnostic should remain");
+        assert_eq!(
+            diagnostics[0].kind,
+            ExecutionDiagnosticKind::Lexical,
+            "{fixture}"
+        );
+        assert_eq!(diagnostics[0].message, expected.message, "{fixture}");
+        assert_eq!(diagnostics[0].line, expected.span.start.line, "{fixture}");
+        assert_eq!(
+            diagnostics[0].column, expected.span.start.column,
+            "{fixture}"
+        );
+    }
+}
+
+#[test]
+fn potigol_classic_and_jerimum_execute_only_the_valid_prefix_before_an_error() {
+    let cases = [
+        (
+            "Potigol Classic",
+            "escreva \"ANTES\"\n@\nescreva \"DEPOIS\"",
+            2,
+        ),
+        (
+            "Potigol Jerimum",
+            "use \"jerimum\"\nescreva \"ANTES\"\n@\nescreva \"DEPOIS\"",
+            3,
+        ),
+    ];
+
+    for (fixture, source, error_line) in cases {
+        let expected = potoo_potigol_interpreter::parse(source)
+            .expect_err("the source contains an invalid token after a valid output")
+            .remove(0);
+        let (output, pauses, result, stopped) =
+            collect_static_debug_pause_for(source, Language::Potigol, ControlAction::Continue);
+
+        assert!(output.contains("ANTES"), "{fixture}: {output:?}");
+        assert!(!output.contains("DEPOIS"), "{fixture}: {output:?}");
+        assert!(!stopped, "{fixture}");
+        assert!(
+            pauses.iter().any(|pause| {
+                (pause.line, pause.column) == (expected.span.start.line, expected.span.start.column)
+            }),
+            "{fixture} should reach its syntax error: {pauses:?}"
+        );
+        assert_eq!(expected.span.start.line, error_line, "{fixture}");
+        let diagnostics = result.expect_err("the original source diagnostic should remain");
+        assert_eq!(diagnostics[0].message, expected.message, "{fixture}");
+        assert_eq!(diagnostics[0].line, expected.span.start.line, "{fixture}");
+        assert_eq!(
+            diagnostics[0].column, expected.span.start.column,
+            "{fixture}"
+        );
+    }
+}
+
+#[test]
+fn potigol_classic_and_jerimum_do_not_execute_truncated_loop_prefixes() {
+    let cases = [
+        (
+            "Potigol Classic",
+            "para i de 1 ate 3 faca\n  escreva \"DENTRO\"\n  @\nfim",
+        ),
+        (
+            "Potigol Jerimum",
+            "use \"jerimum\"\npara i de 1 ate 3 faca\n  escreva \"DENTRO\"\n  @\nfim",
+        ),
+    ];
+
+    for (fixture, source) in cases {
+        let expected = potoo_potigol_interpreter::parse(source)
+            .expect_err("the loop body contains a lexical error")
+            .remove(0);
+        let (output, pauses, result, stopped) =
+            collect_static_debug_pause_for(source, Language::Potigol, ControlAction::Continue);
+
+        assert!(
+            output.is_empty(),
+            "{fixture} ran an incomplete loop: {output:?}"
+        );
+        assert!(!stopped, "{fixture}");
+        assert_eq!(pauses.len(), 1, "{fixture}");
+        assert_eq!(
+            pauses[0].pause_reason,
+            Some(crate::features::execution::DebugPauseReason::StaticErrorNotReached),
+            "{fixture}"
+        );
+        assert_eq!(
+            (pauses[0].line, pauses[0].column),
+            (expected.span.start.line, expected.span.start.column),
+            "{fixture}"
+        );
+        let diagnostics = result.expect_err("the original source diagnostic should remain");
+        assert_eq!(
+            diagnostics[0].kind,
+            ExecutionDiagnosticKind::Lexical,
+            "{fixture}"
+        );
+        assert_eq!(diagnostics[0].message, expected.message, "{fixture}");
+        assert_eq!(diagnostics[0].line, expected.span.start.line, "{fixture}");
+        assert_eq!(
+            diagnostics[0].column, expected.span.start.column,
+            "{fixture}"
+        );
+    }
+}
+
+#[test]
 fn mapler_debugger_reports_an_earlier_same_line_runtime_failure_first() {
     let source =
         "variaveis valores: vetor [1..2] de inteiro;\ninicio\nescrever valores[3]; @;\nfim.";

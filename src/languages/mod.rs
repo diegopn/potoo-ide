@@ -22,7 +22,6 @@ mod syntax_analysis_tests {
             portugol::mapler::syntax_analysis::views::source_line_code,
             portugol::studio_20::syntax_analysis::views::source_line_code,
             portugol::visualg::syntax_analysis::views::source_line_code,
-            potigol::syntax_analysis::views::source_line_code,
         ];
 
         for view in views {
@@ -30,16 +29,19 @@ mod syntax_analysis_tests {
             assert!(code.contains("http://example.test"), "{code:?}");
             assert!(!code.contains("se fimse"), "{code:?}");
         }
+
+        let potigol = potigol::syntax_analysis::views::source_line_code(source, 1);
+        assert!(potigol.contains("se fimse"), "// is not a Potigol comment");
     }
 
     #[test]
     fn every_language_view_masks_only_the_diagnostic_statement() {
-        let source = "before; bad @; after\nsecond line";
+        let source = "before\nbad @\nafter\nsecond line";
         let views = [potigol::syntax_analysis::views::mask_diagnostic_statement];
 
         for view in views {
-            let recovered = view(source, 1, 13);
-            assert!(recovered.starts_with("before;"), "{recovered:?}");
+            let recovered = view(source, 2, 5).expect("the statement boundary should be safe");
+            assert!(recovered.starts_with("before\n"), "{recovered:?}");
             assert!(!recovered.contains("bad @"), "{recovered:?}");
             assert!(recovered.contains("after"), "{recovered:?}");
             assert!(recovered.ends_with("second line"), "{recovered:?}");
@@ -73,17 +75,24 @@ mod syntax_analysis_tests {
         assert!(recovered.contains("escreva(2)"), "{recovered:?}");
         assert!(potoo_visualg_interpreter::parse(&recovered).is_ok());
 
-        let recovered =
-            portugol::g_portugol::syntax_analysis::views::mask_diagnostic_statement(source, 1, 13)
-                .expect("the G-Portugol statement boundary should be safe");
+        let gportugol_source = "before; bad @; after\nsecond line";
+        let recovered = portugol::g_portugol::syntax_analysis::views::mask_diagnostic_statement(
+            gportugol_source,
+            1,
+            13,
+        )
+        .expect("the G-Portugol statement boundary should be safe");
         assert!(recovered.starts_with("before;"), "{recovered:?}");
         assert!(!recovered.contains("bad @"), "{recovered:?}");
         assert!(recovered.contains("after"), "{recovered:?}");
         assert!(recovered.ends_with("second line"), "{recovered:?}");
 
-        let recovered =
-            portugol::mapler::syntax_analysis::views::mask_diagnostic_statement(source, 1, 13)
-                .expect("the Mapler statement boundary should be safe");
+        let recovered = portugol::mapler::syntax_analysis::views::mask_diagnostic_statement(
+            gportugol_source,
+            1,
+            13,
+        )
+        .expect("the Mapler statement boundary should be safe");
         assert!(recovered.starts_with("before;"), "{recovered:?}");
         assert!(!recovered.contains("bad @"), "{recovered:?}");
         assert!(recovered.contains("after"), "{recovered:?}");
@@ -103,25 +112,12 @@ mod syntax_analysis_tests {
     }
 
     #[test]
-    fn jerimum_import_is_lexical_and_top_level() {
-        use potigol::syntax_analysis::views::is_jerimum_import;
-
-        assert!(is_jerimum_import("use \"jerimum\"\n"));
-        assert!(!is_jerimum_import("# use \"jerimum\"\n"));
-        assert!(!is_jerimum_import("escreva \"use \\\"jerimum\\\"\"\n"));
-        assert!(!is_jerimum_import(
-            "se verdadeiro entao\nuse \"jerimum\"\nfim\n"
-        ));
-    }
-
-    #[test]
     fn language_views_mask_literals_and_each_language_comment_syntax() {
         let source = "valores[2] /* valores[8] */ // valores[9] \"valores[10]\"\n";
         let views = [
             calango::syntax_analysis::views::without_literals_and_comments,
             portugol::g_portugol::syntax_analysis::views::without_literals_and_comments,
             portugol::studio_20::syntax_analysis::views::without_literals_and_comments,
-            potigol::syntax_analysis::views::without_literals_and_comments,
         ];
 
         for view in views {
@@ -140,9 +136,11 @@ mod syntax_analysis_tests {
         assert!(!mapler.contains("valores[10]"), "{mapler:?}");
 
         let potigol = potigol::syntax_analysis::views::without_literals_and_comments(
-            "valores[2] # valores[8]\n",
+            "valores[2] # valores[8]\n/* valores[9] */ \"valores[10]\"\n",
         );
         assert!(potigol.contains("valores[2]"), "{potigol:?}");
         assert!(!potigol.contains("valores[8]"), "{potigol:?}");
+        assert!(potigol.contains("valores[9]"), "{potigol:?}");
+        assert!(!potigol.contains("valores[10]"), "{potigol:?}");
     }
 }

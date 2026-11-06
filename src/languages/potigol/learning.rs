@@ -1,90 +1,99 @@
 use crate::features::learning::source_call;
 use crate::languages::model::{
-    SourceCall, SourceConstruct, SourceDimension, SourceLineAnalysis, SourceSymbol,
+    SourceCall, SourceConstruct, SourceDiagnostic, SourceDiagnosticKind, SourceDimension,
+    SourceLineAnalysis, SourceLineAnalysisOutcome, SourceSymbol,
 };
-use potoo_potigol_interpreter::{Diagnostic, ast::*, parse};
-
-pub(crate) fn analyze_source_line_cancellable(
-    source: &str,
-    one_based_line: usize,
-    is_cancelled: impl Fn() -> bool,
-) -> Result<Option<SourceLineAnalysis>, Vec<Diagnostic>> {
-    if is_cancelled() || one_based_line == 0 || one_based_line > source.lines().count() {
-        return Ok(None);
-    }
-
-    let (program, diagnostics) = parse_recovering(source, &is_cancelled);
-    if is_cancelled() {
-        return Ok(None);
-    }
-    if diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.span.start.line == one_based_line)
-    {
-        return Err(diagnostics);
-    }
-    let Some(program) = program else {
-        return if diagnostics.is_empty() {
-            Ok(None)
-        } else {
-            Err(diagnostics)
-        };
-    };
-    let jerimum_imported = crate::languages::potigol::syntax_analysis::views::is_jerimum_import(
-        source,
-    ) && program.statements.iter().any(|statement| {
-        matches!(&statement.kind, StmtKind::Import(name) if name.eq_ignore_ascii_case("jerimum"))
-    });
-    let mut analysis = analyze_statements(
-        source,
-        &program.statements,
-        one_based_line,
-        jerimum_imported,
-    );
-    if jerimum_imported
-        && let Some(call) = analysis
-            .as_mut()
-            .and_then(|analysis| analysis.call.as_mut())
-        && matches!(call.member.as_str(), "setColor" | "fillRect" | "drawString")
-        && graphics_receiver_at_line(&program, one_based_line, call.receiver.as_deref())
-    {
-        call.library = Some("jerimum".to_owned());
-    }
-    Ok(analysis)
-}
+use crate::languages::source::{RecoveryStatus, SourceIndex, recover_parse};
+use potoo_potigol_interpreter::{Diagnostic, DiagnosticKind, ast::*, parse};
 
 pub(crate) fn profile_adapter(
     source: &str,
     one_based_line: usize,
     is_cancelled: &dyn Fn() -> bool,
-) -> Result<Option<SourceLineAnalysis>, Vec<crate::languages::model::SourceDiagnostic>> {
-    analyze_source_line_cancellable(source, one_based_line, is_cancelled).map_err(|diagnostics| {
-        diagnostics
-            .into_iter()
-            .map(|diagnostic| {
-                let kind = match diagnostic.kind {
-                    potoo_potigol_interpreter::DiagnosticKind::Lexical => {
-                        crate::languages::model::SourceDiagnosticKind::Lexical
-                    }
-                    potoo_potigol_interpreter::DiagnosticKind::Syntax => {
-                        crate::languages::model::SourceDiagnosticKind::Syntax
-                    }
-                    potoo_potigol_interpreter::DiagnosticKind::Type => {
-                        crate::languages::model::SourceDiagnosticKind::Type
-                    }
-                    potoo_potigol_interpreter::DiagnosticKind::Runtime => {
-                        crate::languages::model::SourceDiagnosticKind::Runtime
-                    }
-                };
-                crate::languages::model::SourceDiagnostic::at_line(
-                    kind,
-                    diagnostic.message,
-                    diagnostic.span.start.line,
-                    diagnostic.span.start.column,
-                )
-            })
-            .collect()
-    })
+) -> SourceLineAnalysisOutcome {
+    if is_cancelled() {
+        return SourceLineAnalysisOutcome::Cancelled;
+    }
+    if one_based_line == 0 || one_based_line > SourceIndex::new(source).line_count() {
+        return SourceLineAnalysisOutcome::Complete {
+            analysis: None,
+            diagnostics: Vec::new(),
+        };
+    }
+
+    let recovered = recover_parse(
+        source,
+        parse,
+        |diagnostic: &Diagnostic| (diagnostic.span.start.line, diagnostic.span.start.column),
+        crate::languages::potigol::syntax_analysis::views::mask_diagnostic_statement,
+        is_cancelled,
+    );
+    let diagnostics = recovered
+        .diagnostics
+        .into_iter()
+        .map(to_source_diagnostic)
+        .collect::<Vec<_>>();
+
+    match recovered.status {
+        RecoveryStatus::Cancelled => SourceLineAnalysisOutcome::Cancelled,
+        RecoveryStatus::Stalled | RecoveryStatus::LimitReached => {
+            SourceLineAnalysisOutcome::Incomplete { diagnostics }
+        }
+        RecoveryStatus::Complete => {
+            let Some(program) = recovered.program else {
+                return SourceLineAnalysisOutcome::Incomplete { diagnostics };
+            };
+            let analysis = if diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.line == one_based_line)
+            {
+                None
+            } else {
+                analyze_program_line(source, &program, one_based_line)
+            };
+            SourceLineAnalysisOutcome::Complete {
+                analysis,
+                diagnostics,
+            }
+        }
+    }
+}
+
+fn to_source_diagnostic(diagnostic: Diagnostic) -> SourceDiagnostic {
+    let kind = match diagnostic.kind {
+        DiagnosticKind::Lexical => SourceDiagnosticKind::Lexical,
+        DiagnosticKind::Syntax => SourceDiagnosticKind::Syntax,
+        DiagnosticKind::Type => SourceDiagnosticKind::Type,
+        DiagnosticKind::Runtime => SourceDiagnosticKind::Runtime,
+    };
+    SourceDiagnostic::at_line(
+        kind,
+        diagnostic.message,
+        diagnostic.span.start.line,
+        diagnostic.span.start.column,
+    )
+}
+
+fn analyze_program_line(
+    source: &str,
+    program: &Program,
+    line: usize,
+) -> Option<SourceLineAnalysis> {
+    let jerimum_imported = program.statements.iter().any(|statement| {
+        statement.span.start.column == 1
+            && matches!(&statement.kind, StmtKind::Import(name) if name.eq_ignore_ascii_case("jerimum"))
+    });
+    let mut analysis = analyze_statements(source, &program.statements, line, jerimum_imported);
+    if jerimum_imported
+        && let Some(call) = analysis
+            .as_mut()
+            .and_then(|analysis| analysis.call.as_mut())
+        && matches!(call.member.as_str(), "setColor" | "fillRect" | "drawString")
+        && graphics_receiver_at_line(program, line, call.receiver.as_deref())
+    {
+        call.library = Some("jerimum".to_owned());
+    }
+    analysis
 }
 
 fn graphics_receiver_at_line(program: &Program, line: usize, receiver: Option<&str>) -> bool {
@@ -111,43 +120,6 @@ fn graphics_receiver_at_line(program: &Program, line: usize, receiver: Option<&s
                     })
             })
     })
-}
-
-fn parse_recovering<F>(source: &str, is_cancelled: &F) -> (Option<Program>, Vec<Diagnostic>)
-where
-    F: Fn() -> bool,
-{
-    let mut candidate = source.to_owned();
-    let mut diagnostics = Vec::new();
-    for attempt in 0..=64 {
-        if is_cancelled() {
-            return (None, diagnostics);
-        }
-        match parse(&candidate) {
-            Ok(program) => return (Some(program), diagnostics),
-            Err(parse_diagnostics) => {
-                let Some(diagnostic) = parse_diagnostics.into_iter().next() else {
-                    return (None, diagnostics);
-                };
-                let line = diagnostic.span.start.line;
-                let column = diagnostic.span.start.column;
-                if attempt == 64 {
-                    diagnostics.push(diagnostic);
-                    break;
-                }
-                let recovered =
-                    crate::languages::potigol::syntax_analysis::views::mask_diagnostic_statement(
-                        &candidate, line, column,
-                    );
-                diagnostics.push(diagnostic);
-                if recovered == candidate {
-                    break;
-                }
-                candidate = recovered;
-            }
-        }
-    }
-    (None, diagnostics)
 }
 
 fn analyze_statements(
@@ -528,3 +500,7 @@ fn empty_analysis(line: usize, column: usize, construct: SourceConstruct) -> Sou
         call: None,
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/learning/potigol_tests.rs"]
+mod tests;
