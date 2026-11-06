@@ -47,6 +47,7 @@ where
             topic: LearningTopic::Unrecognized,
             name: None,
             return_type: None,
+            target: None,
             parameters: Vec::new(),
             variables: Vec::new(),
             expression: None,
@@ -83,7 +84,7 @@ where
         return None;
     }
     let mut facts = facts.unwrap_or_else(unrecognized_facts);
-    if facts.topic == LearningTopic::Call && facts.call.is_none() {
+    if matches!(facts.topic, LearningTopic::Call | LearningTopic::Input) && facts.call.is_none() {
         facts.call = call_from_source(source, one_based_line, column);
     }
     if facts.topic == LearningTopic::Call
@@ -95,8 +96,32 @@ where
     {
         facts.topic = LearningTopic::LibraryCall;
     }
-    let expression = (facts.topic == LearningTopic::Decision).then(|| extract_condition(line));
-    let experiment_expression = expression.as_deref().and_then(suggest_condition_change);
+    let expression = match facts.topic {
+        LearningTopic::Decision => Some(extract_condition(line)),
+        LearningTopic::Loop => loop_condition(line),
+        _ => expression_for_line(
+            line,
+            facts.topic,
+            language,
+            facts.name.as_deref(),
+            facts.call.as_ref(),
+        ),
+    };
+    let experiment_expression =
+        matches!(facts.topic, LearningTopic::Decision | LearningTopic::Loop)
+            .then(|| expression.as_deref().and_then(suggest_condition_change))
+            .flatten();
+    let target = if facts.topic == LearningTopic::Input {
+        input_target(
+            line,
+            language,
+            facts.call.as_ref(),
+            &facts.variables,
+            facts.name.as_deref(),
+        )
+    } else {
+        None
+    };
     for diagnostic in runtime_diagnostics
         .iter()
         .filter(|diagnostic| diagnostic.line == one_based_line)
@@ -160,6 +185,7 @@ where
         topic: facts.topic,
         name: facts.name,
         return_type: facts.return_type,
+        target,
         parameters: facts.parameters,
         variables: facts.variables,
         expression,

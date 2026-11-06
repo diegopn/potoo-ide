@@ -128,7 +128,7 @@ impl MainWindow {
                 let (explanation, concept, experiment) = learning_copy(hint, self.ui_language);
                 ui.learning_explanation.set_text(&explanation);
                 ui.learning_experiment.set_text(&experiment);
-                let show_learning_concept = hint.topic != LearningTopic::Unrecognized;
+                let show_learning_concept = learning_concept_is_visible(hint.topic, &concept);
                 ui.learning_concept_section
                     .set_visible(show_learning_concept);
                 ui.learning_experiment_section
@@ -619,9 +619,13 @@ impl MainWindow {
                     self.text("Linha"),
                     hint.line
                 ));
-                let (explanation, concept, _) = learning_copy(hint, self.ui_language);
+                let (explanation, concept, experiment) = learning_copy(hint, self.ui_language);
                 ui.debugger_learning.explanation.set_text(&explanation);
-                let show_learning_concept = hint.topic != LearningTopic::Unrecognized;
+                ui.debugger_learning.experiment.set_text(&experiment);
+                ui.debugger_learning
+                    .experiment_section
+                    .set_visible(!experiment.is_empty());
+                let show_learning_concept = learning_concept_is_visible(hint.topic, &concept);
                 ui.debugger_learning
                     .concept_section
                     .set_visible(show_learning_concept);
@@ -649,6 +653,8 @@ impl MainWindow {
                 ));
             } else {
                 ui.debugger_learning.concept_section.set_visible(false);
+                ui.debugger_learning.experiment_section.set_visible(false);
+                ui.debugger_learning.experiment.set_text("");
                 ui.debugger_learning
                     .line_title
                     .set_text(self.text("Linha 1 · programa"));
@@ -814,9 +820,14 @@ fn available_panel_section(
     }
 }
 
+fn learning_concept_is_visible(topic: LearningTopic, concept: &str) -> bool {
+    topic != LearningTopic::Unrecognized && !concept.trim().is_empty()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{RightPanelSection, available_panel_section};
+    use super::{RightPanelSection, available_panel_section, learning_concept_is_visible};
+    use crate::features::learning::LearningTopic;
 
     #[test]
     fn unavailable_panel_falls_back_to_an_available_feature() {
@@ -846,5 +857,22 @@ mod tests {
                 None
             );
         }
+    }
+
+    #[test]
+    fn hides_empty_concepts_for_structural_and_unverified_lines() {
+        assert!(!learning_concept_is_visible(LearningTopic::Program, ""));
+        assert!(!learning_concept_is_visible(
+            LearningTopic::LibraryCall,
+            "  "
+        ));
+        assert!(!learning_concept_is_visible(
+            LearningTopic::Unrecognized,
+            "concept"
+        ));
+        assert!(learning_concept_is_visible(
+            LearningTopic::Decision,
+            "condição"
+        ));
     }
 }

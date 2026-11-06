@@ -121,10 +121,9 @@ pub(super) fn constant_index_problems(
                     message: format!(
                         "O índice {value} está fora dos limites de `{name}` ({lower} a {upper})."
                     ),
-                    suggestion: Some(
-                        "Use um índice dentro da faixa declarada para esse vetor ou matriz."
-                            .to_owned(),
-                    ),
+                    suggestion: Some(format!(
+                        "Use um índice entre {lower} e {upper} em `{name}`."
+                    )),
                 });
             }
             dimension_index += 1;
@@ -176,27 +175,92 @@ pub(super) fn extract_condition(line: &str) -> String {
 }
 
 pub(super) fn suggest_condition_change(condition: &str) -> Option<String> {
-    let (start, number) = condition.char_indices().find_map(|(index, character)| {
-        if character.is_ascii_digit() {
-            let end = condition[index..]
-                .find(|next: char| !next.is_ascii_digit())
-                .map_or(condition.len(), |offset| index + offset);
-            condition[index..end]
-                .parse::<i64>()
-                .ok()
-                .map(|number| (index, number))
-        } else {
-            None
+    let mut index = 0;
+    let mut quote: Option<char> = None;
+    while index < condition.len() {
+        let character = condition[index..].chars().next()?;
+        let next_index = index + character.len_utf8();
+
+        if let Some(active_quote) = quote {
+            if character == '\\' {
+                index = condition[next_index..]
+                    .chars()
+                    .next()
+                    .map_or(next_index, |escaped| next_index + escaped.len_utf8());
+            } else {
+                if character == active_quote {
+                    quote = None;
+                }
+                index = next_index;
+            }
+            continue;
         }
-    })?;
-    let end = condition[start..]
-        .find(|next: char| !next.is_ascii_digit())
-        .map_or(condition.len(), |offset| start + offset);
-    let replacement = number.saturating_sub(2).to_string();
-    Some(format!(
-        "{}{}{}",
-        &condition[..start],
-        replacement,
-        &condition[end..]
-    ))
+
+        if matches!(character, '\'' | '"') {
+            quote = Some(character);
+            index = next_index;
+            continue;
+        }
+        if character == '#'
+            || condition[index..].starts_with("//")
+            || condition[index..].starts_with("/*")
+        {
+            break;
+        }
+        if !character.is_ascii_digit() {
+            index = next_index;
+            continue;
+        }
+
+        let end = condition[index..]
+            .find(|next: char| !next.is_ascii_digit())
+            .map_or(condition.len(), |offset| index + offset);
+        let previous = condition[..index].chars().next_back();
+        let next = condition[end..].chars().next();
+        let is_exponent_continuation = matches!(previous, Some('+' | '-'))
+            && condition[..index]
+                .chars()
+                .rev()
+                .nth(1)
+                .is_some_and(|character| matches!(character, 'e' | 'E'));
+        let is_identifier_continuation = previous.is_some_and(is_identifier_character)
+            || next.is_some_and(is_identifier_character)
+            || is_exponent_continuation;
+
+        if !is_identifier_continuation && let Ok(number) = condition[index..end].parse::<i64>() {
+            let replacement = if number > 2 {
+                number.saturating_sub(2)
+            } else {
+                number.saturating_add(2)
+            }
+            .to_string();
+            return Some(format!(
+                "{}{}{}",
+                &condition[..index],
+                replacement,
+                &condition[end..]
+            ));
+        }
+        index = end;
+    }
+    None
+}
+
+fn is_identifier_character(character: char) -> bool {
+    character.is_alphanumeric() || character == '_'
+}
+
+#[cfg(test)]
+mod condition_suggestion_tests {
+    use super::suggest_condition_change;
+
+    #[test]
+    fn does_not_change_digits_in_identifiers_strings_or_comments() {
+        assert_eq!(
+            suggest_condition_change("nota1 > 0"),
+            Some("nota1 > 2".to_owned())
+        );
+        assert_eq!(suggest_condition_change("texto == \"nota1\""), None);
+        assert_eq!(suggest_condition_change("texto == palavra // nota1"), None);
+    }
 }

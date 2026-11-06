@@ -69,14 +69,6 @@ pub(super) fn learning_topic_label(topic: LearningTopic, language: UiLanguage) -
     )
 }
 
-pub(super) fn assignment_operator(language: Language) -> Option<&'static str> {
-    match language {
-        Language::Portugol | Language::Calango => Some("="),
-        Language::Visualg | Language::Mapler => Some("<-"),
-        Language::Potigol | Language::GPortugol => Some(":="),
-    }
-}
-
 pub(super) fn output_line_break(hint: &LearningHint) -> Option<bool> {
     match (hint.language, hint.name.as_deref()) {
         (Language::Potigol, Some("escreva"))
@@ -115,6 +107,12 @@ pub(super) fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (Strin
         .iter()
         .map(|symbol| format_learning_symbol(symbol, hint.language, language, true))
         .collect::<Vec<_>>();
+    let parameter_names = hint
+        .parameters
+        .iter()
+        .map(|symbol| symbol.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
     let name = hint.name.as_deref().unwrap_or("?");
     if hint.topic == LearningTopic::LibraryCall
         && let Some(knowledge) = hint
@@ -138,6 +136,26 @@ pub(super) fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (Strin
             format!("{callee}({})", call.arguments.join(", "))
         },
     );
+    if hint
+        .call
+        .as_ref()
+        .is_some_and(|call| call.library.is_some())
+        && hint
+            .call
+            .as_ref()
+            .and_then(|call| catalog::lookup_library_call(hint.language, call))
+            .is_none()
+    {
+        return (
+            format!(
+                "{} `{call_name}`; {}.",
+                text("A chamada"),
+                text("a IDE ainda não tem uma descrição verificada desta operação")
+            ),
+            String::new(),
+            String::new(),
+        );
+    }
     let explanation = match hint.topic {
         LearningTopic::Function => {
             if has_syntax_error && hint.name.is_none() {
@@ -237,11 +255,19 @@ pub(super) fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (Strin
             .as_deref()
             .and_then(|name| name.split_whitespace().next())
         {
-            Some("enquanto") => format!(
-                "{} `{name}` {}.",
-                text("O laço"),
-                text("testa a condição antes de cada repetição")
-            ),
+            Some("enquanto") => match hint.expression.as_deref() {
+                Some(expression) => format!(
+                    "{} `{name}` {} `{expression}` {}.",
+                    text("O laço"),
+                    text("testa a condição"),
+                    text("antes de cada repetição")
+                ),
+                None => format!(
+                    "{} `{name}` {}.",
+                    text("O laço"),
+                    text("testa a condição antes de cada repetição")
+                ),
+            },
             Some("repita" | "faca") => format!(
                 "{} `{name}` {}.",
                 text("O laço"),
@@ -263,31 +289,59 @@ pub(super) fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (Strin
             if hint.language == Language::Potigol
                 && let Some(description) = command.and_then(potigol_input_description)
             {
+                let target = hint.target.as_deref().map_or_else(String::new, |target| {
+                    format!(" {} `{target}`", text("e fornece o valor a"))
+                });
                 format!(
-                    "{} `{}` {}.",
+                    "{} `{}` {}{target}.",
                     text("A chamada"),
                     command.unwrap_or("leia"),
                     text(description)
                 )
             } else if hint.language == Language::GPortugol {
+                let target = hint.target.as_deref().map_or_else(String::new, |target| {
+                    format!(" {} `{target}`", text("e fornece o valor a"))
+                });
                 format!(
-                    "{} `{}` {}.",
+                    "{} `{}` {}{target}.",
                     text("A chamada"),
                     command.unwrap_or("leia"),
-                    text("fornece um valor para a expressão que a utiliza")
+                    text("lê um valor")
                 )
             } else if let Some(command) = command {
-                format!(
-                    "{} `{command}` {}.",
-                    text("A instrução"),
-                    text("armazena o valor informado na variável de destino")
-                )
+                match hint.target.as_deref() {
+                    Some(target) => format!(
+                        "{} `{command}` {} `{target}`.",
+                        text("A instrução"),
+                        text("armazena o valor informado em")
+                    ),
+                    None => format!(
+                        "{} `{command}` {}.",
+                        text("A instrução"),
+                        text("armazena o valor informado na variável de destino")
+                    ),
+                }
             } else {
                 text("A instrução de entrada fornece valores para o programa usar.")
             }
         }
-        LearningTopic::Output => match output_line_break(hint) {
-            Some(line_break) => format!(
+        LearningTopic::Output => match (hint.expression.as_deref(), output_line_break(hint)) {
+            (Some(expression), Some(line_break)) => format!(
+                "{} `{name}` {} `{expression}` {}.",
+                text("O comando"),
+                text("apresenta na saída"),
+                text(if line_break {
+                    "e encerra a linha"
+                } else {
+                    "sem encerrar a linha"
+                })
+            ),
+            (Some(expression), None) => format!(
+                "{} `{name}` {} `{expression}`.",
+                text("O comando"),
+                text("apresenta na saída")
+            ),
+            (None, Some(line_break)) => format!(
                 "{} `{name}` {}.",
                 text("O comando"),
                 text(if line_break {
@@ -296,17 +350,27 @@ pub(super) fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (Strin
                     "exibe os valores sem encerrar a linha"
                 })
             ),
-            None => text("Esta instrução apresenta os dados informados na saída do programa."),
+            (None, None) => {
+                text("Esta instrução apresenta os dados informados na saída do programa.")
+            }
         },
         LearningTopic::Assignment => {
-            if let (Some(operator), Some(target)) =
-                (assignment_operator(hint.language), hint.name.as_deref())
-            {
-                format!(
-                    "{} `{operator}` {} `{target}`.",
-                    text("O operador"),
-                    text("atribui o valor à variável")
-                )
+            if let Some(target) = hint.name.as_deref() {
+                match hint.expression.as_deref() {
+                    Some(expression) => format!(
+                        "{} `{}` {} `{expression}` {} `{target}`.",
+                        text("O operador"),
+                        assignment_operator(hint.language),
+                        text("atribui a expressão"),
+                        text("à variável")
+                    ),
+                    None => format!(
+                        "{} `{}` {} `{target}`.",
+                        text("O operador"),
+                        assignment_operator(hint.language),
+                        text("atribui o valor à variável")
+                    ),
+                }
             } else {
                 text(
                     "A atribuição calcula o lado direito e atualiza o valor da variável à esquerda.",
@@ -331,17 +395,35 @@ pub(super) fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (Strin
             ),
             None => text("Esta linha importa elementos para uso no programa."),
         },
-        LearningTopic::Return => match hint.return_type.as_deref() {
-            Some("vazio") => text("Esta função termina sem devolver um valor."),
-            Some(data_type) => format!(
+        LearningTopic::Return => match (hint.expression.as_deref(), hint.return_type.as_deref()) {
+            (Some(expression), Some(data_type)) => format!(
+                "{} `{expression}` {} `{data_type}` {}.",
+                text("O retorno entrega a expressão"),
+                text("como resultado do tipo"),
+                text("ao ponto que chamou a função")
+            ),
+            (Some(expression), None) => format!(
+                "{} `{expression}` {}.",
+                text("O retorno entrega a expressão"),
+                text("ao ponto que chamou a rotina")
+            ),
+            (_, Some("vazio")) => text("Esta função termina sem devolver um valor."),
+            (_, Some(data_type)) => format!(
                 "{} `{data_type}` {}.",
                 text("O retorno entrega um valor do tipo"),
                 text("ao ponto que chamou a função")
             ),
-            None => text("O retorno devolve o controle ao ponto que chamou a rotina."),
+            _ => text("O retorno devolve o controle ao ponto que chamou a rotina."),
         },
-        LearningTopic::Program => text(
-            "A linha selecionada participa do fluxo do algoritmo. Selecione outra linha para ver seu papel.",
+        LearningTopic::Program => hint.expression.as_deref().map_or_else(
+            || text("Esta linha marca uma parte estrutural do programa."),
+            |line| {
+                format!(
+                    "{} `{line}` {}.",
+                    text("A linha estrutural"),
+                    text("organiza o programa")
+                )
+            },
         ),
         LearningTopic::Unrecognized if has_syntax_error => text(
             "A análise não reconheceu esta linha; consulte a mensagem em Problemas nesta linha.",
@@ -408,34 +490,59 @@ pub(super) fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (Strin
         {
             text("O bloco é executado antes da verificação da condição.")
         }
-        LearningTopic::Loop => text("Cada repetição executa novamente as instruções do bloco."),
+        LearningTopic::Loop => hint.expression.as_deref().map_or_else(
+            || text("Cada repetição executa novamente as instruções do bloco."),
+            |expression| {
+                format!(
+                    "{} `{expression}` {}.",
+                    text("A condição"),
+                    text("é verificada antes de cada repetição")
+                )
+            },
+        ),
         LearningTopic::Input => {
             text("O tipo solicitado define como o valor de entrada é interpretado.")
         }
-        LearningTopic::Output => text("A quebra de linha determina onde a próxima saída começa."),
-        LearningTopic::Program => {
-            text("Uma instrução é executada na ordem definida pelo algoritmo.")
+        LearningTopic::Output if output_line_break(hint).is_some() => {
+            text("A quebra de linha determina onde a próxima saída começa.")
         }
+        LearningTopic::Output => String::new(),
+        LearningTopic::Program => String::new(),
         LearningTopic::Unrecognized => String::new(),
     };
 
     let experiment = match hint.topic {
+        LearningTopic::Function
+            if (hint.return_type.as_deref() == Some("vazio")
+                || (hint.language == Language::GPortugol && hint.return_type.is_none()))
+                && !hint.parameters.is_empty() =>
+        {
+            format!(
+                "{} `{name}` {} `{parameter_names}` {}.",
+                text("Chame"),
+                text("com outro valor para"),
+                text("e observe as ações que a função executa")
+            )
+        }
+        LearningTopic::Function if !hint.parameters.is_empty() => format!(
+            "{} `{name}` {} `{parameter_names}` {}.",
+            text("Chame"),
+            text("com outro valor para"),
+            text("e compare o resultado devolvido")
+        ),
         LearningTopic::Function
             if hint.return_type.as_deref() == Some("vazio")
                 || (hint.language == Language::GPortugol && hint.return_type.is_none()) =>
         {
             text("Chame a função e observe as ações que ela executa.")
         }
-        LearningTopic::Function if !hint.parameters.is_empty() => format!(
-            "{} `{name}` {}.",
-            text("Mude um argumento na chamada de"),
-            text("e compare o resultado devolvido")
-        ),
-        LearningTopic::Procedure => format!(
-            "{} `{name}` {}.",
-            text("Altere um parâmetro usado ao chamar"),
+        LearningTopic::Procedure if !hint.parameters.is_empty() => format!(
+            "{} `{parameter_names}` {} `{name}` {}.",
+            text("Altere o valor do parâmetro"),
+            text("ao chamar"),
             text("e observe quais valores mudam")
         ),
+        LearningTopic::Procedure => String::new(),
         LearningTopic::Function => {
             text("Chame a função em outro ponto do programa e compare o valor que ela devolve.")
         }
@@ -469,41 +576,128 @@ pub(super) fn learning_copy(hint: &LearningHint, language: UiLanguage) -> (Strin
         {
             text("Altere um limite do `para` e observe quantas vezes o bloco se repete.")
         }
-        LearningTopic::Loop => text("Altere a condição e observe quantas vezes o bloco se repete."),
-        LearningTopic::Input => {
-            text("Digite outro valor e observe como o restante do programa reage.")
-        }
-        LearningTopic::Output => match output_line_break(hint) {
-            Some(true) => text(
-                "Execute duas instruções de saída seguidas e compare em quais linhas aparecem.",
-            ),
-            Some(false) => {
-                text("Execute duas instruções de saída seguidas e observe se ficam na mesma linha.")
-            }
-            None => text("Altere o texto e execute novamente para observar a saída."),
+        LearningTopic::Loop => match hint.expression.as_deref() {
+            Some(current) => match hint.experiment_expression.as_deref() {
+                Some(changed) => format!(
+                    "{} `{current}` {} `{changed}` {}.",
+                    text("Troque a condição"),
+                    text("por"),
+                    text("e observe quantas vezes o bloco se repete")
+                ),
+                None => format!(
+                    "{} `{current}` {}.",
+                    text("Altere o valor usado na condição"),
+                    text("e observe quantas vezes o bloco se repete")
+                ),
+            },
+            None => text("Altere a condição e observe quantas vezes o bloco se repete."),
         },
-        LearningTopic::Variable if hint.variables.iter().any(|variable| variable.is_constant) => {
-            String::new()
-        }
-        LearningTopic::Variable => {
-            text("Altere o valor inicial ou um elemento do vetor e observe o efeito no resultado.")
-        }
-        LearningTopic::Assignment => hint.name.as_deref().map_or_else(
-            || text("Altere o valor à direita do operador e observe a variável."),
+        LearningTopic::Input => hint.target.as_deref().map_or_else(
+            || text("Digite outro valor e observe como o restante do programa reage."),
             |target| {
                 format!(
-                    "{} `{target}`.",
-                    text("Altere o valor à direita do operador e observe o valor de")
+                    "{} `{target}` {}.",
+                    text("Digite outro valor para"),
+                    text("e observe como o restante do programa reage")
                 )
             },
         ),
-        LearningTopic::Call | LearningTopic::Import | LearningTopic::LibraryCall => String::new(),
-        LearningTopic::Return => {
-            text("Altere o valor devolvido e veja como a chamada da função reage.")
+        LearningTopic::Output => match (hint.expression.as_deref(), output_line_break(hint)) {
+            (Some(expression), Some(true)) => format!(
+                "{} `{expression}` {} {}.",
+                text("Altere a expressão"),
+                text("e execute duas instruções de saída seguidas para observar"),
+                text("em quais linhas aparecem")
+            ),
+            (Some(expression), Some(false)) => format!(
+                "{} `{expression}` {} {}.",
+                text("Altere a expressão"),
+                text("e execute duas instruções de saída seguidas para observar"),
+                text("se ficam na mesma linha")
+            ),
+            (Some(expression), None) => {
+                format!(
+                    "{} `{expression}` {}.",
+                    text("Altere a expressão"),
+                    text("e observe a saída")
+                )
+            }
+            (None, _) => format!(
+                "{} `{name}` {}.",
+                text("Passe um valor ao comando"),
+                text("e observe o que aparece na saída")
+            ),
+        },
+        LearningTopic::Variable => {
+            match hint.variables.iter().find(|variable| !variable.is_constant) {
+                Some(variable) => {
+                    if !variable.dimensions.is_empty() {
+                        format!(
+                            "{} `{}` {}.",
+                            text("Altere um elemento de"),
+                            variable.name,
+                            text("e observe o resultado")
+                        )
+                    } else if variable.initializer.is_some() {
+                        format!(
+                            "{} `{}` {}.",
+                            text("Altere o valor inicial de"),
+                            variable.name,
+                            text("e compare os resultados")
+                        )
+                    } else {
+                        format!(
+                            "{} `{}` {}.",
+                            text("Altere o valor de"),
+                            variable.name,
+                            text("antes de executar e observe onde ele é usado")
+                        )
+                    }
+                }
+                None if hint.variables.is_empty() => {
+                    text("Altere um valor desta declaração e observe onde ele é usado.")
+                }
+                None => String::new(),
+            }
         }
-        LearningTopic::Program => {
-            text("Selecione uma linha com entrada, saída, condição ou laço para experimentar.")
+        LearningTopic::Assignment => match (hint.expression.as_deref(), hint.name.as_deref()) {
+            (Some(expression), Some(target)) => format!(
+                "{} `{expression}` {} `{target}`.",
+                text("Altere a expressão"),
+                text("e observe o novo valor de")
+            ),
+            (_, Some(target)) => format!(
+                "{} `{target}`.",
+                text("Altere o valor à direita do operador e observe o valor de")
+            ),
+            _ => text("Altere o valor à direita do operador e observe a variável."),
+        },
+        LearningTopic::Call
+            if hint
+                .call
+                .as_ref()
+                .is_some_and(|call| !call.arguments.is_empty()) =>
+        {
+            format!(
+                "{} `{call_name}` {}.",
+                text("Altere um argumento da chamada"),
+                text("e acompanhe as instruções seguintes")
+            )
         }
+        LearningTopic::Call
+        | LearningTopic::Import
+        | LearningTopic::LibraryCall
+        | LearningTopic::Program => String::new(),
+        LearningTopic::Return => hint.expression.as_deref().map_or_else(
+            || text("Altere o valor devolvido e veja como a chamada da função reage."),
+            |expression| {
+                format!(
+                    "{} `{expression}` {}.",
+                    text("Altere a expressão devolvida"),
+                    text("e compare o resultado obtido por quem chamou a função")
+                )
+            },
+        ),
         LearningTopic::Unrecognized => String::new(),
     };
     (explanation, concept, experiment)

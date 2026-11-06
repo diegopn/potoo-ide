@@ -27,6 +27,28 @@ fn learning_hint_tracks_active_line_and_updated_condition() {
 }
 
 #[test]
+fn loop_condition_experiment_always_changes_a_zero_threshold() {
+    for (condition, expected) in [("idade > 0", "idade > 2"), ("idade > -1", "idade > -3")] {
+        let source = format!(
+            "algoritmo \"aula\"\nvar\nidade: inteiro\ninicio\nenquanto {condition} faca\n idade <- idade - 1\nfimenquanto\nfimalgoritmo"
+        );
+        let loop_hint = learning_hint(&source, 5, Language::Visualg);
+
+        assert_eq!(loop_hint.topic, LearningTopic::Loop);
+        assert_eq!(loop_hint.expression.as_deref(), Some(condition));
+        assert_eq!(loop_hint.experiment_expression.as_deref(), Some(expected));
+        assert_ne!(loop_hint.expression, loop_hint.experiment_expression);
+        assert!(
+            !loop_hint
+                .experiment_expression
+                .as_deref()
+                .expect("this condition has an integer literal")
+                .contains("--")
+        );
+    }
+}
+
+#[test]
 fn learning_hint_recognizes_output_loops_and_unclassified_lines() {
     assert_eq!(
         learning_hint(
@@ -301,6 +323,7 @@ fim";
     let return_value = learning_hint(source, 19, Language::GPortugol);
     assert_eq!(return_value.topic, LearningTopic::Return);
     assert_eq!(return_value.return_type.as_deref(), Some("real"));
+    assert_eq!(return_value.expression.as_deref(), Some("a + b"));
 }
 
 #[test]
@@ -487,7 +510,9 @@ fn reports_only_proven_constant_indexes_outside_declared_bounds() {
     let declaration = learning_hint(portugol, 3, Language::Portugol);
     let valid = learning_hint(portugol, 5, Language::Portugol);
     assert!(out_of_range.problems.iter().any(|problem| {
-        problem.kind == LearningProblemKind::Logic && problem.severity == LearningSeverity::Error
+        problem.kind == LearningProblemKind::Logic
+            && problem.severity == LearningSeverity::Error
+            && problem.suggestion.as_deref() == Some("Use um índice entre 0 e 2 em `valores`.")
     }));
     assert!(
         !valid

@@ -84,6 +84,7 @@ pub(crate) struct LearningHint {
     pub(crate) topic: LearningTopic,
     pub(crate) name: Option<String>,
     pub(crate) return_type: Option<String>,
+    pub(crate) target: Option<String>,
     pub(crate) parameters: Vec<LearningSymbol>,
     pub(crate) variables: Vec<LearningSymbol>,
     pub(crate) expression: Option<String>,

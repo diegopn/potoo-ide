@@ -31,9 +31,7 @@ fn constant_index_problem() -> LearningProblem {
             upper_bound: 5,
         },
         message: "O índice 7 está fora dos limites de `dados` (1 a 5).".to_owned(),
-        suggestion: Some(
-            "Use um índice dentro da faixa declarada para esse vetor ou matriz.".to_owned(),
-        ),
+        suggestion: Some("Use um índice entre 1 e 5 em `dados`.".to_owned()),
     }
 }
 
@@ -92,7 +90,7 @@ fn localizes_static_index_findings_and_suggestions() {
     );
     assert_eq!(
         english.1.as_deref(),
-        Some("Use an index within the declared range for this array or matrix.")
+        Some("Use an index between 1 and 5 in `dados`.")
     );
     assert_eq!(
         spanish.0,
@@ -100,7 +98,7 @@ fn localizes_static_index_findings_and_suggestions() {
     );
     assert_eq!(
         spanish.1.as_deref(),
-        Some("Usa un índice dentro del rango declarado para este vector o matriz.")
+        Some("Usa un índice entre 1 y 5 en `dados`.")
     );
 }
 

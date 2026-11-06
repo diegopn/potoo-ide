@@ -278,9 +278,11 @@ pub(crate) fn localize_learning_problem(
                 Some(
                     tr(
                         language,
-                        "Use um índice dentro da faixa declarada para esse vetor ou matriz.",
+                        "Use um índice entre {lower} e {upper} em `{name}`.",
                     )
-                    .to_owned(),
+                    .replace("{lower}", &lower_bound.to_string())
+                    .replace("{upper}", &upper_bound.to_string())
+                    .replace("{name}", name),
                 ),
             )
         }
@@ -649,6 +651,25 @@ pub(super) fn build_debugger_learning(language: UiLanguage) -> DebuggerLearningU
     problems.append(&problem_empty);
     content.append(&problems);
 
+    let experiment_section = gtk::Box::new(gtk::Orientation::Vertical, 16);
+    experiment_section.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+    let experiment_title = gtk::Label::new(Some(tr(language, "Experimente")));
+    experiment_title.set_xalign(0.0);
+    experiment_title.add_css_class("heading");
+    experiment_section.append(&experiment_title);
+    let experiment = gtk::Label::new(Some(""));
+    experiment.set_xalign(0.0);
+    experiment.set_wrap(true);
+    experiment.set_selectable(true);
+    experiment.add_css_class("potoo-card");
+    experiment.add_css_class("potoo-experiment-card");
+    experiment.set_margin_start(2);
+    experiment.set_margin_end(2);
+    experiment.set_margin_top(4);
+    experiment.set_margin_bottom(4);
+    experiment_section.append(&experiment);
+    content.append(&experiment_section);
+
     let content_scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
         .vscrollbar_policy(gtk::PolicyType::Automatic)
@@ -670,6 +691,8 @@ pub(super) fn build_debugger_learning(language: UiLanguage) -> DebuggerLearningU
         concept_section,
         concept_title,
         concept_text,
+        experiment_section,
+        experiment,
         problem_list,
         problem_empty,
     }
@@ -685,4 +708,36 @@ pub(super) fn connect_debugger_start(
         controls.set_visible_child_name("controls");
         on_start();
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{UiLanguage, localize_learning_problem};
+    use crate::{
+        features::learning::{LearningProblemKind, learning_hint},
+        languages::model::Language,
+    };
+
+    #[test]
+    fn constant_index_recommendation_includes_the_name_and_valid_range() {
+        let source = r#"programa {
+ funcao inicio() {
+  inteiro valores[3]
+  escreva(valores[3])
+ }
+}"#;
+        let hint = learning_hint(source, 4, Language::Portugol);
+        let problem = hint
+            .problems
+            .iter()
+            .find(|problem| problem.kind == LearningProblemKind::Logic)
+            .expect("the out-of-range index should be diagnosed");
+
+        let (message, suggestion) = localize_learning_problem(problem, UiLanguage::English);
+        assert!(message.contains("outside the bounds of `valores` (0 to 2)"));
+        assert_eq!(
+            suggestion.as_deref(),
+            Some("Use an index between 0 and 2 in `valores`.")
+        );
+    }
 }

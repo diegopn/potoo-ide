@@ -34,7 +34,8 @@ use crate::features::execution::{
     self, ControlAction, DebuggerSnapshot, ExecutionEvent, InputPrompt,
 };
 use crate::features::learning::{
-    LearningHint, LearningSymbol, LearningTopic, catalog, learning_hint_with_runtime_cancellable,
+    LearningHint, LearningSymbol, LearningTopic, assignment_operator, catalog,
+    learning_hint_with_runtime_cancellable,
 };
 use crate::languages::model::{Language, ProjectTemplate};
 use crate::ui::{
@@ -156,7 +157,7 @@ mod ui_language_tests {
         normalized_project_item_name, project_scan_is_current, supported_save_path, tr,
         translate_known_text,
     };
-    use crate::features::learning::{LearningTopic, learning_hint};
+    use crate::features::learning::{LearningHint, LearningSymbol, LearningTopic, learning_hint};
     use crate::languages::model::Language;
     use std::path::{Path, PathBuf};
 
@@ -282,16 +283,24 @@ mod ui_language_tests {
         let (void_text, _, _) = learning_copy(&void_function, UiLanguage::Portuguese);
         assert!(void_text.contains("vazio"));
         assert!(void_text.contains("não devolve um valor"));
+        let (_, _, void_experiment) = learning_copy(&void_function, UiLanguage::Portuguese);
+        assert!(void_experiment.contains("valor"));
+        assert!(void_experiment.contains("ações"));
+        assert!(!void_experiment.contains("resultado devolvido"));
 
         let text_function = learning_hint(portugol, 3, Language::Portugol);
         let (text_explanation, text_concept, _) =
             learning_copy(&text_function, UiLanguage::English);
         assert!(text_explanation.contains("cadeia"));
         assert!(text_concept.contains("text"));
+        let (_, _, function_experiment) = learning_copy(&text_function, UiLanguage::Portuguese);
+        assert!(function_experiment.contains("valor"));
 
         let vector = learning_hint(portugol, 5, Language::Portugol);
-        let (vector_text, _, _) = learning_copy(&vector, UiLanguage::Portuguese);
+        let (vector_text, _, vector_experiment) = learning_copy(&vector, UiLanguage::Portuguese);
         assert!(vector_text.contains("vetor com 3 posições"));
+        assert!(vector_experiment.contains("valores"));
+        assert!(vector_experiment.contains("elemento"));
 
         let matrix = learning_hint(portugol, 6, Language::Portugol);
         let (matrix_text, _, _) = learning_copy(&matrix, UiLanguage::Portuguese);
@@ -303,6 +312,202 @@ mod ui_language_tests {
         let vector = learning_hint(visualg, 3, Language::Visualg);
         let (visualg_text, _, _) = learning_copy(&vector, UiLanguage::Portuguese);
         assert!(visualg_text.contains("índices de 2 até 5"));
+    }
+
+    #[test]
+    fn learning_copy_covers_every_topic_with_explicit_facts() {
+        fn hint(topic: LearningTopic, name: Option<&str>) -> LearningHint {
+            LearningHint {
+                line: 1,
+                column: 1,
+                language: Language::Portugol,
+                topic,
+                name: name.map(str::to_owned),
+                return_type: None,
+                target: None,
+                parameters: Vec::new(),
+                variables: Vec::new(),
+                expression: None,
+                experiment_expression: None,
+                call: None,
+                problems: Vec::new(),
+            }
+        }
+
+        fn symbol(name: &str, initializer: Option<&str>) -> LearningSymbol {
+            LearningSymbol {
+                name: name.to_owned(),
+                type_name: "inteiro".to_owned(),
+                is_constant: false,
+                by_reference: false,
+                dimensions: Vec::new(),
+                initializer: initializer.map(str::to_owned),
+            }
+        }
+
+        let mut function = hint(LearningTopic::Function, Some("somar"));
+        function.return_type = Some("inteiro".to_owned());
+        function.parameters.push(symbol("valor", None));
+
+        let mut procedure = hint(LearningTopic::Procedure, Some("registrar"));
+        procedure.parameters.push(symbol("valor", None));
+
+        let mut decision = hint(LearningTopic::Decision, Some("se"));
+        decision.expression = Some("idade >= 18".to_owned());
+        decision.experiment_expression = Some("idade >= 16".to_owned());
+
+        let mut loop_hint = hint(LearningTopic::Loop, Some("enquanto"));
+        loop_hint.expression = Some("idade > 0".to_owned());
+        loop_hint.experiment_expression = Some("idade > 2".to_owned());
+
+        let mut input = hint(LearningTopic::Input, Some("leia"));
+        input.target = Some("idade".to_owned());
+
+        let mut output = hint(LearningTopic::Output, Some("escreva"));
+        output.expression = Some("idade".to_owned());
+
+        let mut variable = hint(LearningTopic::Variable, None);
+        variable.variables.push(symbol("idade", Some("18")));
+
+        let mut assignment = hint(LearningTopic::Assignment, Some("idade"));
+        assignment.expression = Some("idade + 1".to_owned());
+
+        let mut call = hint(LearningTopic::Call, Some("somar"));
+        call.call = Some(crate::features::learning::SourceCall {
+            receiver: None,
+            member: "somar".to_owned(),
+            arguments: vec!["idade".to_owned()],
+            library: None,
+        });
+
+        let mut unknown_library = hint(LearningTopic::LibraryCall, Some("limpar"));
+        unknown_library.call = Some(crate::features::learning::SourceCall {
+            receiver: Some("tela".to_owned()),
+            member: "limpar".to_owned(),
+            arguments: Vec::new(),
+            library: Some("biblioteca-desconhecida".to_owned()),
+        });
+
+        let import = hint(LearningTopic::Import, Some("jerimum"));
+
+        let mut return_hint = hint(LearningTopic::Return, Some("retorne"));
+        return_hint.return_type = Some("inteiro".to_owned());
+        return_hint.expression = Some("valor * 2".to_owned());
+
+        let mut program = hint(LearningTopic::Program, None);
+        program.expression = Some("inicio".to_owned());
+
+        let unrecognized = hint(LearningTopic::Unrecognized, None);
+
+        let cases = [
+            (
+                "Function",
+                function,
+                "somar",
+                Some("inteiro"),
+                Some("valor"),
+            ),
+            (
+                "Procedure",
+                procedure,
+                "registrar",
+                Some("rotina"),
+                Some("valor"),
+            ),
+            (
+                "Decision",
+                decision,
+                "idade >= 18",
+                Some("verdadeira ou falsa"),
+                Some("idade >= 16"),
+            ),
+            (
+                "Loop",
+                loop_hint,
+                "idade > 0",
+                Some("idade > 0"),
+                Some("idade > 2"),
+            ),
+            (
+                "Input",
+                input,
+                "idade",
+                Some("tipo solicitado"),
+                Some("idade"),
+            ),
+            (
+                "Output",
+                output,
+                "idade",
+                Some("quebra de linha"),
+                Some("idade"),
+            ),
+            (
+                "Variable",
+                variable,
+                "idade",
+                Some("tipo define"),
+                Some("idade"),
+            ),
+            (
+                "Assignment",
+                assignment,
+                "idade + 1",
+                Some("expressão à direita"),
+                Some("idade + 1"),
+            ),
+            (
+                "Call",
+                call,
+                "somar(idade)",
+                Some("transfere a execução"),
+                Some("somar(idade)"),
+            ),
+            (
+                "LibraryCall",
+                unknown_library,
+                "descrição verificada",
+                None,
+                None,
+            ),
+            ("Import", import, "jerimum", Some("biblioteca"), None),
+            (
+                "Return",
+                return_hint,
+                "valor * 2",
+                Some("resultado da função"),
+                Some("valor * 2"),
+            ),
+            ("Program", program, "inicio", None, None),
+            (
+                "Unrecognized",
+                unrecognized,
+                "não contém uma instrução reconhecida",
+                None,
+                None,
+            ),
+        ];
+
+        for (topic, hint, explanation_fact, concept_fact, experiment_fact) in cases {
+            let (explanation, concept, experiment) = learning_copy(&hint, UiLanguage::Portuguese);
+            assert!(
+                explanation.contains(explanation_fact),
+                "{topic} explanation: {explanation}"
+            );
+            match concept_fact {
+                Some(fact) => assert!(concept.contains(fact), "{topic} concept: {concept}"),
+                None => assert!(concept.is_empty(), "{topic} concept: {concept}"),
+            }
+            match experiment_fact {
+                Some(fact) => {
+                    assert!(
+                        experiment.contains(fact),
+                        "{topic} experiment: {experiment}"
+                    )
+                }
+                None => assert!(experiment.is_empty(), "{topic} experiment: {experiment}"),
+            }
+        }
     }
 
     #[test]
@@ -347,6 +552,13 @@ fim";
         assert!(function.contains("literal"));
         assert!(concept.contains("literal"));
         assert!(concept.contains("G-Portugol"));
+
+        let (return_text, _, return_experiment) = learning_copy(
+            &learning_hint(source, 11, Language::GPortugol),
+            UiLanguage::Portuguese,
+        );
+        assert!(return_text.contains("\"Ana\""));
+        assert!(return_experiment.contains("\"Ana\""));
     }
 
     #[test]
@@ -412,9 +624,27 @@ fim";
                 }),
                 "{dialect:?}: {explanation}"
             );
+            assert!(explanation.contains("Olá"), "{dialect:?}: {explanation}");
             assert!(concept.contains("quebra de linha"));
             assert!(experiment.contains("instruções de saída"));
+            assert!(experiment.contains("Olá"), "{dialect:?}: {experiment}");
         }
+    }
+
+    #[test]
+    fn learning_copy_preserves_nested_output_expression_and_describes_program_structure() {
+        let source = "programa {\n funcao inicio() {\n  inteiro idade = 18\n  escreva(calcular(idade))\n }\n}";
+        let output = learning_hint(source, 4, Language::Portugol);
+        assert_eq!(output.expression.as_deref(), Some("calcular(idade)"));
+        let (explanation, _, experiment) = learning_copy(&output, UiLanguage::Portuguese);
+        assert!(explanation.contains("calcular(idade)"));
+        assert!(experiment.contains("calcular(idade)"));
+
+        let program = learning_hint(source, 1, Language::Portugol);
+        let (explanation, concept, experiment) = learning_copy(&program, UiLanguage::Portuguese);
+        assert!(explanation.contains("programa {"));
+        assert!(concept.is_empty());
+        assert!(experiment.is_empty());
     }
 
     #[test]
@@ -477,6 +707,7 @@ fim";
             assert!(explanation.contains(target));
             assert!(!concept.is_empty());
             assert!(experiment.contains(target));
+            assert!(experiment.contains("1"), "{dialect:?}: {experiment}");
         }
     }
 
@@ -500,6 +731,8 @@ fim";
             assert!(explanation.contains(description));
             assert!(concept.contains("tipo solicitado"));
             assert!(experiment.contains("Digite outro valor"));
+            assert!(explanation.contains("valor"), "{command}: {explanation}");
+            assert!(experiment.contains("valor"), "{command}: {experiment}");
         }
 
         let cases = [
@@ -539,6 +772,7 @@ fim";
             assert_eq!(hint.topic, LearningTopic::Input, "{dialect:?}: {source}");
             let (explanation, _, _) = learning_copy(&hint, UiLanguage::Portuguese);
             assert!(explanation.contains(command), "{dialect:?}: {explanation}");
+            assert!(explanation.contains("valor"), "{dialect:?}: {explanation}");
         }
     }
 
@@ -615,6 +849,11 @@ fim";
                 loop_text.contains("testa a condição"),
                 "{dialect:?}: {loop_text}"
             );
+            assert!(loop_text.contains("idade > 0"), "{dialect:?}: {loop_text}");
+            assert!(
+                loop_experiment.contains("idade > 0"),
+                "{dialect:?}: {loop_experiment}"
+            );
             assert!(!loop_experiment.is_empty(), "{dialect:?}");
         }
     }
@@ -643,6 +882,20 @@ fim";
         assert!(comment.1.is_empty());
         assert!(comment.2.is_empty());
 
+        let import = learning_copy(
+            &learning_hint("use \"jerimum\"", 1, Language::Potigol),
+            UiLanguage::Portuguese,
+        );
+        assert!(import.0.contains("jerimum"));
+        assert!(!import.1.is_empty());
+        assert!(import.2.is_empty());
+
+        let call_hint = learning_hint("somar(2, 3)", 1, Language::Potigol);
+        assert_eq!(call_hint.topic, LearningTopic::Call);
+        let call = learning_copy(&call_hint, UiLanguage::Portuguese);
+        assert!(call.0.contains("somar(2, 3)"));
+        assert!(call.2.contains("somar(2, 3)"));
+
         let jerimum = learning_copy(
             &learning_hint(
                 "use \"jerimum\"\ndesenhe_personagem(g: Graphics2D): Nada\n  g.setColor(Cor.VERDE.color)\nfim",
@@ -666,6 +919,22 @@ fim";
         assert!(fill_rect.0.contains("filled rectangle"));
         assert!(fill_rect.2.contains("last two arguments"));
 
+        let mut unknown_library_hint = learning_hint("g.mystery(1)", 1, Language::Potigol);
+        unknown_library_hint.topic = LearningTopic::LibraryCall;
+        unknown_library_hint
+            .call
+            .as_mut()
+            .expect("the call should be recovered")
+            .library = Some("jerimum".to_owned());
+        let unknown_library_call = learning_copy(&unknown_library_hint, UiLanguage::Portuguese);
+        assert!(
+            unknown_library_call
+                .0
+                .contains("a IDE ainda não tem uma descrição verificada")
+        );
+        assert!(unknown_library_call.1.is_empty());
+        assert!(unknown_library_call.2.is_empty());
+
         let game_start = learning_copy(
             &learning_hint(
                 "use \"jerimum\"\njogo.iniciar(\"Jogo\", 320, 200, atualize, desenhe, 60)",
@@ -685,7 +954,15 @@ fim";
             topic: LearningTopic::Procedure,
             name: Some("registrar".to_owned()),
             return_type: None,
-            parameters: Vec::new(),
+            target: None,
+            parameters: vec![LearningSymbol {
+                name: "valor".to_owned(),
+                type_name: "inteiro".to_owned(),
+                is_constant: false,
+                by_reference: false,
+                dimensions: Vec::new(),
+                initializer: None,
+            }],
             variables: Vec::new(),
             expression: None,
             experiment_expression: None,
@@ -695,6 +972,7 @@ fim";
         let procedure = learning_copy(&procedure_hint, UiLanguage::Portuguese);
         assert!(procedure.1.contains("rotina"));
         assert!(!procedure.1.contains("VisuAlg"));
+        assert!(procedure.2.contains("valor"));
     }
 
     #[test]
