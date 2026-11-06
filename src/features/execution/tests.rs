@@ -768,7 +768,20 @@ fn collect_static_debug_pause(
     Result<(), Vec<ExecutionDiagnostic>>,
     bool,
 ) {
-    let program = start(source.to_owned(), Language::Portugol, None, None, true);
+    collect_static_debug_pause_for(source, Language::Portugol, action)
+}
+
+fn collect_static_debug_pause_for(
+    source: &str,
+    language: Language,
+    action: ControlAction,
+) -> (
+    String,
+    Vec<crate::features::execution::DebuggerSnapshot>,
+    Result<(), Vec<ExecutionDiagnostic>>,
+    bool,
+) {
+    let program = start(source.to_owned(), language, None, None, true);
     let mut output = String::new();
     let mut pauses = Vec::new();
 
@@ -1594,6 +1607,146 @@ fn mapler_debugger_fails_closed_for_empty_and_ambiguous_prefixes() {
         assert!(output.is_empty(), "unsafe code must not run: {output:?}");
         assert!(!stopped);
         assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].message, expected.message);
+        assert_eq!(diagnostics[0].line, expected.line);
+        assert_eq!(diagnostics[0].column, expected.column);
+    }
+}
+
+#[test]
+fn visualg_debugger_runs_same_line_valid_prefix_and_preserves_source_coordinates() {
+    let source =
+        "algoritmo \"depura\"\r\ninicio\r\n  escreval(\"ação\") @ // comentário\r\nfimalgoritmo";
+    let expected = potoo_visualg_interpreter::parse(source)
+        .expect_err("the invalid token after the output should be diagnosed")
+        .remove(0);
+    let (output, pauses, result, stopped) =
+        collect_static_debug_pause_for(source, Language::Visualg, ControlAction::Step);
+
+    assert_eq!(output, "ação\n");
+    assert!(!stopped);
+    assert_eq!(pauses.len(), 1);
+    assert_eq!(pauses[0].line, expected.line);
+    assert_eq!(pauses[0].column, expected.column);
+    assert_eq!(
+        pauses[0].pause_reason,
+        Some(crate::features::execution::DebugPauseReason::Debug)
+    );
+    let diagnostics = result.expect_err("the pause retains the interpreter diagnostic");
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].kind, ExecutionDiagnosticKind::Lexical);
+    assert_eq!(diagnostics[0].message, expected.message);
+    assert_eq!(diagnostics[0].line, expected.line);
+    assert_eq!(diagnostics[0].column, expected.column);
+}
+
+#[test]
+fn visualg_debugger_pauses_on_a_first_line_error_without_running_the_suffix() {
+    let source = "@\nalgoritmo \"depois\"\ninicio\nescreval(\"DEPOIS\")\nfimalgoritmo";
+    let expected = potoo_visualg_interpreter::parse(source)
+        .expect_err("the first character is invalid")
+        .remove(0);
+    let (output, pauses, result, stopped) =
+        collect_static_debug_pause_for(source, Language::Visualg, ControlAction::Continue);
+
+    assert!(output.is_empty());
+    assert!(!stopped);
+    assert_eq!(pauses.len(), 1);
+    assert_eq!(pauses[0].line, expected.line);
+    assert_eq!(pauses[0].column, expected.column);
+    assert_eq!(
+        pauses[0].pause_reason,
+        Some(crate::features::execution::DebugPauseReason::StaticErrorNotReached)
+    );
+    let diagnostics = result.expect_err("the original first-line error must remain");
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].message, expected.message);
+    assert_eq!(diagnostics[0].line, expected.line);
+    assert_eq!(diagnostics[0].column, expected.column);
+}
+
+#[test]
+fn visualg_debugger_does_not_execute_truncated_loop_bodies() {
+    let sources = [
+        "algoritmo \"while\"\nvar\ni: inteiro\ninicio\ni <- 0\nenquanto i < 1 faca\ni <- i + 1\nescreval(\"DENTRO\")\n@\nescreval(\"DEPOIS\")\nfimenquanto\nfimalgoritmo",
+        "algoritmo \"for\"\nvar\ni: inteiro\ninicio\npara i de 1 ate 2 faca\nescreval(\"DENTRO\")\n@\nescreval(\"DEPOIS\")\nfimpara\nfimalgoritmo",
+        "algoritmo \"repeat\"\nvar\ni: inteiro\ninicio\ni <- 0\nrepita\ni <- i + 1\nescreval(\"DENTRO\")\n@\nescreval(\"DEPOIS\")\nate i >= 1\nfimalgoritmo",
+    ];
+
+    for source in sources {
+        let expected = potoo_visualg_interpreter::parse(source)
+            .expect_err("the loop prefix contains an invalid token")
+            .remove(0);
+        let (output, pauses, result, stopped) =
+            collect_static_debug_pause_for(source, Language::Visualg, ControlAction::Step);
+
+        assert!(output.is_empty(), "a truncated loop ran: {output:?}");
+        assert!(!stopped);
+        assert_eq!(pauses.len(), 1);
+        assert_eq!(pauses[0].line, expected.line);
+        assert_eq!(pauses[0].column, expected.column);
+        assert_eq!(
+            pauses[0].pause_reason,
+            Some(crate::features::execution::DebugPauseReason::StaticErrorNotReached)
+        );
+        let diagnostics = result.expect_err("the source error remains after the location pause");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].message, expected.message);
+        assert_eq!(diagnostics[0].line, expected.line);
+        assert_eq!(diagnostics[0].column, expected.column);
+    }
+}
+
+#[test]
+fn visualg_debugger_executes_completed_loop_once_before_later_error() {
+    let source = "algoritmo \"completo\"\nvar\ni: inteiro\ninicio\npara i de 1 ate 2 faca\nescreval(\"LAÇO\")\nfimpara\nescreval(\"ANTES\")\n@\nescreval(\"DEPOIS\")\nfimalgoritmo";
+    let expected = potoo_visualg_interpreter::parse(source)
+        .expect_err("the later invalid token should be diagnosed")
+        .remove(0);
+    let (output, pauses, result, stopped) =
+        collect_static_debug_pause_for(source, Language::Visualg, ControlAction::Step);
+
+    assert_eq!(output, "LAÇO\nLAÇO\nANTES\n");
+    assert!(!output.contains("DEPOIS"));
+    assert!(!stopped);
+    let final_pause = pauses.last().expect("debugging reaches the static error");
+    assert_eq!(final_pause.line, expected.line);
+    assert_eq!(final_pause.column, expected.column);
+    assert_eq!(
+        final_pause.pause_reason,
+        Some(crate::features::execution::DebugPauseReason::Debug)
+    );
+    let diagnostics = result.expect_err("the original source error remains after the pause");
+    assert_eq!(diagnostics[0].message, expected.message);
+    assert_eq!(diagnostics[0].line, expected.line);
+    assert_eq!(diagnostics[0].column, expected.column);
+}
+
+#[test]
+fn visualg_debugger_fails_closed_inside_incomplete_routines_and_expressions() {
+    let sources = [
+        "algoritmo \"procedimento\"\nprocedimento avisar()\ninicio\nescreval(\"DENTRO\")\n@\nescreval(\"DEPOIS\")\nfimprocedimento\ninicio\navisar()\nfimalgoritmo",
+        "algoritmo \"funcao\"\nfuncao inteiro marcar()\ninicio\nescreval(\"DENTRO\")\n@\nretorne 1\nfimfuncao\ninicio\nescreval(marcar())\nfimalgoritmo",
+        "algoritmo \"expressao\"\ninicio\nescreval(1 +\n @\n 2\nfimalgoritmo",
+    ];
+
+    for source in sources {
+        let expected = potoo_visualg_interpreter::parse(source)
+            .expect_err("the routine or expression prefix is incomplete")
+            .remove(0);
+        let (output, pauses, result, stopped) =
+            collect_static_debug_pause_for(source, Language::Visualg, ControlAction::Continue);
+
+        assert!(output.is_empty(), "an incomplete prefix ran: {output:?}");
+        assert!(!stopped);
+        assert_eq!(pauses.len(), 1);
+        assert_eq!(pauses[0].line, expected.line);
+        assert_eq!(pauses[0].column, expected.column);
+        assert_eq!(
+            pauses[0].pause_reason,
+            Some(crate::features::execution::DebugPauseReason::StaticErrorNotReached)
+        );
+        let diagnostics = result.expect_err("the interpreter diagnostic remains visible");
         assert_eq!(diagnostics[0].message, expected.message);
         assert_eq!(diagnostics[0].line, expected.line);
         assert_eq!(diagnostics[0].column, expected.column);

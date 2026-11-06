@@ -345,6 +345,33 @@ se */ z"#;
     }
 
     #[test]
+    fn statement_range_includes_a_diagnostic_at_the_statement_end_column() {
+        let source = "x <-";
+        let config = LexerConfig {
+            line_comments: &[],
+            line_comment_terminator: LineCommentTerminator::AnyNewline,
+            block_comments: &[],
+            quote_rules: &[],
+            hyphenated_words: &[],
+            line_endings: LineEndingPolicy::Universal,
+            ignore_leading_bom: false,
+        };
+        let tokens = tokenize(source, &config);
+        let rules = StatementRules {
+            semicolon_separator: false,
+            block_pairs: &[],
+            root_pairs: &[],
+            multiline_continuations: &[],
+            brace_delimited_blocks: false,
+            case_sensitive_keywords: false,
+        };
+
+        let range = statement_range(source, &tokens, 1, 5, &rules)
+            .expect("the parser can locate a missing expression at end of line");
+        assert_eq!(&source[range], "x <-");
+    }
+
+    #[test]
     fn statement_range_selects_one_statement_inside_nested_blocks() {
         let source = "if outer then\n  if inner then\n    broken @; after\n  end if\nend if";
         let config = LexerConfig {
@@ -1273,6 +1300,17 @@ pub(crate) fn statement_range_with_index(
         .iter()
         .find(|range| range.start <= target && target < range.end)
         .cloned()
+        .or_else(|| {
+            ranges
+                .iter()
+                .find(|range| {
+                    range.end == target
+                        && index
+                            .byte_to_line_column(range.end)
+                            .is_some_and(|(end_line, _)| end_line == line)
+                })
+                .cloned()
+        })
         .or_else(|| {
             ranges
                 .iter()

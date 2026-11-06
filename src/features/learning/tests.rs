@@ -1,5 +1,6 @@
 use super::{
-    LearningProblemKind, LearningSeverity, LearningTopic, learning_hint, learning_hint_with_runtime,
+    LearningProblemKind, LearningProblemText, LearningSeverity, LearningTopic, learning_hint,
+    learning_hint_with_runtime,
 };
 use crate::features::execution::{DiagnosticKind as ExecutionDiagnosticKind, ExecutionDiagnostic};
 use crate::languages::model::Language;
@@ -25,6 +26,27 @@ fn learning_hint_tracks_active_line_and_updated_condition() {
         changed.experiment_expression.as_deref(),
         Some("idade >= 14")
     );
+}
+
+#[test]
+fn visualg_learning_marks_an_unclosed_multiline_expression_incomplete() {
+    let source = "algoritmo \"expressao\"\ninicio\nescreval(1 +\n @\n 2\nfimalgoritmo";
+    let expected = potoo_visualg_interpreter::parse(source)
+        .expect_err("the invalid token is inside an unclosed multiline expression")
+        .remove(0);
+    let hint = learning_hint(source, expected.line, Language::Visualg);
+
+    assert_eq!(hint.topic, LearningTopic::Unrecognized);
+    assert!(hint.problems.iter().any(|problem| {
+        problem.text == LearningProblemText::InterpreterDiagnostic
+            && problem.line == expected.line
+            && problem.column == expected.column
+    }));
+    assert!(hint.problems.iter().any(|problem| {
+        problem.kind == LearningProblemKind::Analysis
+            && problem.severity == LearningSeverity::Warning
+            && problem.text == LearningProblemText::AnalysisIncomplete
+    }));
 }
 
 #[test]

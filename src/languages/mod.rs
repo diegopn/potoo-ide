@@ -37,7 +37,6 @@ mod syntax_analysis_tests {
         let source = "before; bad @; after\nsecond line";
         let views = [
             calango::syntax_analysis::views::mask_diagnostic_statement,
-            portugol::visualg::syntax_analysis::views::mask_diagnostic_statement,
             potigol::syntax_analysis::views::mask_diagnostic_statement,
         ];
 
@@ -48,6 +47,18 @@ mod syntax_analysis_tests {
             assert!(recovered.contains("after"), "{recovered:?}");
             assert!(recovered.ends_with("second line"), "{recovered:?}");
         }
+
+        let visualg_source = "algoritmo \"teste\"\ninicio\nescreva(1)\n@\nescreva(2)\nfimalgoritmo";
+        let recovered = portugol::visualg::syntax_analysis::views::mask_diagnostic_statement(
+            visualg_source,
+            4,
+            1,
+        )
+        .expect("the VisuAlg statement boundary should be safe");
+        assert!(recovered.contains("escreva(1)"), "{recovered:?}");
+        assert!(!recovered.contains('@'), "{recovered:?}");
+        assert!(recovered.contains("escreva(2)"), "{recovered:?}");
+        assert!(potoo_visualg_interpreter::parse(&recovered).is_ok());
 
         let recovered =
             portugol::g_portugol::syntax_analysis::views::mask_diagnostic_statement(source, 1, 13)
@@ -97,7 +108,6 @@ mod syntax_analysis_tests {
             calango::syntax_analysis::views::without_literals_and_comments,
             portugol::g_portugol::syntax_analysis::views::without_literals_and_comments,
             portugol::studio_20::syntax_analysis::views::without_literals_and_comments,
-            portugol::visualg::syntax_analysis::views::without_literals_and_comments,
             potigol::syntax_analysis::views::without_literals_and_comments,
         ];
 

@@ -712,6 +712,46 @@ fim";
     }
 
     #[test]
+    fn visualg_copy_teaches_routines_and_each_loop_form() {
+        let source = "algoritmo \"rotinas\"\nvar\ni: inteiro\nprocedimento mostrar(valor: inteiro)\ninicio\nescreval(valor)\nfimprocedimento\nfuncao dobrar(valor: inteiro): inteiro\ninicio\nretorne valor * 2\nfimfuncao\ninicio\npara i de 1 ate 2 faca\nescreval(i)\nfimpara\nrepita\ni <- i - 1\nate i <= 0\nfimalgoritmo";
+
+        let procedure = learning_hint(source, 4, Language::Visualg);
+        assert_eq!(procedure.topic, LearningTopic::Procedure);
+        assert_eq!(procedure.name.as_deref(), Some("mostrar"));
+        assert_eq!(procedure.parameters[0].name, "valor");
+        let (procedure_text, procedure_concept, procedure_experiment) =
+            learning_copy(&procedure, UiLanguage::Portuguese);
+        assert!(procedure_text.contains("`mostrar`"));
+        assert!(procedure_text.contains("procedimento"));
+        assert!(procedure_concept.contains("Uma rotina"));
+        assert!(procedure_experiment.contains("`valor`"));
+
+        let function = learning_hint(source, 8, Language::Visualg);
+        assert_eq!(function.topic, LearningTopic::Function);
+        assert_eq!(function.name.as_deref(), Some("dobrar"));
+        assert_eq!(function.return_type.as_deref(), Some("inteiro"));
+        let (function_text, _, function_experiment) =
+            learning_copy(&function, UiLanguage::Portuguese);
+        assert!(function_text.contains("`dobrar`"));
+        assert!(function_experiment.contains("`dobrar`"));
+
+        let for_loop = learning_hint(source, 13, Language::Visualg);
+        assert_eq!(for_loop.topic, LearningTopic::Loop);
+        assert_eq!(for_loop.name.as_deref(), Some("para i"));
+        let (for_text, _, for_experiment) = learning_copy(&for_loop, UiLanguage::Portuguese);
+        assert!(for_text.contains("percorre os valores"));
+        assert!(for_experiment.contains("limite do `para`"));
+
+        let repeat_loop = learning_hint(source, 16, Language::Visualg);
+        assert_eq!(repeat_loop.topic, LearningTopic::Loop);
+        assert_eq!(repeat_loop.name.as_deref(), Some("repita"));
+        let (repeat_text, _, repeat_experiment) =
+            learning_copy(&repeat_loop, UiLanguage::Portuguese);
+        assert!(repeat_text.contains("depois de executar o bloco"));
+        assert!(repeat_experiment.contains("antes da verificação"));
+    }
+
+    #[test]
     fn mapler_declarations_use_mapler_type_spelling_and_explain_the_value() {
         let source = "variaveis\nativo: logico;\ninicio\nfim.";
         let hint = learning_hint(source, 2, Language::Mapler);

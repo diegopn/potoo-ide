@@ -101,12 +101,12 @@ static PROFILES: [LanguageProfile; 6] = [
         declared_array_bounds: Some(
             crate::languages::portugol::visualg::learning::profile_declared_array_bounds,
         ),
-        debugger_prefix: Some(DebuggerPrefixAdapter::Legacy(
+        debugger_prefix: Some(DebuggerPrefixAdapter::Safe(
             crate::languages::portugol::visualg::syntax_analysis::views::debugger_prefix,
         )),
         completion: Some(&crate::languages::portugol::visualg::completion::ADAPTER),
         execution: crate::languages::portugol::visualg::runtime::execute,
-        learning: Some(LearningAdapter::Legacy(
+        learning: Some(LearningAdapter::Recovering(
             crate::languages::portugol::visualg::learning::profile_adapter,
         )),
         default_template: ProjectTemplate::Visualg,
@@ -278,13 +278,10 @@ mod tests {
                 crate::languages::portugol::visualg::syntax_analysis::views::is_blank_or_line_comment,
                 crate::languages::portugol::visualg::syntax_analysis::views::without_literals_and_comments,
                 Some(crate::languages::portugol::visualg::learning::profile_declared_array_bounds),
-                Some(
-                    crate::languages::portugol::visualg::syntax_analysis::views::debugger_prefix
-                        as DebuggerPrefix,
-                ),
+                None,
                 crate::languages::portugol::visualg::runtime::execute,
                 &crate::languages::portugol::visualg::completion::ADAPTER,
-                Some(crate::languages::portugol::visualg::learning::profile_adapter as Learning),
+                None,
             ),
             (
                 Language::Potigol,
@@ -387,7 +384,10 @@ mod tests {
                 (Some(DebuggerPrefixAdapter::Safe(_)), None)
                     if matches!(
                         language,
-                        Language::Portugol | Language::GPortugol | Language::Mapler
+                        Language::Portugol
+                            | Language::Visualg
+                            | Language::GPortugol
+                            | Language::Mapler
                     ) => {}
                 (Some(DebuggerPrefixAdapter::Legacy(actual)), Some(expected)) => {
                     assert!(std::ptr::fn_addr_eq(actual, expected), "{language:?}");
@@ -406,7 +406,10 @@ mod tests {
                 (Some(LearningAdapter::Recovering(_)), None)
                     if matches!(
                         language,
-                        Language::Portugol | Language::GPortugol | Language::Mapler
+                        Language::Portugol
+                            | Language::Visualg
+                            | Language::GPortugol
+                            | Language::Mapler
                     ) => {}
                 (Some(LearningAdapter::Legacy(actual)), Some(expected)) => {
                     assert!(std::ptr::fn_addr_eq(actual, expected), "{language:?}");
@@ -439,7 +442,7 @@ mod tests {
             (Language::Portugol, "Portugol Studio 2.0", true),
             (Language::GPortugol, "G-Portugol", true),
             (Language::Mapler, "Mapler", true),
-            (Language::Visualg, "VisuAlg", false),
+            (Language::Visualg, "VisuAlg", true),
             (Language::Calango, "Calango", false),
             (Language::Potigol, "Potigol Classic", false),
             (Language::Potigol, "Potigol Jerimum", false),
@@ -459,17 +462,21 @@ mod tests {
                     matches!(profile.learning, Some(LearningAdapter::Recovering(_))),
                     "{fixture} should use shared recovery"
                 );
-                if matches!(language, Language::GPortugol | Language::Mapler) {
+                if matches!(
+                    language,
+                    Language::Visualg | Language::GPortugol | Language::Mapler
+                ) {
                     let Some(DebuggerPrefixAdapter::Safe(debugger_prefix)) =
                         profile.debugger_prefix
                     else {
                         panic!("{fixture} should register its safe debugger adapter");
                     };
                     let expected_debugger_prefix: fn(&str, usize, usize) -> Option<String> =
-                        if language == Language::GPortugol {
-                            crate::languages::portugol::g_portugol::syntax_analysis::views::debugger_prefix
-                        } else {
-                            crate::languages::portugol::mapler::syntax_analysis::views::debugger_prefix
+                        match language {
+                            Language::Visualg => crate::languages::portugol::visualg::syntax_analysis::views::debugger_prefix,
+                            Language::GPortugol => crate::languages::portugol::g_portugol::syntax_analysis::views::debugger_prefix,
+                            Language::Mapler => crate::languages::portugol::mapler::syntax_analysis::views::debugger_prefix,
+                            _ => unreachable!("only migrated profiles are checked here"),
                         };
                     assert!(std::ptr::fn_addr_eq(
                         debugger_prefix,
@@ -482,10 +489,17 @@ mod tests {
                         &str,
                         usize,
                         &dyn Fn() -> bool,
-                    ) -> SourceLineAnalysisOutcome = if language == Language::GPortugol {
-                        crate::languages::portugol::g_portugol::learning::profile_adapter
-                    } else {
-                        crate::languages::portugol::mapler::learning::profile_adapter
+                    ) -> SourceLineAnalysisOutcome = match language {
+                        Language::Visualg => {
+                            crate::languages::portugol::visualg::learning::profile_adapter
+                        }
+                        Language::GPortugol => {
+                            crate::languages::portugol::g_portugol::learning::profile_adapter
+                        }
+                        Language::Mapler => {
+                            crate::languages::portugol::mapler::learning::profile_adapter
+                        }
+                        _ => unreachable!("only migrated profiles are checked here"),
                     };
                     assert!(std::ptr::fn_addr_eq(learning, expected_learning));
                 }
