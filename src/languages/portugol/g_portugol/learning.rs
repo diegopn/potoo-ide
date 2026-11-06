@@ -105,7 +105,7 @@ pub(crate) fn profile_declared_array_bounds(
             {
                 continue;
             }
-            let name = symbol.name.to_lowercase();
+            let name = symbol.name;
             if ambiguous.contains(&name) {
                 continue;
             }

@@ -110,7 +110,12 @@ pub(super) fn constant_index_problems(
             index += 1;
             continue;
         };
-        let Some(dimensions) = arrays.get(&name.to_lowercase()) else {
+        let array_name = if language.profile().case_sensitive_identifiers {
+            name.clone()
+        } else {
+            name.to_lowercase()
+        };
+        let Some(dimensions) = arrays.get(&array_name) else {
             continue;
         };
         skip_spaces(&characters, &mut index);

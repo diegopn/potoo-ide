@@ -357,6 +357,93 @@ fn currently_supported_array_bounds_have_valid_and_invalid_index_cases() {
 }
 
 #[test]
+fn case_sensitive_array_profiles_do_not_match_differently_cased_names() {
+    let fixtures = [
+        (
+            "Portugol Studio 2.0",
+            Language::Portugol,
+            "programa {\n funcao inicio() {\n  inteiro Dados[3]\n  escreva(dados[3])\n }\n}",
+            "programa {\n funcao inicio() {\n  inteiro Dados[3]\n  escreva(Dados[3])\n }\n}",
+            4,
+            0,
+            2,
+        ),
+        (
+            "G-Portugol",
+            Language::GPortugol,
+            "algoritmo vetores;\nvariáveis Dados: matriz[3] de inteiros; fim-variáveis\ninício\nimprima(dados[3]);\nfim",
+            "algoritmo vetores;\nvariáveis Dados: matriz[3] de inteiros; fim-variáveis\ninício\nimprima(Dados[3]);\nfim",
+            4,
+            0,
+            2,
+        ),
+        (
+            "Calango",
+            Language::Calango,
+            "algoritmo limites;\nprincipal\ninteiro Dados[3];\nescreva(dados[3]);\nfimPrincipal",
+            "algoritmo limites;\nprincipal\ninteiro Dados[3];\nescreva(Dados[3]);\nfimPrincipal",
+            4,
+            0,
+            2,
+        ),
+        (
+            "Mapler",
+            Language::Mapler,
+            "variaveis\n Dados: vetor[2..5] de inteiro;\ninicio\n escrever dados[6];\nfim.",
+            "variaveis\n Dados: vetor[2..5] de inteiro;\ninicio\n escrever Dados[6];\nfim.",
+            4,
+            2,
+            5,
+        ),
+    ];
+
+    for (profile, language, mismatched_source, matching_source, line, lower_bound, upper_bound) in
+        fixtures
+    {
+        let matching = learning_hint(matching_source, line, language);
+        assert!(
+            matching.problems.iter().any(|problem| {
+                problem.text
+                    == LearningProblemText::ConstantIndex {
+                        index: upper_bound + 1,
+                        name: "Dados".to_owned(),
+                        lower_bound,
+                        upper_bound,
+                    }
+            }),
+            "{profile} must still diagnose the exact declared identifier: {:?}",
+            matching.problems
+        );
+
+        let mismatched = learning_hint(mismatched_source, line, language);
+        assert!(
+            mismatched
+                .problems
+                .iter()
+                .all(|problem| !matches!(problem.text, LearningProblemText::ConstantIndex { .. })),
+            "{profile} must not transfer bounds to a differently cased identifier: {:?}",
+            mismatched.problems
+        );
+    }
+}
+
+#[test]
+fn visualg_array_bounds_keep_case_insensitive_identifier_matching() {
+    let source = "algoritmo \"limites\"\nvar\ndados: vetor[2..5] de inteiro\ninicio\nescreval(DADOS[6])\nfimalgoritmo";
+    let hint = learning_hint(source, 5, Language::Visualg);
+
+    assert!(hint.problems.iter().any(|problem| {
+        problem.text
+            == LearningProblemText::ConstantIndex {
+                index: 6,
+                name: "DADOS".to_owned(),
+                lower_bound: 2,
+                upper_bound: 5,
+            }
+    }));
+}
+
+#[test]
 fn portugol_array_bounds_do_not_guess_for_variable_indexes_or_string_contents() {
     let source = "programa {\n funcao inicio() {\n  inteiro valores[3]\n  inteiro indice = 3\n  escreva(valores[indice])\n  escreva(\"valores[3]\")\n }\n}";
 

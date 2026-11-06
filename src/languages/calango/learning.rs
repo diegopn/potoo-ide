@@ -433,7 +433,7 @@ fn insert_unique_array_bounds(
     name: &str,
     dimensions: Vec<SourceDimension>,
 ) {
-    let name = name.to_lowercase();
+    let name = name.to_owned();
     if ambiguous.contains(&name) {
         return;
     }

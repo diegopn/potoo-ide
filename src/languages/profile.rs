@@ -32,6 +32,7 @@ pub(crate) struct LanguageProfile {
     pub(crate) source_statement_range: SourceStatementRangeAdapter,
     pub(crate) is_blank_or_line_comment: BlankCommentAdapter,
     pub(crate) without_literals_and_comments: LiteralMaskAdapter,
+    pub(crate) case_sensitive_identifiers: bool,
     pub(crate) declared_array_bounds: Option<ArrayBoundsAdapter>,
     pub(crate) debugger_prefix: Option<DebuggerPrefixAdapter>,
     pub(crate) completion: Option<&'static CompletionAdapter>,
@@ -58,6 +59,7 @@ static PROFILES: [LanguageProfile; 6] = [
             crate::languages::portugol::studio_20::syntax_analysis::views::is_blank_or_line_comment,
         without_literals_and_comments:
             crate::languages::portugol::studio_20::syntax_analysis::views::without_literals_and_comments,
+        case_sensitive_identifiers: true,
         declared_array_bounds: Some(
             crate::languages::portugol::studio_20::learning::profile_declared_array_bounds,
         ),
@@ -86,6 +88,7 @@ static PROFILES: [LanguageProfile; 6] = [
             crate::languages::portugol::visualg::syntax_analysis::views::is_blank_or_line_comment,
         without_literals_and_comments:
             crate::languages::portugol::visualg::syntax_analysis::views::without_literals_and_comments,
+        case_sensitive_identifiers: false,
         declared_array_bounds: Some(
             crate::languages::portugol::visualg::learning::profile_declared_array_bounds,
         ),
@@ -113,6 +116,7 @@ static PROFILES: [LanguageProfile; 6] = [
             crate::languages::potigol::syntax_analysis::views::is_blank_or_line_comment,
         without_literals_and_comments:
             crate::languages::potigol::syntax_analysis::views::without_literals_and_comments,
+        case_sensitive_identifiers: true,
         declared_array_bounds: None,
         debugger_prefix: Some(crate::languages::potigol::syntax_analysis::views::debugger_prefix),
         completion: Some(&crate::languages::potigol::completion::ADAPTER),
@@ -137,6 +141,7 @@ static PROFILES: [LanguageProfile; 6] = [
             crate::languages::portugol::g_portugol::syntax_analysis::views::is_blank_or_line_comment,
         without_literals_and_comments:
             crate::languages::portugol::g_portugol::syntax_analysis::views::without_literals_and_comments,
+        case_sensitive_identifiers: true,
         declared_array_bounds: Some(
             crate::languages::portugol::g_portugol::learning::profile_declared_array_bounds,
         ),
@@ -164,6 +169,7 @@ static PROFILES: [LanguageProfile; 6] = [
             crate::languages::calango::syntax_analysis::views::is_blank_or_line_comment,
         without_literals_and_comments:
             crate::languages::calango::syntax_analysis::views::without_literals_and_comments,
+        case_sensitive_identifiers: true,
         declared_array_bounds: Some(crate::languages::calango::learning::profile_declared_array_bounds),
         debugger_prefix: Some(crate::languages::calango::syntax_analysis::views::debugger_prefix),
         completion: Some(&crate::languages::calango::completion::ADAPTER),
@@ -188,6 +194,7 @@ static PROFILES: [LanguageProfile; 6] = [
             crate::languages::portugol::mapler::syntax_analysis::views::is_blank_or_line_comment,
         without_literals_and_comments:
             crate::languages::portugol::mapler::syntax_analysis::views::without_literals_and_comments,
+        case_sensitive_identifiers: true,
         declared_array_bounds: Some(
             crate::languages::portugol::mapler::learning::profile_declared_array_bounds,
         ),
