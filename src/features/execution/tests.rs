@@ -759,6 +759,222 @@ fn collect_debug_error(
     }
 }
 
+fn collect_static_debug_pause(
+    source: &str,
+    action: ControlAction,
+) -> (
+    String,
+    Vec<crate::features::execution::DebuggerSnapshot>,
+    Result<(), Vec<ExecutionDiagnostic>>,
+    bool,
+) {
+    let program = start(source.to_owned(), Language::Portugol, None, None, true);
+    let mut output = String::new();
+    let mut pauses = Vec::new();
+
+    loop {
+        match program
+            .events
+            .recv_timeout(Duration::from_secs(2))
+            .expect("the Portugol debug session should produce an event")
+        {
+            ExecutionEvent::Output(text) => output.push_str(&text),
+            ExecutionEvent::ClearOutput => output.clear(),
+            ExecutionEvent::Debugger(snapshot) => {
+                if snapshot.pause_reason.is_some() {
+                    pauses.push(snapshot);
+                }
+                program.control.send(action).unwrap();
+            }
+            ExecutionEvent::InputRequested(_) | ExecutionEvent::FileSelectionRequested { .. } => {
+                program.input.send(String::new()).unwrap();
+            }
+            ExecutionEvent::HostRequest { response, .. } => {
+                let _ = response.send(Err("host de teste sem suporte".to_owned()));
+            }
+            ExecutionEvent::AudioRequest { response, .. } => {
+                let _ = response.send(Err("host de teste sem suporte".to_owned()));
+            }
+            ExecutionEvent::LineChanged(_) => {}
+            ExecutionEvent::Finished { result, stopped } => {
+                return (output, pauses, result, stopped);
+            }
+        }
+    }
+}
+
+#[test]
+fn portugol_debugger_pauses_on_a_first_line_error_and_preserves_controls_and_diagnostic() {
+    let source = "@\nprograma { funcao inicio() {} }";
+    let expected = potoo_portugol_interpreter::parse(source).unwrap_err()[0].clone();
+
+    for action in [
+        ControlAction::Step,
+        ControlAction::Continue,
+        ControlAction::Stop,
+    ] {
+        let (_output, pauses, result, stopped) = collect_static_debug_pause(source, action);
+        assert_eq!(pauses.len(), 1, "{action:?}");
+        assert_eq!(pauses[0].line, expected.line, "{action:?}");
+        assert_eq!(pauses[0].column, expected.column, "{action:?}");
+        assert_eq!(
+            pauses[0].pause_reason,
+            Some(crate::features::execution::DebugPauseReason::StaticErrorNotReached),
+            "{action:?}"
+        );
+
+        if action == ControlAction::Stop {
+            assert!(stopped);
+            assert!(result.is_ok());
+        } else {
+            assert!(!stopped);
+            let diagnostics = result.expect_err("Step and Continue retain the original error");
+            assert_eq!(diagnostics.len(), 1);
+            assert_eq!(diagnostics[0].message, expected.message);
+            assert_eq!(diagnostics[0].line, expected.line);
+            assert_eq!(diagnostics[0].column, expected.column);
+            assert_eq!(diagnostics[0].kind, ExecutionDiagnosticKind::Lexical);
+        }
+    }
+}
+
+#[test]
+fn portugol_debugger_executes_only_the_valid_prefix_before_a_nested_error_once() {
+    let source = r#"programa {
+ funcao inicio() {
+  escreva("ANTES")
+  se (verdadeiro) {
+   se (falso) {
+    escreva("NUNCA")
+   } senao {
+    escreva("ação") @
+    escreva("DEPOIS")
+   }
+  }
+ }
+}"#;
+    let expected = potoo_portugol_interpreter::parse(source).unwrap_err()[0].clone();
+    let (output, pauses, result, stopped) = collect_static_debug_pause(source, ControlAction::Step);
+
+    assert_eq!(output, "ANTESação");
+    assert_eq!(output.matches("ANTES").count(), 1);
+    assert_eq!(output.matches("ação").count(), 1);
+    assert!(!output.contains("DEPOIS"));
+    assert!(!stopped);
+    assert_eq!(pauses.len(), 1);
+    assert_eq!(pauses[0].line, expected.line);
+    assert_eq!(pauses[0].column, expected.column);
+    assert_eq!(
+        pauses[0].pause_reason,
+        Some(crate::features::execution::DebugPauseReason::Debug)
+    );
+    let diagnostics = result.expect_err("the original static error remains after the pause");
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].message, expected.message);
+    assert_eq!(diagnostics[0].line, expected.line);
+    assert_eq!(diagnostics[0].column, expected.column);
+}
+
+#[test]
+fn portugol_debugger_fails_closed_when_the_prefix_cuts_an_open_expression() {
+    let source = "programa {\n funcao inicio() {\n  escreva(\n  @\n }\n}";
+    let expected = potoo_portugol_interpreter::parse(source).unwrap_err()[0].clone();
+    let (output, pauses, result, stopped) =
+        collect_static_debug_pause(source, ControlAction::Continue);
+
+    assert!(output.is_empty());
+    assert!(!stopped);
+    assert_eq!(pauses.len(), 1);
+    assert_eq!(pauses[0].line, expected.line);
+    assert_eq!(pauses[0].column, expected.column);
+    assert_eq!(
+        pauses[0].pause_reason,
+        Some(crate::features::execution::DebugPauseReason::StaticErrorNotReached)
+    );
+    let diagnostics = result.expect_err("an unsafe prefix keeps the source error");
+    assert_eq!(diagnostics[0].message, expected.message);
+    assert_eq!(diagnostics[0].line, expected.line);
+    assert_eq!(diagnostics[0].column, expected.column);
+}
+
+#[test]
+fn portugol_debugger_does_not_run_a_truncated_loop_before_a_static_error() {
+    let source = r#"programa {
+ funcao inicio() {
+  para (inteiro i = 0; i < 2; i++) {
+   escreva("ANTES") @
+   escreva("DEPOIS")
+  }
+ }
+}"#;
+    let expected = potoo_portugol_interpreter::parse(source).unwrap_err()[0].clone();
+    let (output, pauses, result, stopped) = collect_static_debug_pause(source, ControlAction::Step);
+
+    assert!(
+        output.is_empty(),
+        "the open loop must not execute: {output:?}"
+    );
+    assert!(!stopped);
+    assert_eq!(pauses.len(), 1);
+    assert_eq!(pauses[0].line, expected.line);
+    assert_eq!(pauses[0].column, expected.column);
+    assert_eq!(
+        pauses[0].pause_reason,
+        Some(crate::features::execution::DebugPauseReason::StaticErrorNotReached)
+    );
+    let diagnostics = result.expect_err("the original source diagnostic must remain");
+    assert_eq!(diagnostics[0].message, expected.message);
+    assert_eq!(diagnostics[0].line, expected.line);
+    assert_eq!(diagnostics[0].column, expected.column);
+}
+
+#[test]
+fn portugol_debugger_does_not_run_a_call_from_a_truncated_array_initializer() {
+    let source = r#"programa {
+ funcao inteiro marcar() {
+  escreva("CHAMADA")
+  retorne 1
+ }
+ funcao inicio() {
+  inteiro valores[1] = {marcar() @, 2}
+ }
+}"#;
+    let expected = potoo_portugol_interpreter::parse(source).unwrap_err()[0].clone();
+    let (output, pauses, result, stopped) = collect_static_debug_pause(source, ControlAction::Step);
+
+    assert!(
+        output.is_empty(),
+        "the errored initializer must not run: {output:?}"
+    );
+    assert!(!stopped);
+    assert_eq!(pauses.len(), 1);
+    assert_eq!(pauses[0].line, expected.line);
+    assert_eq!(pauses[0].column, expected.column);
+    assert_eq!(
+        pauses[0].pause_reason,
+        Some(crate::features::execution::DebugPauseReason::StaticErrorNotReached)
+    );
+    let diagnostics = result.expect_err("the original source diagnostic must remain");
+    assert_eq!(diagnostics[0].message, expected.message);
+    assert_eq!(diagnostics[0].line, expected.line);
+    assert_eq!(diagnostics[0].column, expected.column);
+}
+
+#[test]
+fn portugol_debugger_reports_an_earlier_same_line_runtime_failure_first() {
+    let source = "programa { funcao inicio() { inteiro valores[1] escreva(valores[2]) @ } }";
+    let static_diagnostic = potoo_portugol_interpreter::parse(source).unwrap_err()[0].clone();
+    let (_output, pauses, result, stopped) =
+        collect_static_debug_pause(source, ControlAction::Step);
+
+    assert!(pauses.is_empty());
+    assert!(!stopped);
+    let diagnostics = result.expect_err("the earlier runtime failure takes precedence");
+    assert_eq!(diagnostics[0].kind, ExecutionDiagnosticKind::Runtime);
+    assert_eq!(diagnostics[0].line, static_diagnostic.line);
+    assert!(diagnostics[0].column < static_diagnostic.column);
+}
+
 #[test]
 fn debugger_reaches_nested_lexical_errors_in_every_language_profile() {
     let cases = [

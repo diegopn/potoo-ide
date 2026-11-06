@@ -73,12 +73,12 @@ static PROFILES: [LanguageProfile; 6] = [
         declared_array_bounds: Some(
             crate::languages::portugol::studio_20::learning::profile_declared_array_bounds,
         ),
-        debugger_prefix: Some(DebuggerPrefixAdapter::Legacy(
+        debugger_prefix: Some(DebuggerPrefixAdapter::Safe(
             crate::languages::portugol::studio_20::syntax_analysis::views::debugger_prefix,
         )),
         completion: Some(&crate::languages::portugol::studio_20::completion::ADAPTER),
         execution: crate::languages::portugol::studio_20::runtime::execute,
-        learning: Some(LearningAdapter::Legacy(
+        learning: Some(LearningAdapter::Recovering(
             crate::languages::portugol::studio_20::learning::profile_adapter,
         )),
         default_template: ProjectTemplate::GPortugol,
@@ -266,11 +266,10 @@ mod tests {
                     crate::languages::portugol::studio_20::learning::profile_declared_array_bounds
                         as ArrayBounds,
                 ),
-                crate::languages::portugol::studio_20::syntax_analysis::views::debugger_prefix
-                    as DebuggerPrefix,
+                None,
                 crate::languages::portugol::studio_20::runtime::execute as Execution,
                 &crate::languages::portugol::studio_20::completion::ADAPTER,
-                crate::languages::portugol::studio_20::learning::profile_adapter as Learning,
+                None,
             ),
             (
                 Language::Visualg,
@@ -279,10 +278,13 @@ mod tests {
                 crate::languages::portugol::visualg::syntax_analysis::views::is_blank_or_line_comment,
                 crate::languages::portugol::visualg::syntax_analysis::views::without_literals_and_comments,
                 Some(crate::languages::portugol::visualg::learning::profile_declared_array_bounds),
-                crate::languages::portugol::visualg::syntax_analysis::views::debugger_prefix,
+                Some(
+                    crate::languages::portugol::visualg::syntax_analysis::views::debugger_prefix
+                        as DebuggerPrefix,
+                ),
                 crate::languages::portugol::visualg::runtime::execute,
                 &crate::languages::portugol::visualg::completion::ADAPTER,
-                crate::languages::portugol::visualg::learning::profile_adapter,
+                Some(crate::languages::portugol::visualg::learning::profile_adapter as Learning),
             ),
             (
                 Language::Potigol,
@@ -291,10 +293,13 @@ mod tests {
                 crate::languages::potigol::syntax_analysis::views::is_blank_or_line_comment,
                 crate::languages::potigol::syntax_analysis::views::without_literals_and_comments,
                 None,
-                crate::languages::potigol::syntax_analysis::views::debugger_prefix,
+                Some(
+                    crate::languages::potigol::syntax_analysis::views::debugger_prefix
+                        as DebuggerPrefix,
+                ),
                 crate::languages::potigol::runtime::execute,
                 &crate::languages::potigol::completion::ADAPTER,
-                crate::languages::potigol::learning::profile_adapter,
+                Some(crate::languages::potigol::learning::profile_adapter as Learning),
             ),
             (
                 Language::GPortugol,
@@ -303,10 +308,15 @@ mod tests {
                 crate::languages::portugol::g_portugol::syntax_analysis::views::is_blank_or_line_comment,
                 crate::languages::portugol::g_portugol::syntax_analysis::views::without_literals_and_comments,
                 None,
-                crate::languages::portugol::g_portugol::syntax_analysis::views::debugger_prefix,
+                Some(
+                    crate::languages::portugol::g_portugol::syntax_analysis::views::debugger_prefix
+                        as DebuggerPrefix,
+                ),
                 crate::languages::portugol::g_portugol::runtime::execute,
                 &crate::languages::portugol::g_portugol::completion::ADAPTER,
-                crate::languages::portugol::g_portugol::learning::profile_adapter,
+                Some(
+                    crate::languages::portugol::g_portugol::learning::profile_adapter as Learning,
+                ),
             ),
             (
                 Language::Calango,
@@ -315,10 +325,13 @@ mod tests {
                 crate::languages::calango::syntax_analysis::views::is_blank_or_line_comment,
                 crate::languages::calango::syntax_analysis::views::without_literals_and_comments,
                 Some(crate::languages::calango::learning::profile_declared_array_bounds),
-                crate::languages::calango::syntax_analysis::views::debugger_prefix,
+                Some(
+                    crate::languages::calango::syntax_analysis::views::debugger_prefix
+                        as DebuggerPrefix,
+                ),
                 crate::languages::calango::runtime::execute,
                 &crate::languages::calango::completion::ADAPTER,
-                crate::languages::calango::learning::profile_adapter,
+                Some(crate::languages::calango::learning::profile_adapter as Learning),
             ),
             (
                 Language::Mapler,
@@ -327,10 +340,13 @@ mod tests {
                 crate::languages::portugol::mapler::syntax_analysis::views::is_blank_or_line_comment,
                 crate::languages::portugol::mapler::syntax_analysis::views::without_literals_and_comments,
                 None,
-                crate::languages::portugol::mapler::syntax_analysis::views::debugger_prefix,
+                Some(
+                    crate::languages::portugol::mapler::syntax_analysis::views::debugger_prefix
+                        as DebuggerPrefix,
+                ),
                 crate::languages::portugol::mapler::runtime::execute,
                 &crate::languages::portugol::mapler::completion::ADAPTER,
-                crate::languages::portugol::mapler::learning::profile_adapter,
+                Some(crate::languages::portugol::mapler::learning::profile_adapter as Learning),
             ),
         ];
 
@@ -342,10 +358,10 @@ mod tests {
             is_blank_or_line_comment,
             without_literals_and_comments,
             declared_array_bounds,
-            debugger_prefix,
+            expected_debugger_prefix,
             execution,
             completion,
-            learning,
+            expected_learning,
         ) in expected
         {
             let profile = language.profile();
@@ -375,17 +391,13 @@ mod tests {
                 (None, None) => {}
                 _ => panic!("array-bound adapter mismatch for {language:?}"),
             }
-            assert!(
-                profile
-                    .debugger_prefix
-                    .is_some_and(|adapter| match adapter {
-                        DebuggerPrefixAdapter::Legacy(actual) => {
-                            std::ptr::fn_addr_eq(actual, debugger_prefix)
-                        }
-                        DebuggerPrefixAdapter::Safe(_) => false,
-                    }),
-                "{language:?}"
-            );
+            match (profile.debugger_prefix, expected_debugger_prefix) {
+                (Some(DebuggerPrefixAdapter::Safe(_)), None) if language == Language::Portugol => {}
+                (Some(DebuggerPrefixAdapter::Legacy(actual)), Some(expected)) => {
+                    assert!(std::ptr::fn_addr_eq(actual, expected), "{language:?}");
+                }
+                _ => panic!("debugger adapter mismatch for {language:?}"),
+            }
             assert!(
                 std::ptr::fn_addr_eq(profile.execution, execution),
                 "{language:?}"
@@ -394,12 +406,13 @@ mod tests {
                 profile.completion.expect("completion adapter"),
                 completion
             ));
-            assert!(profile.learning.is_some_and(|adapter| match adapter {
-                LearningAdapter::Legacy(actual) => {
-                    std::ptr::fn_addr_eq(actual, learning)
+            match (profile.learning, expected_learning) {
+                (Some(LearningAdapter::Recovering(_)), None) if language == Language::Portugol => {}
+                (Some(LearningAdapter::Legacy(actual)), Some(expected)) => {
+                    assert!(std::ptr::fn_addr_eq(actual, expected), "{language:?}");
                 }
-                LearningAdapter::Recovering(_) => false,
-            }));
+                _ => panic!("learning adapter mismatch for {language:?}"),
+            }
         }
 
         for (language, has_library_support) in [
@@ -421,30 +434,44 @@ mod tests {
     }
 
     #[test]
-    fn every_current_profile_starts_on_the_legacy_adapter_path() {
+    fn only_portugol_studio_has_migrated_from_the_legacy_adapter_path() {
         let fixtures = [
-            (Language::Portugol, "Portugol Studio 2.0"),
-            (Language::GPortugol, "G-Portugol"),
-            (Language::Mapler, "Mapler"),
-            (Language::Visualg, "VisuAlg"),
-            (Language::Calango, "Calango"),
-            (Language::Potigol, "Potigol Classic"),
-            (Language::Potigol, "Potigol Jerimum"),
+            (Language::Portugol, "Portugol Studio 2.0", true),
+            (Language::GPortugol, "G-Portugol", false),
+            (Language::Mapler, "Mapler", false),
+            (Language::Visualg, "VisuAlg", false),
+            (Language::Calango, "Calango", false),
+            (Language::Potigol, "Potigol Classic", false),
+            (Language::Potigol, "Potigol Jerimum", false),
         ];
 
-        for (language, fixture) in fixtures {
+        for (language, fixture, migrated) in fixtures {
             let profile = language.profile();
-            assert!(
-                matches!(
-                    profile.debugger_prefix,
-                    Some(DebuggerPrefixAdapter::Legacy(_))
-                ),
-                "{fixture} debugger should keep its current adapter until migration"
-            );
-            assert!(
-                matches!(profile.learning, Some(LearningAdapter::Legacy(_))),
-                "{fixture} learning should keep its current adapter until migration"
-            );
+            if migrated {
+                assert!(
+                    matches!(
+                        profile.debugger_prefix,
+                        Some(DebuggerPrefixAdapter::Safe(_))
+                    ),
+                    "{fixture} should use safe debugger prefixes"
+                );
+                assert!(
+                    matches!(profile.learning, Some(LearningAdapter::Recovering(_))),
+                    "{fixture} should use shared recovery"
+                );
+            } else {
+                assert!(
+                    matches!(
+                        profile.debugger_prefix,
+                        Some(DebuggerPrefixAdapter::Legacy(_))
+                    ),
+                    "{fixture} debugger should remain on Legacy"
+                );
+                assert!(
+                    matches!(profile.learning, Some(LearningAdapter::Legacy(_))),
+                    "{fixture} learning should remain on Legacy"
+                );
+            }
         }
     }
 }

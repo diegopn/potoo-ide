@@ -1,4 +1,26 @@
-use std::ops::Range;
+use crate::languages::source::{LexerConfig, QuoteRule, SourceToken, tokenize};
+
+pub(super) const SHARED_CONFIG: LexerConfig<'static> = LexerConfig {
+    line_comments: &["//"],
+    block_comments: &[("/*", "*/")],
+    quote_rules: &[
+        QuoteRule {
+            delimiter: '"',
+            escape: Some('\\'),
+            doubled_delimiter: false,
+        },
+        QuoteRule {
+            delimiter: '\'',
+            escape: Some('\\'),
+            doubled_delimiter: false,
+        },
+    ],
+    hyphenated_identifiers: false,
+};
+
+pub(super) fn shared_tokens(source: &str) -> Vec<SourceToken> {
+    tokenize(source, &SHARED_CONFIG)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum TokenKind {
@@ -352,16 +374,4 @@ fn column_for_offset(source: &str, offset: usize) -> usize {
         .rsplit('\n')
         .next()
         .map_or(1, |line| line.chars().count() + 1)
-}
-
-pub(super) fn mask_range(source: &str, range: Range<usize>) -> String {
-    let mut output = String::with_capacity(source.len());
-    for (offset, character) in source.char_indices() {
-        if offset >= range.start && offset < range.end && !matches!(character, '\n' | '\r') {
-            output.push(' ');
-        } else {
-            output.push(character);
-        }
-    }
-    output
 }

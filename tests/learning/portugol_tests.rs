@@ -1,11 +1,25 @@
-use super::analyze_source_line_cancellable;
-use crate::languages::model::{SourceConstruct, SourceLineAnalysis};
+use super::profile_adapter;
+use crate::languages::model::{
+    SourceConstruct, SourceDiagnostic, SourceDiagnosticKind, SourceLineAnalysis,
+    SourceLineAnalysisOutcome,
+};
 
 fn analyze_source_line(
     source: &str,
     line: usize,
-) -> Result<Option<SourceLineAnalysis>, Vec<potoo_portugol_interpreter::Diagnostic>> {
-    analyze_source_line_cancellable(source, line, || false)
+) -> Result<Option<SourceLineAnalysis>, Vec<SourceDiagnostic>> {
+    match profile_adapter(source, line, &|| false) {
+        SourceLineAnalysisOutcome::Complete {
+            analysis: _,
+            diagnostics,
+        } if diagnostics.iter().any(|diagnostic| diagnostic.line == line) => Err(diagnostics),
+        SourceLineAnalysisOutcome::Complete {
+            analysis,
+            diagnostics: _,
+        } => Ok(analysis),
+        SourceLineAnalysisOutcome::Incomplete { diagnostics } => Err(diagnostics),
+        SourceLineAnalysisOutcome::Cancelled => Ok(None),
+    }
 }
 
 fn line_of(source: &str, prefix: &str) -> usize {
@@ -124,13 +138,44 @@ fn recovers_independent_syntax_errors_on_separate_lines() {
     assert_eq!(
         diagnostics
             .iter()
-            .filter(
-                |diagnostic| diagnostic.kind == potoo_portugol_interpreter::DiagnosticKind::Syntax
-            )
+            .filter(|diagnostic| diagnostic.kind == SourceDiagnosticKind::Syntax)
             .count(),
         2,
         "recovery diagnostics: {diagnostics:?}"
     );
     assert!(diagnostics.iter().any(|diagnostic| diagnostic.line == 3));
     assert!(diagnostics.iter().any(|diagnostic| diagnostic.line == 4));
+}
+
+#[test]
+fn recovering_adapter_preserves_interpreter_diagnostic_kind_message_and_coordinates() {
+    let source = "programa {\n funcao inicio() {\n  @\n }\n}";
+    let expected = potoo_portugol_interpreter::parse(source).unwrap_err()[0].clone();
+    let SourceLineAnalysisOutcome::Complete { diagnostics, .. } =
+        profile_adapter(source, 3, &|| false)
+    else {
+        panic!("a single lexical error should be recoverable");
+    };
+    let actual = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.line == expected.line)
+        .expect("the original interpreter diagnostic should remain");
+
+    assert_eq!(actual.kind, SourceDiagnosticKind::Lexical);
+    assert_eq!(actual.message, expected.message);
+    assert_eq!(actual.line, expected.line);
+    assert_eq!(actual.column, expected.column);
+}
+
+#[test]
+fn recovering_adapter_discards_results_when_cancelled_between_retries() {
+    let source = "programa {\n funcao inicio() {\n  @\n }\n}";
+    let checks = std::cell::Cell::new(0);
+    let outcome = profile_adapter(source, 3, &|| {
+        let count = checks.get() + 1;
+        checks.set(count);
+        count >= 3
+    });
+
+    assert_eq!(outcome, SourceLineAnalysisOutcome::Cancelled);
 }

@@ -378,6 +378,73 @@ fn parser_errors_stay_on_their_line_across_all_supported_dialects() {
 }
 
 #[test]
+fn portugol_learning_recovers_ast_facts_around_a_lexical_error() {
+    let source = r#"programa {
+ funcao inicio() {
+  escreva("antes")
+  @
+  escreva("depois")
+ }
+}"#;
+
+    let before = learning_hint(source, 3, Language::Portugol);
+    assert_eq!(before.topic, LearningTopic::Output);
+    assert!(before.problems.is_empty());
+
+    let error = learning_hint(source, 4, Language::Portugol);
+    assert_eq!(error.topic, LearningTopic::Unrecognized);
+    assert!(error.problems.iter().any(|problem| {
+        problem.kind == LearningProblemKind::Syntax && problem.line == 4 && problem.column == 3
+    }));
+
+    let after = learning_hint(source, 5, Language::Portugol);
+    assert_eq!(after.topic, LearningTopic::Output);
+    assert!(after.problems.is_empty());
+}
+
+#[test]
+fn portugol_learning_recovers_ast_facts_around_a_syntax_error() {
+    let source = r#"programa {
+ funcao inicio() {
+  escreva("antes")
+  inteiro = 1
+  escreva("depois")
+ }
+}"#;
+
+    let before = learning_hint(source, 3, Language::Portugol);
+    assert_eq!(before.topic, LearningTopic::Output);
+    assert!(before.problems.is_empty());
+
+    let error = learning_hint(source, 4, Language::Portugol);
+    assert_eq!(error.topic, LearningTopic::Unrecognized);
+    assert!(
+        error
+            .problems
+            .iter()
+            .any(|problem| { problem.kind == LearningProblemKind::Syntax && problem.line == 4 })
+    );
+
+    let after = learning_hint(source, 5, Language::Portugol);
+    assert_eq!(after.topic, LearningTopic::Output);
+    assert!(after.problems.is_empty());
+}
+
+#[test]
+fn portugol_learning_marks_ambiguous_recovery_incomplete_without_ast_facts() {
+    let source = "programa {\n funcao inicio() {\n  escreva(\n }\n}";
+    let hint = learning_hint(source, 4, Language::Portugol);
+
+    assert_eq!(hint.topic, LearningTopic::Unrecognized);
+    assert!(hint.name.is_none());
+    assert!(hint.variables.is_empty());
+    assert!(hint.problems.iter().any(|problem| {
+        problem.kind == LearningProblemKind::Analysis
+            && problem.severity == LearningSeverity::Warning
+    }));
+}
+
+#[test]
 fn potigol_field_assignment_advice_uses_potigol_syntax_in_the_learning_panel() {
     let source = "use \"jerimum\"\njogo.titulo = \"teste\"\n";
     let error = learning_hint(source, 2, Language::Potigol);

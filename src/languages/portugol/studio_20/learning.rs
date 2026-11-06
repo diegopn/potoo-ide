@@ -1,113 +1,94 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::languages::{
-    model::{SourceConstruct, SourceDimension, SourceLineAnalysis, SourceSymbol},
-    source::{read_identifier, read_integer, skip_spaces, skip_to_top_level_comma},
+    model::{
+        SourceConstruct, SourceDiagnostic, SourceDiagnosticKind, SourceDimension,
+        SourceLineAnalysis, SourceLineAnalysisOutcome, SourceSymbol,
+    },
+    source::{
+        RecoveryStatus, read_identifier, read_integer, recover_parse, skip_spaces,
+        skip_to_top_level_comma,
+    },
 };
-use potoo_portugol_interpreter::{Diagnostic, ast::*, parse};
+use potoo_portugol_interpreter::{Diagnostic, DiagnosticKind, ast::*, parse};
 
 /// Parses source with the interpreter AST and describes the construct at `one_based_line`.
-pub(crate) fn analyze_source_line_cancellable(
-    source: &str,
-    one_based_line: usize,
-    is_cancelled: impl Fn() -> bool,
-) -> Result<Option<SourceLineAnalysis>, Vec<Diagnostic>> {
-    if is_cancelled() {
-        return Ok(None);
-    }
-    if one_based_line == 0 || one_based_line > source.lines().count() {
-        return Ok(None);
-    }
-
-    let (program, diagnostics) = parse_recovering(source, &is_cancelled);
-    if is_cancelled() {
-        return Ok(None);
-    }
-    if diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.line == one_based_line)
-    {
-        return Err(diagnostics);
-    }
-    let Some(program) = program else {
-        return Err(diagnostics);
-    };
-    if source
-        .lines()
-        .nth(one_based_line - 1)
-        .is_some_and(|line| line.trim_start().starts_with("programa"))
-    {
-        return Ok(Some(SourceLineAnalysis {
-            line: one_based_line,
-            column: 1,
-            construct: SourceConstruct::Program,
-            name: None,
-            return_type: None,
-            parameters: Vec::new(),
-            variables: Vec::new(),
-            call: None,
-        }));
-    }
-
-    Ok(analyze_program_line(&program, one_based_line))
-}
-
 pub(crate) fn profile_adapter(
     source: &str,
     one_based_line: usize,
     is_cancelled: &dyn Fn() -> bool,
-) -> Result<Option<SourceLineAnalysis>, Vec<crate::languages::model::SourceDiagnostic>> {
-    analyze_source_line_cancellable(source, one_based_line, is_cancelled).map_err(|diagnostics| {
-        diagnostics
-            .into_iter()
-            .map(|diagnostic| {
-                crate::languages::model::SourceDiagnostic::at_line(
-                    crate::languages::model::SourceDiagnosticKind::Syntax,
-                    diagnostic.message,
-                    diagnostic.line,
-                    diagnostic.column,
-                )
-            })
-            .collect()
-    })
-}
+) -> SourceLineAnalysisOutcome {
+    if is_cancelled() {
+        return SourceLineAnalysisOutcome::Cancelled;
+    }
+    if one_based_line == 0 || one_based_line > source.lines().count() {
+        return SourceLineAnalysisOutcome::Complete {
+            analysis: None,
+            diagnostics: Vec::new(),
+        };
+    }
 
-fn parse_recovering<F>(source: &str, is_cancelled: &F) -> (Option<Program>, Vec<Diagnostic>)
-where
-    F: Fn() -> bool,
-{
-    let mut candidate = source.to_owned();
-    let mut diagnostics = Vec::new();
-    for attempt in 0..=64 {
-        if is_cancelled() {
-            return (None, diagnostics);
+    let recovered = recover_parse(
+        source,
+        parse,
+        |diagnostic: &Diagnostic| (diagnostic.line, diagnostic.column),
+        crate::languages::portugol::studio_20::syntax_analysis::views::mask_diagnostic_statement,
+        is_cancelled,
+    );
+    let diagnostics = recovered
+        .diagnostics
+        .into_iter()
+        .map(to_source_diagnostic)
+        .collect::<Vec<_>>();
+
+    match recovered.status {
+        RecoveryStatus::Cancelled => SourceLineAnalysisOutcome::Cancelled,
+        RecoveryStatus::Stalled | RecoveryStatus::LimitReached => {
+            SourceLineAnalysisOutcome::Incomplete { diagnostics }
         }
-        match parse(&candidate) {
-            Ok(program) => return (Some(program), diagnostics),
-            Err(parse_diagnostics) => {
-                let Some(diagnostic) = parse_diagnostics.into_iter().next() else {
-                    return (None, diagnostics);
-                };
-                let line = diagnostic.line;
-                let column = diagnostic.column;
-                if attempt == 64 {
-                    diagnostics.push(diagnostic);
-                    break;
-                }
-                let recovered = crate::languages::portugol::studio_20::syntax_analysis::views::mask_diagnostic_statement(
-                    &candidate,
-                    line,
-                    column,
-                );
-                diagnostics.push(diagnostic);
-                if recovered == candidate {
-                    break;
-                }
-                candidate = recovered;
+        RecoveryStatus::Complete => {
+            let Some(program) = recovered.program else {
+                return SourceLineAnalysisOutcome::Incomplete { diagnostics };
+            };
+            let analysis = if diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.line == one_based_line)
+            {
+                None
+            } else if source
+                .lines()
+                .nth(one_based_line - 1)
+                .is_some_and(|line| line.trim_start().starts_with("programa"))
+            {
+                Some(SourceLineAnalysis {
+                    line: one_based_line,
+                    column: 1,
+                    construct: SourceConstruct::Program,
+                    name: None,
+                    return_type: None,
+                    parameters: Vec::new(),
+                    variables: Vec::new(),
+                    call: None,
+                })
+            } else {
+                analyze_program_line(&program, one_based_line)
+            };
+            SourceLineAnalysisOutcome::Complete {
+                analysis,
+                diagnostics,
             }
         }
     }
-    (None, diagnostics)
+}
+
+fn to_source_diagnostic(diagnostic: Diagnostic) -> SourceDiagnostic {
+    let kind = match diagnostic.kind {
+        DiagnosticKind::Lexical => SourceDiagnosticKind::Lexical,
+        DiagnosticKind::Syntax => SourceDiagnosticKind::Syntax,
+        DiagnosticKind::Type => SourceDiagnosticKind::Type,
+        DiagnosticKind::Runtime => SourceDiagnosticKind::Runtime,
+    };
+    SourceDiagnostic::at_line(kind, diagnostic.message, diagnostic.line, diagnostic.column)
 }
 
 fn analyze_program_line(program: &Program, line: usize) -> Option<SourceLineAnalysis> {
