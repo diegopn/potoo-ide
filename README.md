@@ -4,7 +4,9 @@
 
 # Potoo IDE
 
-A desktop IDE for students and teachers to practice programming logic with Portugol dialects, Calango, and Potigol.
+A desktop IDE for students and teachers learning programming logic through Portugol dialects, VisuAlg, and other educational languages.
+
+[Download the latest release](https://github.com/diegopn/potoo-ide/releases/latest) · [Project website](https://diegopn.github.io/potoo-site/) · [User manual](https://diegopn.github.io/potoo-site/manual/)
 
 The project aims to provide a simple, intuitive space for students to practice and for teachers to support the concepts taught through code. The interface is built with Rust, GTK 4, and Relm4, with Potoo-owned components and inspiration from GNOME Builder. Teachers choose which tools fit their classes; the IDE does not impose one learning path.
 
@@ -108,8 +110,7 @@ Bug reports, suggestions, and contributions are welcome. See [CONTRIBUTING.md](C
 
 Potoo IDE is distributed under the GNU General Public License, version 3 or (at your option) any later version. See [LICENSE](LICENSE).
 
-## Links
+## More links
 
-- [Project website](https://diegopn.github.io/potoo-site/)
-- [GitHub repository](https://github.com/diegopn/potoo-ide)
+- [Source repository](https://github.com/diegopn/potoo-ide)
 - [Sponsor development](https://github.com/sponsors/diegopn)
