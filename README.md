@@ -1,14 +1,20 @@
 <p align="center">
-  <img src="data/icons/hicolor/scalable/apps/io.github.diegopn.potooide.svg" alt="Potoo IDE" width="112" />
+  <a href="https://diegopn.github.io/potoo-site/">
+    <img src="data/icons/hicolor/scalable/apps/io.github.diegopn.potooide.svg" alt="Potoo IDE icon" width="112" />
+  </a>
 </p>
 
-# Potoo IDE
+<h1 align="center">Potoo IDE</h1>
 
-A desktop IDE for students and teachers learning programming logic through Portugol dialects, VisuAlg, and other educational languages.
+<p align="center">A desktop IDE for students and teachers learning programming logic through Portugol dialects, VisuAlg, and other educational languages.</p>
 
-[Download the latest release](https://github.com/diegopn/potoo-ide/releases/latest) · [Project website](https://diegopn.github.io/potoo-site/) · [User manual](https://diegopn.github.io/potoo-site/manual/)
+<p align="center">
+  <a href="https://github.com/diegopn/potoo-ide/releases/latest">Download</a> ·
+  <a href="https://diegopn.github.io/potoo-site/">Website</a> ·
+  <a href="https://diegopn.github.io/potoo-site/manual/">User manual</a>
+</p>
 
-The project aims to provide a simple, intuitive space for students to practice and for teachers to support the concepts taught through code. The interface is built with Rust, GTK 4, and Relm4, with Potoo-owned components and inspiration from GNOME Builder. Teachers choose which tools fit their classes; the IDE does not impose one learning path.
+Built with Rust, GTK 4, and Relm4, Potoo lets teachers choose tools that fit their classes without imposing a single learning path.
 
 ## Languages
 
@@ -88,9 +94,37 @@ sha256sum --check SHA256SUMS
 
 On Windows PowerShell, compare the output of `Get-FileHash <installer> -Algorithm SHA256` with the matching entry in `SHA256SUMS`.
 
-## Development
+## Building from source on Linux
 
-Requirements for running the native version: Rust 1.93 or later and GTK 4.20 with the platform development libraries.
+Requirements: Rust 1.93 or later, GTK 4.20 or later, and GtkSourceView 5 development files. Package versions vary by release; check that your distribution provides GTK 4.20 before building.
+
+### Fedora and compatible RPM distributions
+
+```sh
+sudo dnf install gcc rustup pkgconf-pkg-config gtk4-devel gtksourceview5-devel
+```
+
+On Fedora, run `rustup-init` once after installing `rustup`.
+
+### Debian, Ubuntu, and derivatives
+
+```sh
+sudo apt-get install build-essential rustup pkg-config libgtk-4-dev libgtksourceview-5-dev
+```
+
+### Arch-based distributions
+
+```sh
+sudo pacman -S --needed base-devel rustup pkgconf gtk4 gtksourceview5
+```
+
+### openSUSE Tumbleweed
+
+```sh
+sudo zypper install gcc rustup pkgconf-pkg-config gtk4-devel gtksourceview5-devel
+```
+
+### Build and run
 
 ```sh
 cargo run --locked
