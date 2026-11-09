@@ -24,16 +24,18 @@ Potoo helps students and teachers explore programming logic through Portugol and
 
 ## Supported languages
 
-| Language | Files |
-| --- | --- |
-| [Portugol Studio 2.0](https://github.com/diegopn/potoo-portugol-studio-2-interpreter) | `.por` |
-| [VisuAlg 3.0.5.2](https://github.com/diegopn/potoo-portugol-visualg-interpreter) | `.alg` |
-| [Potigol 1.0.0-RC2 core](https://github.com/diegopn/potoo-potigol-interpreter) | `.poti` |
-| [G-Portugol 1.4.0](https://github.com/diegopn/potoo-gportugol-interpreter) | `.gpt` |
-| [Calango](https://github.com/diegopn/potoo-calango-interpreter) | `.clg` |
-| [Portugol Mapler](https://github.com/diegopn/potoo-portugol-mapler-interpreter) | `.mapler` |
+Portugol is a family of dialects. The table distinguishes whether each entry belongs to that family and whether it is a programming language or a pseudolanguage for teaching algorithms. Potoo runs each entry through its interpreter.
 
-Compatibility is in progress; each language link opens its interpreter project, which documents supported syntax and current limits. The app interface is available in Portuguese, English, and Spanish.
+| Relationship | Nature | Language | Files |
+| --- | --- | --- | --- |
+| Portugol dialect | Programming language | [Portugol Studio 2.0](https://github.com/diegopn/potoo-portugol-studio-2-interpreter) | `.por` |
+| Portugol dialect | Pseudolanguage | [VisuAlg 3.0.5.2](https://github.com/diegopn/potoo-portugol-visualg-interpreter) | `.alg` |
+| Separate language | Functional programming language | [Potigol 1.0.0-RC2 core](https://github.com/diegopn/potoo-potigol-interpreter) | `.poti` |
+| Portugol dialect | Programming language | [G-Portugol 1.4.0](https://github.com/diegopn/potoo-gportugol-interpreter) | `.gpt` |
+| Portuguese pseudolanguage | Pseudolanguage | [Calango](https://github.com/diegopn/potoo-calango-interpreter) | `.clg` |
+| Portugol dialect | Pseudolanguage | [Portugol Mapler](https://github.com/diegopn/potoo-portugol-mapler-interpreter) | `.mapler` |
+
+Pseudolanguages are educational notations; they can still be run in Potoo through an interpreter. Each language's interpreter project documents its compatibility limits. The app interface is available in Portuguese, English, and Spanish.
 
 ## Install
 
@@ -102,7 +104,7 @@ Bug reports, suggestions, and contributions are welcome. See [CONTRIBUTING.md](C
 
 If Potoo is useful in your classes or studies, you can support its continued development:
 
-<p align="center">
+<p align="left">
   <a href="https://github.com/sponsors/diegopn"><img alt="Become a sponsor" src="https://img.shields.io/badge/Become_a_sponsor-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white"></a>
 </p>
 
