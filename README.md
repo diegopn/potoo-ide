@@ -24,18 +24,52 @@ Potoo helps students and teachers explore programming logic through Portugol and
 
 ## Supported languages
 
-Portugol is a family of dialects. The table distinguishes whether each entry belongs to that family and whether it is a programming language or a pseudolanguage for teaching algorithms. Potoo runs each entry through its interpreter.
+The tables separate two questions: whether an entry is a Portugol dialect and whether it is an educational pseudolanguage or a programming language. A Portugol dialect can also be a pseudolanguage, so those entries appear in both relevant tables. Potoo runs each supported entry through its own interpreter.
 
-| Relationship | Nature | Language | Files |
-| --- | --- | --- | --- |
-| Portugol dialect | Programming language | [Portugol Studio 2.0](https://github.com/diegopn/potoo-portugol-studio-2-interpreter) | `.por` |
-| Portugol dialect | Pseudolanguage | [VisuAlg 3.0.5.2](https://github.com/diegopn/potoo-portugol-visualg-interpreter) | `.alg` |
-| Separate language | Functional programming language | [Potigol 1.0.0-RC2 core](https://github.com/diegopn/potoo-potigol-interpreter) | `.poti` |
-| Portugol dialect | Programming language | [G-Portugol 1.4.0](https://github.com/diegopn/potoo-gportugol-interpreter) | `.gpt` |
-| Portuguese pseudolanguage | Pseudolanguage | [Calango](https://github.com/diegopn/potoo-calango-interpreter) | `.clg` |
-| Portugol dialect | Pseudolanguage | [Portugol Mapler](https://github.com/diegopn/potoo-portugol-mapler-interpreter) | `.mapler` |
+### Portugol dialects
 
-Pseudolanguages are educational notations; they can still be run in Potoo through an interpreter. Each language's interpreter project documents its compatibility limits. The app interface is available in Portuguese, English, and Spanish.
+Portugol is a family of related dialects, not a single language with one shared syntax.
+
+| Dialect | File extension |
+| --- | --- |
+| [Portugol Studio 2.0](https://github.com/diegopn/potoo-portugol-studio-2-interpreter) | `.por` |
+| [VisuAlg 3.0.5.2](https://github.com/diegopn/potoo-portugol-visualg-interpreter) | `.alg` |
+| [G-Portugol 1.4.0](https://github.com/diegopn/potoo-gportugol-interpreter) | `.gpt` |
+| [Portugol Mapler](https://github.com/diegopn/potoo-portugol-mapler-interpreter) | `.mapler` |
+
+### Pseudolanguages
+
+Pseudolanguages use educational notation to express algorithms. They run in Potoo through interpreters, but that does not make them general-purpose programming languages.
+
+| Pseudolanguage | Classification | File extension |
+| --- | --- | --- |
+| [Portugol Studio 2.0](https://github.com/diegopn/potoo-portugol-studio-2-interpreter) | Portugol dialect | `.por` |
+| [VisuAlg 3.0.5.2](https://github.com/diegopn/potoo-portugol-visualg-interpreter) | Portugol dialect | `.alg` |
+| [G-Portugol 1.4.0](https://github.com/diegopn/potoo-gportugol-interpreter) | Portugol dialect | `.gpt` |
+| [Calango](https://github.com/diegopn/potoo-calango-interpreter) | Portuguese pseudolanguage | `.clg` |
+| [Portugol Mapler](https://github.com/diegopn/potoo-portugol-mapler-interpreter) | Portugol dialect | `.mapler` |
+
+Candidates being considered for development and integration:
+
+- PSeInt
+
+### Programming languages
+
+Potigol is an educational functional programming language with Portuguese syntax; it is separate from the Portugol dialect family.
+
+| Language | Paradigm | File extension |
+| --- | --- | --- |
+| [Potigol 1.0.0-RC2 core](https://github.com/diegopn/potoo-potigol-interpreter) | Functional | `.poti` |
+
+Candidates being considered for development and integration:
+
+- Linotte
+- C0 (Simplified C)
+- Karel
+- Égua
+- Logic Basic
+
+These candidates are under evaluation and are not implementation commitments. The app interface is available in Portuguese, English, and Spanish.
 
 ## Install
 
