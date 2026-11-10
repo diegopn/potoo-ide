@@ -24,7 +24,7 @@ Potoo helps students and teachers explore programming logic through Portugol and
 
 ## Supported languages
 
-The tables separate two questions: whether an entry is a Portugol dialect and whether it is an educational pseudolanguage or a programming language. A Portugol dialect can also be a pseudolanguage, so those entries appear in both relevant tables. Potoo runs each supported entry through its own interpreter.
+The tables group supported interpreters by language type: Portugol dialects, the Calango pseudolanguage, and the Potigol programming language. Potoo runs each supported language through its own interpreter.
 
 ### Portugol dialects
 
@@ -41,13 +41,9 @@ Portugol is a family of related dialects, not a single language with one shared 
 
 Pseudolanguages use educational notation to express algorithms. They run in Potoo through interpreters, but that does not make them general-purpose programming languages.
 
-| Pseudolanguage | Classification | File extension |
-| --- | --- | --- |
-| [Portugol Studio 2.0](https://github.com/diegopn/potoo-portugol-studio-2-interpreter) | Portugol dialect | `.por` |
-| [VisuAlg 3.0.5.2](https://github.com/diegopn/potoo-portugol-visualg-interpreter) | Portugol dialect | `.alg` |
-| [G-Portugol 1.4.0](https://github.com/diegopn/potoo-gportugol-interpreter) | Portugol dialect | `.gpt` |
-| [Calango](https://github.com/diegopn/potoo-calango-interpreter) | Portuguese pseudolanguage | `.clg` |
-| [Portugol Mapler](https://github.com/diegopn/potoo-portugol-mapler-interpreter) | Portugol dialect | `.mapler` |
+| Pseudolanguage | File extension |
+| --- | --- |
+| [Calango](https://github.com/diegopn/potoo-calango-interpreter) | `.clg` |
 
 Candidates being considered for development and integration:
 
