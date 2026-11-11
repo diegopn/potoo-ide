@@ -8,6 +8,13 @@
   <description>
     <p>Uma IDE desktop para estudantes e professores praticarem lógica de programação com Portugol e VisuAlg.</p>
   </description>
+  <releases>
+    <release version="0.2.0" date="2026-11-11" type="stable">
+      <description>
+        <p>Diagnósticos de aprendizagem mais completos e melhorias de compatibilidade, execução e estabilidade.</p>
+      </description>
+    </release>
+  </releases>
   <launchable type="desktop-id">io.github.diegopn.potooide.desktop</launchable>
   <url type="homepage">https://diegopn.github.io/potoo-site/</url>
   <url type="bugtracker">https://github.com/diegopn/potoo-ide/issues</url>
