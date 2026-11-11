@@ -277,7 +277,15 @@ jobs:
 
   publish:
     name: Publish GitHub release
-    if: always() && startsWith(github.ref, 'refs/tags/v') && needs.assemble.result == 'success'
+    if: >-
+      always() &&
+      needs.assemble.result == 'success' &&
+      (
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+        (github.event_name == 'pull_request' &&
+         github.event.pull_request.merged == true &&
+         startsWith(github.event.pull_request.title, 'Release v'))
+      )
     needs: assemble
     runs-on: ubuntu-24.04
     permissions:
@@ -291,10 +299,17 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
           set -euo pipefail
-          tag="$GITHUB_REF_NAME"
           version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            tag="v$version"
+            target="$PR_MERGE_SHA"
+          else
+            tag="$GITHUB_REF_NAME"
+            target="$GITHUB_SHA"
+          fi
           if [[ "$tag" != "v$version" ]]; then
             echo "Release tag $tag does not match Cargo.toml version $version." >&2
             exit 1
@@ -305,9 +320,17 @@ jobs:
               --title "Potoo IDE $tag" \
               --notes-file release-assets/RELEASE_NOTES.md
           else
-            gh release create "$tag" release-assets/* \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "Potoo IDE $tag" \
-              --notes-file release-assets/RELEASE_NOTES.md \
-              --verify-tag
+            if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+              gh release create "$tag" release-assets/* \
+                --repo "$GITHUB_REPOSITORY" \
+                --title "Potoo IDE $tag" \
+                --notes-file release-assets/RELEASE_NOTES.md \
+                --target "$target"
+            else
+              gh release create "$tag" release-assets/* \
+                --repo "$GITHUB_REPOSITORY" \
+                --title "Potoo IDE $tag" \
+                --notes-file release-assets/RELEASE_NOTES.md \
+                --verify-tag
+            fi
           fi
