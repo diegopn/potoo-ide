@@ -37,7 +37,7 @@ jobs:
                 first_mirror="$(head -n 1 "$mirror_list")"
                 {
                   tail -n +2 "$mirror_list"
-                  printf '%s\\n' "$first_mirror"
+                  printf '%s\n' "$first_mirror"
                 } | sudo tee "$mirror_list" >/dev/null
               fi
               ((attempt += 1))
