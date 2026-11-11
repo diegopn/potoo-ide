@@ -1,4 +1,39 @@
-use std::ops::Range;
+use crate::languages::source::{
+    LexerConfig, LineCommentTerminator, LineEndingPolicy, QuoteRule, SourceToken, tokenize,
+};
+
+pub(super) const SHARED_CONFIG: LexerConfig<'static> = LexerConfig {
+    line_comments: &["//"],
+    line_comment_terminator: LineCommentTerminator::AnyNewline,
+    line_endings: LineEndingPolicy::Universal,
+    bare_cr_advances_line_without_separator: false,
+    interpolated_strings: false,
+    block_comments: &[("/*", "*/")],
+    quote_rules: &[
+        QuoteRule {
+            delimiter: '"',
+            escape: Some('\\'),
+            doubled_delimiter: false,
+            allows_newlines: false,
+            allows_escaped_newlines: false,
+            allows_carriage_returns: false,
+        },
+        QuoteRule {
+            delimiter: '\'',
+            escape: Some('\\'),
+            doubled_delimiter: false,
+            allows_newlines: false,
+            allows_escaped_newlines: false,
+            allows_carriage_returns: false,
+        },
+    ],
+    hyphenated_words: &[],
+    ignore_leading_bom: false,
+};
+
+pub(super) fn shared_tokens(source: &str) -> Vec<SourceToken> {
+    tokenize(source, &SHARED_CONFIG)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum TokenKind {
@@ -352,16 +387,4 @@ fn column_for_offset(source: &str, offset: usize) -> usize {
         .rsplit('\n')
         .next()
         .map_or(1, |line| line.chars().count() + 1)
-}
-
-pub(super) fn mask_range(source: &str, range: Range<usize>) -> String {
-    let mut output = String::with_capacity(source.len());
-    for (offset, character) in source.char_indices() {
-        if offset >= range.start && offset < range.end && !matches!(character, '\n' | '\r') {
-            output.push(' ');
-        } else {
-            output.push(character);
-        }
-    }
-    output
 }

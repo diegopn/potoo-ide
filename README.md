@@ -1,94 +1,120 @@
 <p align="center">
-  <img src="data/icons/hicolor/scalable/apps/io.github.diegopn.potooide.svg" alt="Potoo IDE" width="112" />
+  <a href="https://diegopn.github.io/potoo-site/">
+    <img src="data/icons/hicolor/scalable/apps/io.github.diegopn.potooide.svg" alt="Potoo IDE icon" width="112" />
+  </a>
 </p>
 
-# Potoo IDE
+<h1 align="center">Potoo IDE</h1>
 
-A desktop IDE for students and teachers to practice programming logic with Portugol dialects, Calango, and Potigol.
+<p align="center">A desktop IDE for students and teachers learning programming logic through Portugol dialects, VisuAlg, and other educational languages.</p>
 
-The project aims to provide a simple, intuitive space for students to practice and for teachers to support the concepts taught through code. The interface is built with Rust, GTK 4, and Relm4, with Potoo-owned components and inspiration from GNOME Builder. Teachers choose which tools fit their classes; the IDE does not impose one learning path.
+<p align="center">
+  <a href="https://github.com/diegopn/potoo-ide/releases/latest">Download</a> ·
+  <a href="https://diegopn.github.io/potoo-site/">Website</a> ·
+  <a href="https://diegopn.github.io/potoo-site/manual/">User manual</a>
+</p>
 
-## Languages
+<p align="center">
+  <a href="https://www.rust-lang.org/"><img alt="Rust" src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white"></a>
+  <a href="https://www.gtk.org/"><img alt="GTK 4" src="https://img.shields.io/badge/GTK-4A86CF?style=for-the-badge&logo=gnome&logoColor=white"></a>
+  <a href="https://relm4.org/"><img alt="Relm4" src="https://img.shields.io/badge/Relm4-6A4C93?style=for-the-badge"></a>
+</p>
 
-The IDE has execution integrations for these languages. Compatibility work is ongoing; each interpreter repository documents its supported syntax and current limits.
+Potoo helps students and teachers explore programming logic through Portugol and VisuAlg. Its language integrations are maintained as independent Rust interpreters.
 
-- **Portugol Studio 2.0** (`.por`)
-- **VisuAlg** (`.alg`; compatibility target: classic 3.0.5.2)
-- **Potigol** (`.poti`; independent Rust implementation targeting the documented 1.0.0-RC2 language core)
-- **G-Portugol** (`.gpt`; independent Rust implementation targeting the documented 1.4.0 language)
-- **Calango** (`.clg`)
-- **Portugol Mapler** (`.mapler`)
+## Supported languages
 
-Mapler is a separate Portugol dialect. The original Mapler IDE uses `.txt`; Potoo adopts `.mapler` from [Design Liquido's Mapler implementation](https://github.com/DesignLiquido/mapler), which began as part of Delégua. See the [Mapler manual](https://portugol.sourceforge.io/manuais.html) and [syntax repository](https://github.com/Projeto-Mapler/portugol). Calango's upstream project is [available on GitHub](https://github.com/GeovanaRamos/calango).
+The tables group supported interpreters by language type: Portugol dialects, the Calango pseudolanguage, and the Potigol programming language. Potoo runs each supported language through its own interpreter.
 
-## Independent interpreters
+### Portugol dialects
 
-The IDE uses independent Rust interpreters maintained in separate repositories. Each repository includes a reusable library and a standalone command-line runner, and documents its compatibility target and limits. The IDE pins each interpreter to a Git commit in `Cargo.toml` and builds it with the application. The installed app does not need GitHub access; building from source may need to fetch dependencies that are not already cached.
+Portugol is a family of related dialects, not a single language with one shared syntax.
 
-- [Calango](https://github.com/diegopn/potoo-calango-interpreter)
-- [G-Portugol](https://github.com/diegopn/potoo-gportugol-interpreter)
-- [Portugol Mapler](https://github.com/diegopn/potoo-portugol-mapler-interpreter)
-- [Portugol Studio 2.0](https://github.com/diegopn/potoo-portugol-studio-2-interpreter)
-- [Potigol](https://github.com/diegopn/potoo-potigol-interpreter)
-- [Portugol VisuAlg](https://github.com/diegopn/potoo-portugol-visualg-interpreter)
+| Dialect | File extension |
+| --- | --- |
+| [Portugol Studio 2.0](https://github.com/diegopn/potoo-portugol-studio-2-interpreter) | `.por` |
+| [VisuAlg 3.0.5.2](https://github.com/diegopn/potoo-portugol-visualg-interpreter) | `.alg` |
+| [G-Portugol 1.4.0](https://github.com/diegopn/potoo-gportugol-interpreter) | `.gpt` |
+| [Portugol Mapler](https://github.com/diegopn/potoo-portugol-mapler-interpreter) | `.mapler` |
 
-The Potigol interpreter includes a compatibility layer for a supported subset of the Jerimum API. Potoo routes graphics and audio requests through GTK hosts and provides native facades for selected `Color`, `BufferedImage`, `JFrame`, `Canvas`, and `Graphics2D` members. It does not bundle the JVM or provide general Swing/AWT interoperability.
+### Pseudolanguages
 
-**Future**
+Pseudolanguages use educational notation to express algorithms. They run in Potoo through interpreters, but that does not make them general-purpose programming languages.
+
+| Pseudolanguage | File extension |
+| --- | --- |
+| [Calango](https://github.com/diegopn/potoo-calango-interpreter) | `.clg` |
+
+Candidates being considered for development and integration:
 
 - PSeInt
+
+### Programming languages
+
+Potigol is an educational functional programming language with Portuguese syntax; it is separate from the Portugol dialect family.
+
+| Language | Paradigm | File extension |
+| --- | --- | --- |
+| [Potigol 1.0.0-RC2 core](https://github.com/diegopn/potoo-potigol-interpreter) | Functional | `.poti` |
+
+Candidates being considered for development and integration:
+
 - Linotte
 - C0 (Simplified C)
 - Karel
-- [Égua](https://github.com/eguadev/egua)
+- Égua
 - Logic Basic
 
-Project documentation is maintained in English. The app offers Portuguese, English, and Spanish UI languages. The project website is available in Brazilian Portuguese (default), English, and Spanish.
-
-## Platforms
-
-Potoo IDE installers are currently available for Windows x64 and x86_64 Linux (Flatpak). macOS installers are not included yet; Apple Silicon builds are also unavailable.
+These candidates are under evaluation and are not implementation commitments. The app interface is available in Portuguese, English, and Spanish.
 
 ## Install
 
-Download the installers from the [latest GitHub release](https://github.com/diegopn/potoo-ide/releases/latest). The release also includes a ZIP containing the installers available for that release and a `SHA256SUMS` file.
+| Platform | Package |
+| --- | --- |
+| Linux x86_64 | Flatpak bundle. If needed, [set up Flatpak](https://flatpak.org/setup) first. |
+| Windows x64 | Setup installer with the GTK, GtkSourceView, and GStreamer runtime files. Windows may warn that the installer is unsigned. |
+| macOS | Installers are not available yet. |
 
-### Windows
-
-1. Download `Potoo-IDE-<version>-windows-x64-setup.exe`.
-2. Run the installer and follow its prompts.
-3. Start Potoo IDE from the Start menu.
-
-The installer includes the GTK, GtkSourceView, and GStreamer runtime files needed by the application. The Windows installer is not code-signed, so Windows may show a publisher warning.
-
-### macOS
-
-The macOS installer is not included in this release while we work through packaging issues for Intel Macs. Apple Silicon builds are not available yet.
-
-### Linux (Flatpak)
-
-If Flatpak is not yet set up on your computer, [follow the instructions to prepare your system](https://flatpak.org/setup) before installing the app. Then install the downloaded bundle:
+Download the [latest release](https://github.com/diegopn/potoo-ide/releases/latest). To install the Linux bundle:
 
 ```sh
 flatpak install --user --bundle ./Potoo-IDE-<version>-linux-x86_64.flatpak
 flatpak run io.github.diegopn.potooide
 ```
 
-The single-file Flatpak bundle contains the application, not its runtime. If the GNOME 51 runtime is not already installed, Flatpak downloads it from the configured Flathub remote during installation; internet access is required for that first install.
+The first Flatpak installation may download the GNOME 51 runtime. Release downloads include `SHA256SUMS` for verification.
 
-### Verify downloads
+## Building from source on Linux
 
-Download `SHA256SUMS` alongside the installers. On Linux or macOS, verify them with:
+Requirements: Rust 1.93 or later, GTK 4.20 or later, and GtkSourceView 5 development files. Package versions vary by release; check that your distribution provides GTK 4.20 before building.
+
+### Fedora and compatible RPM distributions
 
 ```sh
-sha256sum --check SHA256SUMS
+sudo dnf install gcc rustup pkgconf-pkg-config gtk4-devel gtksourceview5-devel
 ```
 
-On Windows PowerShell, compare the output of `Get-FileHash <installer> -Algorithm SHA256` with the matching entry in `SHA256SUMS`.
+On Fedora, run `rustup-init` once after installing `rustup`.
 
-## Development
+### Debian, Ubuntu, and derivatives
 
-Requirements for running the native version: Rust 1.93 or later and GTK 4.20 with the platform development libraries.
+```sh
+sudo apt-get install build-essential rustup pkg-config libgtk-4-dev libgtksourceview-5-dev
+```
+
+### Arch-based distributions
+
+```sh
+sudo pacman -S --needed base-devel rustup pkgconf gtk4 gtksourceview5
+```
+
+### openSUSE Tumbleweed
+
+```sh
+sudo zypper install gcc rustup pkgconf-pkg-config gtk4-devel gtksourceview5-devel
+```
+
+### Build and run
 
 ```sh
 cargo run --locked
@@ -102,14 +128,16 @@ flatpak-builder --user --install --force-clean _build io.github.diegopn.potooide
 
 ## Contributing
 
-Bug reports, suggestions, and contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) before opening an issue or pull request.
+Bug reports, suggestions, and contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidance.
+
+## Support
+
+If Potoo is useful in your classes or studies, you can support its continued development:
+
+<p align="left">
+  <a href="https://github.com/sponsors/diegopn"><img alt="Become a sponsor" src="https://img.shields.io/badge/Become_a_sponsor-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white"></a>
+</p>
 
 ## License
 
 Potoo IDE is distributed under the GNU General Public License, version 3 or (at your option) any later version. See [LICENSE](LICENSE).
-
-## Links
-
-- [Project website](https://diegopn.github.io/potoo-site/)
-- [GitHub repository](https://github.com/diegopn/potoo-ide)
-- [Sponsor development](https://github.com/sponsors/diegopn)

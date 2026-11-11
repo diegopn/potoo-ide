@@ -23,6 +23,8 @@ pub(crate) enum LearningProblemKind {
     Syntax,
     Type,
     Runtime,
+    StaticAnalysis,
+    Analysis,
     Logic,
     PossibleLogic,
 }
@@ -30,6 +32,7 @@ pub(crate) enum LearningProblemKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum LearningProblemText {
     InterpreterDiagnostic,
+    AnalysisIncomplete,
     ConstantCondition {
         always_true: bool,
     },
@@ -82,6 +85,7 @@ pub(crate) struct LearningHint {
     pub(crate) topic: LearningTopic,
     pub(crate) name: Option<String>,
     pub(crate) return_type: Option<String>,
+    pub(crate) target: Option<String>,
     pub(crate) parameters: Vec<LearningSymbol>,
     pub(crate) variables: Vec<LearningSymbol>,
     pub(crate) expression: Option<String>,

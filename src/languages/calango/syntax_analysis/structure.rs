@@ -1,122 +1,106 @@
 use std::ops::Range;
 
-use super::lexer::{self, TokenKind};
+use super::lexer;
+use crate::languages::source::{
+    SourceIndex, StatementRules, close_open_blocks, mask_range_preserving_positions,
+    statement_range_with_index,
+};
 
-pub(super) fn statement_range(source: &str, line: usize, column: usize) -> Range<usize> {
-    let line_start = source
-        .split_inclusive('\n')
-        .take(line.saturating_sub(1))
-        .map(str::len)
-        .sum::<usize>();
-    let selected_line = source
-        .split_inclusive('\n')
-        .nth(line.saturating_sub(1))
-        .unwrap_or("");
-    let column_offset = selected_line
-        .char_indices()
-        .nth(column.saturating_sub(1))
-        .map_or(
-            selected_line.trim_end_matches(['\r', '\n']).len(),
-            |(offset, _)| offset,
-        );
-    let target = line_start + column_offset;
-    let line_end = line_start + selected_line.trim_end_matches(['\r', '\n']).len();
+const STATEMENT_RULES: StatementRules<'static> = StatementRules {
+    semicolon_separator: true,
+    block_pairs: &[],
+    root_pairs: &[],
+    multiline_continuations: &[],
+    brace_delimited_blocks: false,
+    case_sensitive_keywords: true,
+};
+
+const DEBUGGER_CLOSE_RULES: StatementRules<'static> = StatementRules {
+    semicolon_separator: true,
+    block_pairs: &[("se", "fimSe")],
+    root_pairs: &[("principal", "fimPrincipal")],
+    multiline_continuations: &[],
+    brace_delimited_blocks: false,
+    case_sensitive_keywords: true,
+};
+
+pub(crate) fn statement_range(source: &str, line: usize, column: usize) -> Option<Range<usize>> {
     let tokens = lexer::tokens(source);
-
-    let mut start = line_start;
-    let mut paren_depth = 0usize;
-    let mut bracket_depth = 0usize;
-    for token in tokens
-        .iter()
-        .filter(|token| token.start >= line_start && token.start < target)
-    {
-        match token.kind {
-            TokenKind::Symbol('(') => paren_depth += 1,
-            TokenKind::Symbol(')') => paren_depth = paren_depth.saturating_sub(1),
-            TokenKind::Symbol('[') => bracket_depth += 1,
-            TokenKind::Symbol(']') => bracket_depth = bracket_depth.saturating_sub(1),
-            TokenKind::Symbol(';') if paren_depth == 0 && bracket_depth == 0 => {
-                start = token.end;
-            }
-            _ => {}
-        }
-    }
-
-    let mut end = line_end;
-    paren_depth = 0;
-    bracket_depth = 0;
-    for token in tokens
-        .iter()
-        .filter(|token| token.start >= target && token.start <= line_end)
-    {
-        match token.kind {
-            TokenKind::Symbol('(') => paren_depth += 1,
-            TokenKind::Symbol(')') => paren_depth = paren_depth.saturating_sub(1),
-            TokenKind::Symbol('[') => bracket_depth += 1,
-            TokenKind::Symbol(']') => bracket_depth = bracket_depth.saturating_sub(1),
-            TokenKind::Symbol(';') if paren_depth == 0 && bracket_depth == 0 => {
-                end = token.end;
-                break;
-            }
-            _ => {}
-        }
-    }
-
-    start.min(end)..end
+    let index = SourceIndex::new_lf_only(source);
+    statement_range_with_index(source, &tokens, line, column, &STATEMENT_RULES, &index)
 }
 
-pub(super) fn mask_diagnostic_statement(source: &str, line: usize, column: usize) -> String {
-    lexer::mask_range(source, statement_range(source, line, column))
-}
-
-pub(super) fn debugger_prefix(source: &str, line: usize, column: usize) -> String {
-    let range = statement_range(source, line, column);
-    source[..range.start.min(source.len())].to_owned()
-}
-
-pub(super) fn words(source: &str) -> Vec<String> {
-    lexer::tokens(source)
-        .into_iter()
-        .filter(|token| token.kind == TokenKind::Word)
-        .map(|token| token.text)
-        .collect()
-}
-
-pub(super) fn close_blocks(
+pub(super) fn mask_diagnostic_statement(
     source: &str,
-    pairs: &[(&str, &str)],
-    root: Option<(&str, &str)>,
-) -> String {
-    let source_words = words(source);
-    let mut stack = Vec::<&str>::new();
-    let mut index = 0usize;
-    while index < source_words.len() {
-        let word = &source_words[index];
-        let closer = pairs
-            .iter()
-            .find(|(opener, _)| *opener == word.as_str())
-            .map(|(_, closer)| *closer)
-            .or_else(|| {
-                root.filter(|(opener, _)| *opener == word.as_str())
-                    .map(|(_, closer)| closer)
-            });
-        if let Some(closer) = closer {
-            stack.push(closer);
-        } else if let Some(closer) = stack.last() {
-            let closer_words = words(closer);
-            if source_words[index..].starts_with(&closer_words) {
-                stack.pop();
-                index += closer_words.len().saturating_sub(1);
-            }
-        }
-        index += 1;
+    line: usize,
+    column: usize,
+) -> Option<String> {
+    let range = statement_range(source, line, column)?;
+    mask_range_preserving_positions(source, range)
+}
+
+pub(super) fn debugger_prefix(source: &str, line: usize, column: usize) -> Option<String> {
+    statement_range(source, line, column)?;
+    let target = SourceIndex::new_lf_only(source).line_column_to_byte(line, column)?;
+    let prefix = source.get(..target)?;
+    close_open_blocks(prefix, &lexer::tokens(prefix), &DEBUGGER_CLOSE_RULES)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{debugger_prefix, mask_diagnostic_statement, statement_range};
+    use crate::languages::source::SourceIndex;
+    use potoo_calango_interpreter::parse;
+
+    #[test]
+    fn statement_range_masks_one_semicolon_statement_and_preserves_later_code() {
+        let source = "algoritmo teste;\nprincipal\nse verdadeiro entao\nescreval(\"fimSe; ; // literal\"); /* ; fimPara */ @; escreva(2);\nfimSe\nfimPrincipal";
+        let diagnostic = parse(source)
+            .expect_err("the selected statement has an invalid token")
+            .remove(0);
+        let range = statement_range(source, diagnostic.line, diagnostic.column)
+            .expect("the semicolon-delimited statement has an unambiguous range");
+
+        assert_eq!(&source[range], "@;");
+        let masked = mask_diagnostic_statement(source, diagnostic.line, diagnostic.column)
+            .expect("the statement can be masked with parser coordinates intact");
+        assert_eq!(masked.len(), source.len());
+        assert!(masked.contains("fimSe; ; // literal"));
+        assert!(masked.contains("escreva(2);"));
+        assert!(parse(&masked).is_ok(), "{masked}");
     }
-    let mut result = source.to_owned();
-    for closer in stack.into_iter().rev() {
-        if !result.ends_with('\n') {
-            result.push('\n');
-        }
-        result.push_str(closer);
+
+    #[test]
+    fn debugger_prefix_closes_only_if_and_main_not_loops_or_routines() {
+        let source = "algoritmo teste;\nprincipal\nse verdadeiro entao\nescreval(\"antes\"); @;\nescreval(\"depois\");\nfimSe\nfimPrincipal";
+        let diagnostic = parse(source)
+            .expect_err("the invalid token follows a complete output statement")
+            .remove(0);
+        let prefix = debugger_prefix(source, diagnostic.line, diagnostic.column)
+            .expect("the if and principal wrapper are safe to close");
+        assert!(prefix.ends_with("fimSe\nfimPrincipal"), "{prefix:?}");
+        assert!(parse(&prefix).is_ok(), "{prefix:?}");
+
+        let source = "algoritmo teste;\nprincipal\ninteiro i;\npara (i de 1 ate 2 passo 1) faca\nescreval(\"antes\"); @;\nfimPara\nfimPrincipal";
+        let diagnostic = parse(source)
+            .expect_err("the loop body contains an invalid token")
+            .remove(0);
+        let prefix = debugger_prefix(source, diagnostic.line, diagnostic.column)
+            .expect("the candidate boundary is known");
+        assert!(parse(&prefix).is_err(), "an open loop must fail validation");
+        assert!(!prefix.contains("fimPara"), "{prefix:?}");
     }
-    result
+
+    #[test]
+    fn debugger_closers_do_not_confuse_uppercase_identifiers_with_keywords() {
+        let source = "algoritmo teste;\nprincipal\ninteiro Se;\nSe = 1; @;\nfimPrincipal";
+        let diagnostic = parse(source)
+            .expect_err("the invalid token follows a valid assignment")
+            .remove(0);
+        let prefix = debugger_prefix(source, diagnostic.line, diagnostic.column)
+            .expect("the main wrapper can be closed");
+        assert!(parse(&prefix).is_ok(), "{prefix:?}");
+        assert!(!prefix.contains("fimSe"), "{prefix:?}");
+        assert_eq!(SourceIndex::new_lf_only(&prefix).line_count(), 5);
+    }
 }

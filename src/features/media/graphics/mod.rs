@@ -467,4 +467,19 @@ mod tests {
         assert!(checked_image_memory(MAX_IMAGE_MEMORY_BYTES, 1).is_err());
         assert!(checked_image_memory(usize::MAX, 1).is_err());
     }
+
+    #[test]
+    fn graphics_gif_handles_reject_missing_and_non_animation_assets() {
+        let mut state = GraphicsState::default();
+        assert_eq!(
+            get_gif(&state, 42).err().unwrap(),
+            "endereço de imagem inválido (42)"
+        );
+
+        state.images.insert(42, ImageAsset::still(pixbuf_2_by_1()));
+        assert_eq!(
+            get_gif(&state, 42).err().unwrap(),
+            "a imagem (42) não é uma animação GIF"
+        );
+    }
 }

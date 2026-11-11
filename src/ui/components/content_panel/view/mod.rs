@@ -66,6 +66,8 @@ pub(crate) struct DebuggerLearningUi {
     pub(crate) concept_section: gtk::Box,
     pub(crate) concept_title: gtk::Label,
     pub(crate) concept_text: gtk::Label,
+    pub(crate) experiment_section: gtk::Box,
+    pub(crate) experiment: gtk::Label,
     pub(crate) problem_list: gtk::Box,
     pub(crate) problem_empty: gtk::Label,
 }

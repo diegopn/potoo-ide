@@ -1,4 +1,5 @@
 use super::*;
+use crate::languages::project_templates::ProjectTemplateGroup;
 
 pub(in crate::app::window) fn show_open_file_dialog(
     parent: &gtk::ApplicationWindow,
@@ -190,12 +191,10 @@ pub(in crate::app::window) fn show_new_file_dialog(
         button.set_hexpand(true);
     }
     let default_template = ProjectTemplate::default_for_language(default_language);
-    match default_template.language() {
-        Language::Portugol | Language::Visualg | Language::GPortugol | Language::Mapler => {
-            portugol_button.add_css_class("selected")
-        }
-        Language::Potigol => potigol_button.add_css_class("selected"),
-        Language::Calango => calango_button.add_css_class("selected"),
+    match ProjectTemplateGroup::for_language(default_language) {
+        ProjectTemplateGroup::Portugol => portugol_button.add_css_class("selected"),
+        ProjectTemplateGroup::Potigol => potigol_button.add_css_class("selected"),
+        ProjectTemplateGroup::Calango => calango_button.add_css_class("selected"),
     }
     language_row.append(&portugol_button);
     language_row.append(&calango_button);
@@ -211,38 +210,34 @@ pub(in crate::app::window) fn show_new_file_dialog(
     let variant_label = gtk::Label::new(None);
     variant_label.set_xalign(0.0);
     variant_label.add_css_class("potoo-project-field-label");
-    let portugol_variant_picker = gtk::DropDown::from_strings(&[
-        "G-Portugol (.gpt)",
-        "VisuAlg (.alg)",
-        "Portugol Studio 2.0 (.por)",
-        "Mapler (.mapler)",
-    ]);
+    let portugol_variant_picker = gtk::DropDown::from_strings(
+        &super::project::project_template_variant_labels(ProjectTemplateGroup::Portugol),
+    );
     portugol_variant_picker.add_css_class("potoo-settings-picker");
     portugol_variant_picker.set_hexpand(true);
     portugol_variant_picker.set_selected(project_template_variant_index(default_template));
-    let potigol_variant_picker =
-        gtk::DropDown::from_strings(&["Potigol Clássico", "Potigol Jerimum (Jogo 2D)"]);
+    let potigol_variant_picker = gtk::DropDown::from_strings(
+        &super::project::project_template_variant_labels(ProjectTemplateGroup::Potigol),
+    );
     potigol_variant_picker.add_css_class("potoo-settings-picker");
     potigol_variant_picker.set_hexpand(true);
-    potigol_variant_picker.set_selected(if default_template == ProjectTemplate::PotigolJerimum {
-        1
-    } else {
-        0
-    });
+    potigol_variant_picker.set_selected(super::project::project_template_variant_index(
+        default_template,
+    ));
     variant_field.append(&variant_label);
     variant_field.append(&portugol_variant_picker);
     variant_field.append(&potigol_variant_picker);
     content.append(&variant_field);
-    match default_template.language() {
-        Language::Portugol | Language::Visualg | Language::GPortugol | Language::Mapler => {
+    match default_template.group() {
+        ProjectTemplateGroup::Portugol => {
             variant_label.set_text(tr(ui_language, "Variante do Portugol"));
             potigol_variant_picker.set_visible(false);
         }
-        Language::Potigol => {
+        ProjectTemplateGroup::Potigol => {
             variant_label.set_text(tr(ui_language, "Variante do Potigol"));
             portugol_variant_picker.set_visible(false);
         }
-        Language::Calango => {
+        ProjectTemplateGroup::Calango => {
             variant_field.set_visible(false);
             portugol_variant_picker.set_visible(false);
             potigol_variant_picker.set_visible(false);
@@ -286,7 +281,9 @@ pub(in crate::app::window) fn show_new_file_dialog(
         variant_label_for_portugol.set_text(tr(ui_language, "Variante do Portugol"));
         portugol_picker_for_portugol.set_visible(true);
         potigol_picker_for_portugol.set_visible(false);
-        portugol_picker_for_portugol.set_selected(1);
+        portugol_picker_for_portugol.set_selected(super::project::project_template_variant_index(
+            ProjectTemplate::Visualg,
+        ));
     });
     let portugol_for_potigol = portugol_button.clone();
     let calango_for_potigol = calango_button.clone();
@@ -305,7 +302,9 @@ pub(in crate::app::window) fn show_new_file_dialog(
         variant_label_for_potigol.set_text(tr(ui_language, "Variante do Potigol"));
         portugol_picker_for_potigol.set_visible(false);
         potigol_picker_for_potigol.set_visible(true);
-        potigol_picker_for_potigol.set_selected(0);
+        potigol_picker_for_potigol.set_selected(super::project::project_template_variant_index(
+            ProjectTemplate::PotigolClassic,
+        ));
     });
     let portugol_for_calango = portugol_button.clone();
     let potigol_for_calango = potigol_button.clone();

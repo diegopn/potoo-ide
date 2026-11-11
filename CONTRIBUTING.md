@@ -1,6 +1,8 @@
 # Contributing
 
-Contributions are welcome, including bug reports, application testing, documentation improvements, and code. The project is still at an early stage, so feedback on the experience for students and teachers is also valuable.
+Contributions are welcome, including bug reports, application testing, documentation improvements, and code. The project is still at an early stage, so feedback on the experience for students and teachers is also valuable. By participating, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+For security vulnerabilities, follow [SECURITY.md](SECURITY.md); do not report them publicly.
 
 ## Report a bug
 
@@ -15,7 +17,7 @@ Use examples created for the report. Do not send personal documents, private dat
 
 ## Set up the development environment
 
-Install Rust 1.93 or later and the GTK 4.20 development libraries available for your distribution. Then run:
+Install the dependencies for your distribution as described in the [README build instructions](README.md#building-from-source-on-linux). Then run:
 
 ```sh
 cargo run --locked

@@ -5,6 +5,7 @@ mod documents;
 mod execution_events;
 mod learning;
 mod localization;
+mod messages;
 mod persistence;
 mod project;
 mod settings;
@@ -16,13 +17,13 @@ use self::analysis::{
     DiagnosticNavigation, DiagnosticsAnalysisWorker, LearningAnalysisWorker,
     invalidate_learning_hint, project_scan_is_current,
 };
-pub(crate) use self::analysis::{MainWindowMsg, RightPanelSection};
 use self::dialogs::*;
 use self::learning::*;
 use self::localization::{ThemePreference, theme_is_dark};
 #[cfg(test)]
 use self::localization::{UI_TRANSLATION_KEYS, translate_known_text};
 pub(crate) use self::localization::{UiLanguage, tr};
+pub(crate) use self::messages::{MainWindowMsg, RightPanelSection, should_persist_after};
 use self::persistence::*;
 use self::project::*;
 #[cfg(test)]
@@ -33,7 +34,8 @@ use crate::features::execution::{
     self, ControlAction, DebuggerSnapshot, ExecutionEvent, InputPrompt,
 };
 use crate::features::learning::{
-    LearningHint, LearningSymbol, LearningTopic, catalog, learning_hint_with_runtime_cancellable,
+    LearningHint, LearningSymbol, LearningTopic, assignment_operator, catalog,
+    learning_hint_with_runtime_cancellable,
 };
 use crate::languages::model::{Language, ProjectTemplate};
 use crate::ui::{
@@ -155,7 +157,7 @@ mod ui_language_tests {
         normalized_project_item_name, project_scan_is_current, supported_save_path, tr,
         translate_known_text,
     };
-    use crate::features::learning::{LearningTopic, learning_hint};
+    use crate::features::learning::{LearningHint, LearningSymbol, LearningTopic, learning_hint};
     use crate::languages::model::Language;
     use std::path::{Path, PathBuf};
 
@@ -281,16 +283,24 @@ mod ui_language_tests {
         let (void_text, _, _) = learning_copy(&void_function, UiLanguage::Portuguese);
         assert!(void_text.contains("vazio"));
         assert!(void_text.contains("não devolve um valor"));
+        let (_, _, void_experiment) = learning_copy(&void_function, UiLanguage::Portuguese);
+        assert!(void_experiment.contains("valor"));
+        assert!(void_experiment.contains("ações"));
+        assert!(!void_experiment.contains("resultado devolvido"));
 
         let text_function = learning_hint(portugol, 3, Language::Portugol);
         let (text_explanation, text_concept, _) =
             learning_copy(&text_function, UiLanguage::English);
         assert!(text_explanation.contains("cadeia"));
         assert!(text_concept.contains("text"));
+        let (_, _, function_experiment) = learning_copy(&text_function, UiLanguage::Portuguese);
+        assert!(function_experiment.contains("valor"));
 
         let vector = learning_hint(portugol, 5, Language::Portugol);
-        let (vector_text, _, _) = learning_copy(&vector, UiLanguage::Portuguese);
+        let (vector_text, _, vector_experiment) = learning_copy(&vector, UiLanguage::Portuguese);
         assert!(vector_text.contains("vetor com 3 posições"));
+        assert!(vector_experiment.contains("valores"));
+        assert!(vector_experiment.contains("elemento"));
 
         let matrix = learning_hint(portugol, 6, Language::Portugol);
         let (matrix_text, _, _) = learning_copy(&matrix, UiLanguage::Portuguese);
@@ -302,6 +312,408 @@ mod ui_language_tests {
         let vector = learning_hint(visualg, 3, Language::Visualg);
         let (visualg_text, _, _) = learning_copy(&vector, UiLanguage::Portuguese);
         assert!(visualg_text.contains("índices de 2 até 5"));
+    }
+
+    #[test]
+    fn shared_copy_composer_covers_every_topic_with_explicit_facts() {
+        fn hint(topic: LearningTopic, name: Option<&str>) -> LearningHint {
+            LearningHint {
+                line: 1,
+                column: 1,
+                language: Language::Portugol,
+                topic,
+                name: name.map(str::to_owned),
+                return_type: None,
+                target: None,
+                parameters: Vec::new(),
+                variables: Vec::new(),
+                expression: None,
+                experiment_expression: None,
+                call: None,
+                problems: Vec::new(),
+            }
+        }
+
+        fn symbol(name: &str, initializer: Option<&str>) -> LearningSymbol {
+            LearningSymbol {
+                name: name.to_owned(),
+                type_name: "inteiro".to_owned(),
+                is_constant: false,
+                by_reference: false,
+                dimensions: Vec::new(),
+                initializer: initializer.map(str::to_owned),
+            }
+        }
+
+        let mut function = hint(LearningTopic::Function, Some("somar"));
+        function.return_type = Some("inteiro".to_owned());
+        function.parameters.push(symbol("valor", None));
+
+        let mut procedure = hint(LearningTopic::Procedure, Some("registrar"));
+        procedure.parameters.push(symbol("valor", None));
+
+        let mut decision = hint(LearningTopic::Decision, Some("se"));
+        decision.expression = Some("idade >= 18".to_owned());
+        decision.experiment_expression = Some("idade >= 16".to_owned());
+
+        let mut loop_hint = hint(LearningTopic::Loop, Some("enquanto"));
+        loop_hint.expression = Some("idade > 0".to_owned());
+        loop_hint.experiment_expression = Some("idade > 2".to_owned());
+
+        let mut input = hint(LearningTopic::Input, Some("leia"));
+        input.target = Some("idade".to_owned());
+
+        let mut output = hint(LearningTopic::Output, Some("escreva"));
+        output.expression = Some("idade".to_owned());
+
+        let mut variable = hint(LearningTopic::Variable, None);
+        variable.variables.push(symbol("idade", Some("18")));
+
+        let mut assignment = hint(LearningTopic::Assignment, Some("idade"));
+        assignment.expression = Some("idade + 1".to_owned());
+
+        let mut call = hint(LearningTopic::Call, Some("somar"));
+        call.call = Some(crate::features::learning::SourceCall {
+            receiver: None,
+            member: "somar".to_owned(),
+            arguments: vec!["idade".to_owned()],
+            library: None,
+        });
+
+        let mut unknown_library = hint(LearningTopic::LibraryCall, Some("limpar"));
+        unknown_library.call = Some(crate::features::learning::SourceCall {
+            receiver: Some("tela".to_owned()),
+            member: "limpar".to_owned(),
+            arguments: Vec::new(),
+            library: Some("biblioteca-desconhecida".to_owned()),
+        });
+
+        let import = hint(LearningTopic::Import, Some("jerimum"));
+
+        let mut return_hint = hint(LearningTopic::Return, Some("retorne"));
+        return_hint.return_type = Some("inteiro".to_owned());
+        return_hint.expression = Some("valor * 2".to_owned());
+
+        let mut program = hint(LearningTopic::Program, None);
+        program.expression = Some("inicio".to_owned());
+
+        let unrecognized = hint(LearningTopic::Unrecognized, None);
+
+        let cases = [
+            (
+                "Function",
+                function,
+                "somar",
+                Some("inteiro"),
+                Some("valor"),
+            ),
+            (
+                "Procedure",
+                procedure,
+                "registrar",
+                Some("rotina"),
+                Some("valor"),
+            ),
+            (
+                "Decision",
+                decision,
+                "idade >= 18",
+                Some("verdadeira ou falsa"),
+                Some("idade >= 16"),
+            ),
+            (
+                "Loop",
+                loop_hint,
+                "idade > 0",
+                Some("idade > 0"),
+                Some("idade > 2"),
+            ),
+            (
+                "Input",
+                input,
+                "idade",
+                Some("tipo solicitado"),
+                Some("idade"),
+            ),
+            (
+                "Output",
+                output,
+                "idade",
+                Some("quebra de linha"),
+                Some("idade"),
+            ),
+            (
+                "Variable",
+                variable,
+                "idade",
+                Some("tipo define"),
+                Some("idade"),
+            ),
+            (
+                "Assignment",
+                assignment,
+                "idade + 1",
+                Some("expressão à direita"),
+                Some("idade + 1"),
+            ),
+            (
+                "Call",
+                call,
+                "somar(idade)",
+                Some("transfere a execução"),
+                Some("somar(idade)"),
+            ),
+            (
+                "LibraryCall",
+                unknown_library,
+                "descrição verificada",
+                None,
+                None,
+            ),
+            ("Import", import, "jerimum", Some("biblioteca"), None),
+            (
+                "Return",
+                return_hint,
+                "valor * 2",
+                Some("resultado da função"),
+                Some("valor * 2"),
+            ),
+            ("Program", program, "inicio", None, None),
+            (
+                "Unrecognized",
+                unrecognized,
+                "não contém uma instrução reconhecida",
+                None,
+                None,
+            ),
+        ];
+
+        for (topic, hint, explanation_fact, concept_fact, experiment_fact) in cases {
+            let (explanation, concept, experiment) = learning_copy(&hint, UiLanguage::Portuguese);
+            assert!(
+                explanation.contains(explanation_fact),
+                "{topic} explanation: {explanation}"
+            );
+            match concept_fact {
+                Some(fact) => assert!(concept.contains(fact), "{topic} concept: {concept}"),
+                None => assert!(concept.is_empty(), "{topic} concept: {concept}"),
+            }
+            match experiment_fact {
+                Some(fact) => {
+                    assert!(
+                        experiment.contains(fact),
+                        "{topic} experiment: {experiment}"
+                    )
+                }
+                None => assert!(experiment.is_empty(), "{topic} experiment: {experiment}"),
+            }
+        }
+    }
+
+    const COPY_AUDIT_TOPICS: [LearningTopic; 14] = [
+        LearningTopic::Function,
+        LearningTopic::Procedure,
+        LearningTopic::Decision,
+        LearningTopic::Loop,
+        LearningTopic::Input,
+        LearningTopic::Output,
+        LearningTopic::Variable,
+        LearningTopic::Assignment,
+        LearningTopic::Call,
+        LearningTopic::LibraryCall,
+        LearningTopic::Import,
+        LearningTopic::Return,
+        LearningTopic::Program,
+        LearningTopic::Unrecognized,
+    ];
+
+    struct CopyTopicEvidence {
+        topic: LearningTopic,
+        test: fn(),
+    }
+
+    struct ProfileCopyAudit {
+        fixture: &'static str,
+        topic_evidence: &'static [CopyTopicEvidence],
+        not_applicable_topics: &'static [LearningTopic],
+        not_applicable_reason: &'static str,
+    }
+
+    const PROFILE_COPY_AUDIT: [ProfileCopyAudit; 7] = [
+        ProfileCopyAudit {
+            fixture: "Portugol Studio 2.0",
+            topic_evidence: &[
+                CopyTopicEvidence { topic: LearningTopic::Function, test: learning_copy_teaches_dialect_types_and_array_shapes },
+                CopyTopicEvidence { topic: LearningTopic::Decision, test: learning_copy_uses_each_dialects_condition_and_loop_kind },
+                CopyTopicEvidence { topic: LearningTopic::Loop, test: learning_copy_uses_each_dialects_condition_and_loop_kind },
+                CopyTopicEvidence { topic: LearningTopic::Input, test: learning_copy_explains_potigol_input_types_and_dialects },
+                CopyTopicEvidence { topic: LearningTopic::Output, test: learning_copy_explains_output_line_behavior_in_each_dialect },
+                CopyTopicEvidence { topic: LearningTopic::Variable, test: learning_copy_teaches_dialect_types_and_array_shapes },
+                CopyTopicEvidence { topic: LearningTopic::Assignment, test: learning_copy_uses_each_dialects_assignment_operator_and_target },
+                CopyTopicEvidence { topic: LearningTopic::Call, test: learning_copy_derives_calls_returns_and_variables_from_real_profiles },
+                CopyTopicEvidence { topic: LearningTopic::Return, test: learning_copy_derives_calls_returns_and_variables_from_real_profiles },
+                CopyTopicEvidence { topic: LearningTopic::Program, test: learning_copy_preserves_nested_output_expression_and_describes_program_structure },
+                CopyTopicEvidence { topic: LearningTopic::Unrecognized, test: learning_copy_keeps_unrecognized_lines_unverified_in_all_fixture_modes },
+            ],
+            not_applicable_topics: &[LearningTopic::Procedure, LearningTopic::LibraryCall, LearningTopic::Import],
+            not_applicable_reason: "Studio 2.0 has no separate Procedure or Import fact, and its verified library-call catalog is empty.",
+        },
+        ProfileCopyAudit {
+            fixture: "G-Portugol",
+            topic_evidence: &[
+                CopyTopicEvidence { topic: LearningTopic::Function, test: learning_copy_uses_gportugol_terms_and_types },
+                CopyTopicEvidence { topic: LearningTopic::Decision, test: learning_copy_uses_each_dialects_condition_and_loop_kind },
+                CopyTopicEvidence { topic: LearningTopic::Loop, test: learning_copy_uses_each_dialects_condition_and_loop_kind },
+                CopyTopicEvidence { topic: LearningTopic::Input, test: learning_copy_explains_potigol_input_types_and_dialects },
+                CopyTopicEvidence { topic: LearningTopic::Output, test: learning_copy_explains_output_line_behavior_in_each_dialect },
+                CopyTopicEvidence { topic: LearningTopic::Variable, test: learning_copy_uses_gportugol_terms_and_types },
+                CopyTopicEvidence { topic: LearningTopic::Assignment, test: learning_copy_uses_each_dialects_assignment_operator_and_target },
+                CopyTopicEvidence { topic: LearningTopic::Call, test: learning_copy_derives_calls_returns_and_variables_from_real_profiles },
+                CopyTopicEvidence { topic: LearningTopic::Return, test: learning_copy_uses_gportugol_terms_and_types },
+                CopyTopicEvidence { topic: LearningTopic::Program, test: learning_copy_uses_gportugol_terms_and_types },
+                CopyTopicEvidence { topic: LearningTopic::Unrecognized, test: learning_copy_keeps_unrecognized_lines_unverified_in_all_fixture_modes },
+            ],
+            not_applicable_topics: &[LearningTopic::Procedure, LearningTopic::LibraryCall, LearningTopic::Import],
+            not_applicable_reason: "G-Portugol has no separate Procedure, Import, or verified library-call fact in its current profile.",
+        },
+        ProfileCopyAudit {
+            fixture: "Mapler",
+            topic_evidence: &[
+                CopyTopicEvidence { topic: LearningTopic::Decision, test: learning_copy_uses_each_dialects_condition_and_loop_kind },
+                CopyTopicEvidence { topic: LearningTopic::Loop, test: learning_copy_uses_each_dialects_condition_and_loop_kind },
+                CopyTopicEvidence { topic: LearningTopic::Input, test: learning_copy_explains_potigol_input_types_and_dialects },
+                CopyTopicEvidence { topic: LearningTopic::Output, test: learning_copy_explains_output_line_behavior_in_each_dialect },
+                CopyTopicEvidence { topic: LearningTopic::Variable, test: mapler_declarations_use_mapler_type_spelling_and_explain_the_value },
+                CopyTopicEvidence { topic: LearningTopic::Assignment, test: learning_copy_uses_each_dialects_assignment_operator_and_target },
+                CopyTopicEvidence { topic: LearningTopic::Call, test: mapler_module_calls_use_semicolon_syntax_and_module_guidance },
+                CopyTopicEvidence { topic: LearningTopic::Unrecognized, test: learning_copy_keeps_unrecognized_lines_unverified_in_all_fixture_modes },
+            ],
+            not_applicable_topics: &[LearningTopic::Program, LearningTopic::Function, LearningTopic::Procedure, LearningTopic::LibraryCall, LearningTopic::Import, LearningTopic::Return],
+            not_applicable_reason: "Mapler's current profile does not represent program headers, routines, returns, imports, or a library-call catalog.",
+        },
+        ProfileCopyAudit {
+            fixture: "VisuAlg",
+            topic_evidence: &[
+                CopyTopicEvidence { topic: LearningTopic::Function, test: visualg_copy_teaches_routines_and_each_loop_form },
+                CopyTopicEvidence { topic: LearningTopic::Procedure, test: visualg_copy_teaches_routines_and_each_loop_form },
+                CopyTopicEvidence { topic: LearningTopic::Decision, test: learning_copy_uses_each_dialects_condition_and_loop_kind },
+                CopyTopicEvidence { topic: LearningTopic::Loop, test: visualg_copy_teaches_routines_and_each_loop_form },
+                CopyTopicEvidence { topic: LearningTopic::Input, test: learning_copy_explains_potigol_input_types_and_dialects },
+                CopyTopicEvidence { topic: LearningTopic::Output, test: learning_copy_explains_output_line_behavior_in_each_dialect },
+                CopyTopicEvidence { topic: LearningTopic::Variable, test: learning_copy_teaches_dialect_types_and_array_shapes },
+                CopyTopicEvidence { topic: LearningTopic::Assignment, test: learning_copy_uses_each_dialects_assignment_operator_and_target },
+                CopyTopicEvidence { topic: LearningTopic::Call, test: learning_copy_derives_calls_returns_and_variables_from_real_profiles },
+                CopyTopicEvidence { topic: LearningTopic::Return, test: visualg_copy_teaches_routines_and_each_loop_form },
+                CopyTopicEvidence { topic: LearningTopic::Program, test: visualg_copy_teaches_routines_and_each_loop_form },
+                CopyTopicEvidence { topic: LearningTopic::Unrecognized, test: learning_copy_keeps_unrecognized_lines_unverified_in_all_fixture_modes },
+            ],
+            not_applicable_topics: &[LearningTopic::LibraryCall, LearningTopic::Import],
+            not_applicable_reason: "VisuAlg has no verified import or library-call catalog in its current profile.",
+        },
+        ProfileCopyAudit {
+            fixture: "Calango",
+            topic_evidence: &[
+                CopyTopicEvidence { topic: LearningTopic::Function, test: calango_copy_uses_program_routine_and_statement_facts },
+                CopyTopicEvidence { topic: LearningTopic::Procedure, test: calango_copy_uses_program_routine_and_statement_facts },
+                CopyTopicEvidence { topic: LearningTopic::Decision, test: learning_copy_uses_each_dialects_condition_and_loop_kind },
+                CopyTopicEvidence { topic: LearningTopic::Loop, test: calango_copy_uses_program_routine_and_statement_facts },
+                CopyTopicEvidence { topic: LearningTopic::Input, test: calango_copy_uses_program_routine_and_statement_facts },
+                CopyTopicEvidence { topic: LearningTopic::Output, test: calango_copy_uses_program_routine_and_statement_facts },
+                CopyTopicEvidence { topic: LearningTopic::Variable, test: learning_copy_derives_calls_returns_and_variables_from_real_profiles },
+                CopyTopicEvidence { topic: LearningTopic::Assignment, test: calango_copy_uses_program_routine_and_statement_facts },
+                CopyTopicEvidence { topic: LearningTopic::Call, test: learning_copy_derives_calls_returns_and_variables_from_real_profiles },
+                CopyTopicEvidence { topic: LearningTopic::Return, test: learning_copy_derives_calls_returns_and_variables_from_real_profiles },
+                CopyTopicEvidence { topic: LearningTopic::Program, test: calango_copy_uses_program_routine_and_statement_facts },
+                CopyTopicEvidence { topic: LearningTopic::Unrecognized, test: learning_copy_keeps_unrecognized_lines_unverified_in_all_fixture_modes },
+            ],
+            not_applicable_topics: &[LearningTopic::LibraryCall, LearningTopic::Import],
+            not_applicable_reason: "Calango has no verified import or library-call catalog in its current profile.",
+        },
+        ProfileCopyAudit {
+            fixture: "Potigol Classic",
+            topic_evidence: &[
+                CopyTopicEvidence { topic: LearningTopic::Function, test: learning_copy_derives_calls_returns_and_variables_from_real_profiles },
+                CopyTopicEvidence { topic: LearningTopic::Decision, test: learning_copy_uses_each_dialects_condition_and_loop_kind },
+                CopyTopicEvidence { topic: LearningTopic::Loop, test: learning_copy_uses_each_dialects_condition_and_loop_kind },
+                CopyTopicEvidence { topic: LearningTopic::Input, test: learning_copy_explains_potigol_input_types_and_dialects },
+                CopyTopicEvidence { topic: LearningTopic::Output, test: learning_copy_explains_output_line_behavior_in_each_dialect },
+                CopyTopicEvidence { topic: LearningTopic::Variable, test: learning_copy_derives_calls_returns_and_variables_from_real_profiles },
+                CopyTopicEvidence { topic: LearningTopic::Assignment, test: potigol_classic_and_jerimum_copy_remain_import_aware },
+                CopyTopicEvidence { topic: LearningTopic::Call, test: potigol_classic_and_jerimum_copy_remain_import_aware },
+                CopyTopicEvidence { topic: LearningTopic::Import, test: potigol_classic_and_jerimum_copy_remain_import_aware },
+                CopyTopicEvidence { topic: LearningTopic::Return, test: learning_copy_derives_calls_returns_and_variables_from_real_profiles },
+                CopyTopicEvidence { topic: LearningTopic::Unrecognized, test: learning_copy_keeps_unrecognized_lines_unverified_in_all_fixture_modes },
+            ],
+            not_applicable_topics: &[LearningTopic::Program, LearningTopic::Procedure, LearningTopic::LibraryCall],
+            not_applicable_reason: "Classic has no Program or Procedure AST node, and its calls have no active Jerimum import.",
+        },
+        ProfileCopyAudit {
+            fixture: "Potigol Jerimum",
+            topic_evidence: &[
+                CopyTopicEvidence { topic: LearningTopic::Function, test: learning_copy_derives_calls_returns_and_variables_from_real_profiles },
+                CopyTopicEvidence { topic: LearningTopic::Decision, test: learning_copy_uses_each_dialects_condition_and_loop_kind },
+                CopyTopicEvidence { topic: LearningTopic::Loop, test: learning_copy_uses_each_dialects_condition_and_loop_kind },
+                CopyTopicEvidence { topic: LearningTopic::Input, test: learning_copy_explains_potigol_input_types_and_dialects },
+                CopyTopicEvidence { topic: LearningTopic::Output, test: learning_copy_explains_output_line_behavior_in_each_dialect },
+                CopyTopicEvidence { topic: LearningTopic::Variable, test: learning_copy_derives_calls_returns_and_variables_from_real_profiles },
+                CopyTopicEvidence { topic: LearningTopic::Assignment, test: potigol_classic_and_jerimum_copy_remain_import_aware },
+                CopyTopicEvidence { topic: LearningTopic::Call, test: learning_copy_derives_calls_returns_and_variables_from_real_profiles },
+                CopyTopicEvidence { topic: LearningTopic::LibraryCall, test: learning_copy_derives_calls_returns_and_variables_from_real_profiles },
+                CopyTopicEvidence { topic: LearningTopic::Import, test: potigol_classic_and_jerimum_copy_remain_import_aware },
+                CopyTopicEvidence { topic: LearningTopic::Return, test: learning_copy_derives_calls_returns_and_variables_from_real_profiles },
+                CopyTopicEvidence { topic: LearningTopic::Unrecognized, test: learning_copy_keeps_unrecognized_lines_unverified_in_all_fixture_modes },
+            ],
+            not_applicable_topics: &[LearningTopic::Program, LearningTopic::Procedure],
+            not_applicable_reason: "Jerimum has no explicit Program or separate Procedure AST node; its library-call topic is import-aware.",
+        },
+    ];
+
+    #[test]
+    fn profile_copy_matrix_covers_supported_topics_with_real_facts_and_shared_sections() {
+        let expected_fixtures = [
+            "Portugol Studio 2.0",
+            "G-Portugol",
+            "Mapler",
+            "VisuAlg",
+            "Calango",
+            "Potigol Classic",
+            "Potigol Jerimum",
+        ];
+        assert_eq!(PROFILE_COPY_AUDIT.len(), expected_fixtures.len());
+        assert_eq!(
+            PROFILE_COPY_AUDIT.map(|entry| entry.fixture).as_slice(),
+            expected_fixtures.as_slice()
+        );
+
+        let mut executed_tests = Vec::<fn()>::new();
+        for entry in PROFILE_COPY_AUDIT {
+            assert!(entry.not_applicable_reason.len() > 30, "{}", entry.fixture);
+            for topic in COPY_AUDIT_TOPICS {
+                let has_evidence = entry
+                    .topic_evidence
+                    .iter()
+                    .any(|evidence| evidence.topic == topic);
+                let is_not_applicable = entry.not_applicable_topics.contains(&topic);
+                assert_ne!(
+                    has_evidence, is_not_applicable,
+                    "{} must provide real fixture evidence or an explicit N/A reason for {topic:?}",
+                    entry.fixture
+                );
+            }
+
+            for evidence in entry.topic_evidence {
+                if !executed_tests
+                    .iter()
+                    .any(|test| std::ptr::fn_addr_eq(*test, evidence.test))
+                {
+                    (evidence.test)();
+                    executed_tests.push(evidence.test);
+                }
+            }
+        }
+
+        // Synthetic facts cover only the shared explanation/concept/experiment composer.
+        shared_copy_composer_covers_every_topic_with_explicit_facts();
     }
 
     #[test]
@@ -318,6 +730,14 @@ função nome(): literal\n\
 início\n\
   retorne \"Ana\";\n\
 fim";
+
+        let program = learning_hint(source, 1, Language::GPortugol);
+        assert_eq!(program.topic, LearningTopic::Program);
+        assert!(
+            learning_copy(&program, UiLanguage::Portuguese)
+                .0
+                .contains("algoritmo")
+        );
 
         let (text_variable, _, _) = learning_copy(
             &learning_hint(source, 3, Language::GPortugol),
@@ -346,6 +766,179 @@ fim";
         assert!(function.contains("literal"));
         assert!(concept.contains("literal"));
         assert!(concept.contains("G-Portugol"));
+
+        let (return_text, _, return_experiment) = learning_copy(
+            &learning_hint(source, 11, Language::GPortugol),
+            UiLanguage::Portuguese,
+        );
+        assert!(return_text.contains("\"Ana\""));
+        assert!(return_experiment.contains("\"Ana\""));
+    }
+
+    #[test]
+    fn learning_copy_derives_calls_returns_and_variables_from_real_profiles() {
+        let cases = [
+            (
+                "Portugol Studio 2.0 return",
+                "programa {\n funcao inteiro soma(inteiro a, inteiro b) {\n  retorne a + b\n }\n funcao inicio() {\n  inteiro total = 1\n  soma(total, 2)\n }\n}",
+                3,
+                Language::Portugol,
+                LearningTopic::Return,
+            ),
+            (
+                "Portugol Studio 2.0 variable",
+                "programa {\n funcao inicio() {\n  inteiro total = 1\n }\n}",
+                3,
+                Language::Portugol,
+                LearningTopic::Variable,
+            ),
+            (
+                "Portugol Studio 2.0 call",
+                "programa {\n funcao inicio() {\n  somar(1, 2)\n }\n}",
+                3,
+                Language::Portugol,
+                LearningTopic::Call,
+            ),
+            (
+                "G-Portugol call",
+                "algoritmo aula;\ninício\nsomar(1, 2);\nfim\nfunção soma(a: inteiro, b: inteiro): inteiro\ninício\nretorne a + b;\nfim",
+                3,
+                Language::GPortugol,
+                LearningTopic::Call,
+            ),
+            (
+                "VisuAlg call",
+                "algoritmo \"aula\"\nprocedimento mostrar(valor: inteiro)\ninicio\nescreval(valor)\nfimprocedimento\ninicio\nmostrar(1)\nfimalgoritmo",
+                7,
+                Language::Visualg,
+                LearningTopic::Call,
+            ),
+            (
+                "Calango call",
+                "algoritmo aula;\nfuncao inteiro dobrar(inteiro valor)\nretorna valor * 2;\nfimFuncao\nprincipal\ninteiro pontos;\ndobrar(pontos);\nfimPrincipal",
+                7,
+                Language::Calango,
+                LearningTopic::Call,
+            ),
+            (
+                "Calango variable",
+                "algoritmo aula;\nprincipal\ninteiro pontos;\nfimPrincipal",
+                3,
+                Language::Calango,
+                LearningTopic::Variable,
+            ),
+            (
+                "Calango return",
+                "algoritmo aula;\nfuncao inteiro dobrar(inteiro valor)\nretorna valor * 2;\nfimFuncao\nprincipal\nfimPrincipal",
+                3,
+                Language::Calango,
+                LearningTopic::Return,
+            ),
+            (
+                "Potigol Classic function",
+                "def dobrar(valor: Inteiro): Inteiro\n  retorne valor * 2\nfim",
+                1,
+                Language::Potigol,
+                LearningTopic::Function,
+            ),
+            (
+                "Potigol Classic return",
+                "def dobrar(valor: Inteiro): Inteiro\n  retorne valor * 2\nfim",
+                2,
+                Language::Potigol,
+                LearningTopic::Return,
+            ),
+            (
+                "Potigol Classic variable",
+                "var pontos := 2",
+                1,
+                Language::Potigol,
+                LearningTopic::Variable,
+            ),
+            (
+                "Potigol Classic call",
+                "somar(2, 3)",
+                1,
+                Language::Potigol,
+                LearningTopic::Call,
+            ),
+            (
+                "VisuAlg return",
+                "algoritmo \"aula\"\nfuncao dobrar(valor: inteiro): inteiro\ninicio\nretorne valor * 2\nfimfuncao\ninicio\nfimalgoritmo",
+                4,
+                Language::Visualg,
+                LearningTopic::Return,
+            ),
+            (
+                "Potigol Jerimum call",
+                "use \"jerimum\"\ndef desenhe_personagem(g: Graphics2D): Nada\n  g.setColor(Cor.VERDE.color)\nfim",
+                3,
+                Language::Potigol,
+                LearningTopic::LibraryCall,
+            ),
+        ];
+
+        for (fixture, source, line, language, expected) in cases {
+            let hint = learning_hint(source, line, language);
+            assert_eq!(hint.topic, expected, "{fixture}: {:?}", hint.problems);
+            let (explanation, _, _) = learning_copy(&hint, UiLanguage::Portuguese);
+            assert!(!explanation.is_empty(), "{fixture} produced no explanation");
+        }
+    }
+
+    #[test]
+    fn learning_copy_keeps_unrecognized_lines_unverified_in_all_fixture_modes() {
+        let cases = [
+            (
+                "Portugol Studio 2.0",
+                "programa {\n funcao inicio() {\n  ??\n }\n}",
+                3,
+                Language::Portugol,
+            ),
+            (
+                "G-Portugol",
+                "algoritmo aula;\ninício\n??;\nfim",
+                3,
+                Language::GPortugol,
+            ),
+            (
+                "Mapler",
+                "variaveis\ninicio\n??;\nfim.",
+                3,
+                Language::Mapler,
+            ),
+            (
+                "VisuAlg",
+                "algoritmo \"aula\"\ninicio\n??\nfimalgoritmo",
+                3,
+                Language::Visualg,
+            ),
+            (
+                "Calango",
+                "algoritmo aula;\nprincipal\n??;\nfimPrincipal",
+                3,
+                Language::Calango,
+            ),
+            ("Potigol Classic", "??", 1, Language::Potigol),
+            (
+                "Potigol Jerimum",
+                "use \"jerimum\"\n??",
+                2,
+                Language::Potigol,
+            ),
+        ];
+
+        for (fixture, source, line, language) in cases {
+            let hint = learning_hint(source, line, language);
+            assert_eq!(hint.topic, LearningTopic::Unrecognized, "{fixture}");
+            let (explanation, concept, experiment) = learning_copy(&hint, UiLanguage::Portuguese);
+            assert!(
+                explanation.contains("não reconheceu"),
+                "{fixture}: {explanation}"
+            );
+            assert!(concept.is_empty(), "{fixture}: {concept}");
+            assert!(experiment.is_empty(), "{fixture}: {experiment}");
+        }
     }
 
     #[test]
@@ -411,9 +1004,27 @@ fim";
                 }),
                 "{dialect:?}: {explanation}"
             );
+            assert!(explanation.contains("Olá"), "{dialect:?}: {explanation}");
             assert!(concept.contains("quebra de linha"));
             assert!(experiment.contains("instruções de saída"));
+            assert!(experiment.contains("Olá"), "{dialect:?}: {experiment}");
         }
+    }
+
+    #[test]
+    fn learning_copy_preserves_nested_output_expression_and_describes_program_structure() {
+        let source = "programa {\n funcao inicio() {\n  inteiro idade = 18\n  escreva(calcular(idade))\n }\n}";
+        let output = learning_hint(source, 4, Language::Portugol);
+        assert_eq!(output.expression.as_deref(), Some("calcular(idade)"));
+        let (explanation, _, experiment) = learning_copy(&output, UiLanguage::Portuguese);
+        assert!(explanation.contains("calcular(idade)"));
+        assert!(experiment.contains("calcular(idade)"));
+
+        let program = learning_hint(source, 1, Language::Portugol);
+        let (explanation, concept, experiment) = learning_copy(&program, UiLanguage::Portuguese);
+        assert!(explanation.contains("programa {"));
+        assert!(concept.is_empty());
+        assert!(experiment.is_empty());
     }
 
     #[test]
@@ -476,7 +1087,202 @@ fim";
             assert!(explanation.contains(target));
             assert!(!concept.is_empty());
             assert!(experiment.contains(target));
+            assert!(experiment.contains("1"), "{dialect:?}: {experiment}");
         }
+    }
+
+    #[test]
+    fn visualg_copy_teaches_routines_and_each_loop_form() {
+        let source = "algoritmo \"rotinas\"\nvar\ni: inteiro\nprocedimento mostrar(valor: inteiro)\ninicio\nescreval(valor)\nfimprocedimento\nfuncao dobrar(valor: inteiro): inteiro\ninicio\nretorne valor * 2\nfimfuncao\ninicio\npara i de 1 ate 2 faca\nescreval(i)\nfimpara\nrepita\ni <- i - 1\nate i <= 0\nfimalgoritmo";
+
+        let program = learning_hint(source, 1, Language::Visualg);
+        assert_eq!(program.topic, LearningTopic::Program);
+        assert!(
+            learning_copy(&program, UiLanguage::Portuguese)
+                .0
+                .contains("algoritmo")
+        );
+
+        let variable = learning_hint(source, 3, Language::Visualg);
+        assert_eq!(variable.topic, LearningTopic::Variable);
+        assert!(
+            learning_copy(&variable, UiLanguage::Portuguese)
+                .0
+                .contains("`i`")
+        );
+
+        let procedure = learning_hint(source, 4, Language::Visualg);
+        assert_eq!(procedure.topic, LearningTopic::Procedure);
+        assert_eq!(procedure.name.as_deref(), Some("mostrar"));
+        assert_eq!(procedure.parameters[0].name, "valor");
+        let (procedure_text, procedure_concept, procedure_experiment) =
+            learning_copy(&procedure, UiLanguage::Portuguese);
+        assert!(procedure_text.contains("`mostrar`"));
+        assert!(procedure_text.contains("procedimento"));
+        assert!(procedure_concept.contains("Uma rotina"));
+        assert!(procedure_experiment.contains("`valor`"));
+
+        let function = learning_hint(source, 8, Language::Visualg);
+        assert_eq!(function.topic, LearningTopic::Function);
+        assert_eq!(function.name.as_deref(), Some("dobrar"));
+        assert_eq!(function.return_type.as_deref(), Some("inteiro"));
+        let (function_text, _, function_experiment) =
+            learning_copy(&function, UiLanguage::Portuguese);
+        assert!(function_text.contains("`dobrar`"));
+        assert!(function_experiment.contains("`dobrar`"));
+
+        let return_hint = learning_hint(source, 10, Language::Visualg);
+        assert_eq!(return_hint.topic, LearningTopic::Return);
+        assert!(
+            learning_copy(&return_hint, UiLanguage::Portuguese)
+                .0
+                .contains("valor * 2")
+        );
+
+        let for_loop = learning_hint(source, 13, Language::Visualg);
+        assert_eq!(for_loop.topic, LearningTopic::Loop);
+        assert_eq!(for_loop.name.as_deref(), Some("para i"));
+        let (for_text, _, for_experiment) = learning_copy(&for_loop, UiLanguage::Portuguese);
+        assert!(for_text.contains("percorre os valores"));
+        assert!(for_experiment.contains("limite do `para`"));
+
+        let repeat_loop = learning_hint(source, 16, Language::Visualg);
+        assert_eq!(repeat_loop.topic, LearningTopic::Loop);
+        assert_eq!(repeat_loop.name.as_deref(), Some("repita"));
+        let (repeat_text, _, repeat_experiment) =
+            learning_copy(&repeat_loop, UiLanguage::Portuguese);
+        assert!(repeat_text.contains("depois de executar o bloco"));
+        assert!(repeat_experiment.contains("antes da verificação"));
+    }
+
+    #[test]
+    fn calango_copy_uses_program_routine_and_statement_facts() {
+        let source = "algoritmo aula;\nprocedimento mostrar(texto nome)\nescreval(nome);\nfimProcedimento\nfuncao inteiro dobrar(inteiro valor)\nretorna valor * 2;\nfimFuncao\nprincipal\ninteiro pontos;\npontos = 2;\nleia(pontos);\nescreval(pontos);\nse (pontos > 0) entao\npontos = pontos + 1;\nfimSe\npara (pontos de 1 ate 2 passo 1) faca\nescreval(pontos);\nfimPara\nfaca\npontos = pontos - 1;\nenquanto pontos > 0;\nfimPrincipal";
+
+        let program = learning_hint(source, 1, Language::Calango);
+        assert_eq!(program.topic, LearningTopic::Program);
+        assert!(
+            learning_copy(&program, UiLanguage::Portuguese)
+                .0
+                .contains("programa")
+        );
+
+        let procedure = learning_hint(source, 2, Language::Calango);
+        assert_eq!(procedure.topic, LearningTopic::Procedure);
+        let (procedure_text, _, procedure_experiment) =
+            learning_copy(&procedure, UiLanguage::Portuguese);
+        assert!(procedure_text.contains("`mostrar`"));
+        assert!(procedure_text.contains("procedimento"));
+        assert!(procedure_experiment.contains("`nome`"));
+
+        let function = learning_hint(source, 5, Language::Calango);
+        assert_eq!(function.topic, LearningTopic::Function);
+        let (function_text, _, _) = learning_copy(&function, UiLanguage::Portuguese);
+        assert!(function_text.contains("`dobrar`"));
+        assert!(function_text.contains("`inteiro`"));
+
+        let assignment = learning_hint(source, 10, Language::Calango);
+        let (assignment_text, _, assignment_experiment) =
+            learning_copy(&assignment, UiLanguage::Portuguese);
+        assert_eq!(assignment.topic, LearningTopic::Assignment);
+        assert!(assignment_text.contains("`=`"));
+        assert!(assignment_text.contains("`pontos`"));
+        assert!(assignment_experiment.contains("`pontos`"));
+
+        let input = learning_hint(source, 11, Language::Calango);
+        assert_eq!(input.topic, LearningTopic::Input);
+        assert!(
+            learning_copy(&input, UiLanguage::Portuguese)
+                .0
+                .contains("`leia`")
+        );
+        assert!(
+            learning_copy(&input, UiLanguage::Portuguese)
+                .0
+                .contains("`pontos`")
+        );
+
+        let output = learning_hint(source, 12, Language::Calango);
+        assert_eq!(output.topic, LearningTopic::Output);
+        let (output_text, _, output_experiment) = learning_copy(&output, UiLanguage::Portuguese);
+        assert!(output_text.contains("`escreval`"));
+        assert!(output_text.contains("encerra a linha"));
+        assert!(output_experiment.contains("`pontos`"));
+
+        let for_loop = learning_hint(source, 16, Language::Calango);
+        assert_eq!(for_loop.topic, LearningTopic::Loop);
+        let (for_text, _, for_experiment) = learning_copy(&for_loop, UiLanguage::Portuguese);
+        assert!(for_text.contains("`para`"));
+        assert!(for_experiment.contains("limite do `para`"));
+
+        let do_while = learning_hint(source, 19, Language::Calango);
+        assert_eq!(do_while.topic, LearningTopic::Loop);
+        assert_eq!(do_while.name.as_deref(), Some("faca"));
+        let (do_while_text, _, do_while_experiment) =
+            learning_copy(&do_while, UiLanguage::Portuguese);
+        assert!(do_while_text.contains("`faca`"));
+        assert!(do_while_text.contains("depois de executar"));
+        assert!(do_while_experiment.contains("antes da verificação"));
+
+        let unknown = learning_hint(
+            "algoritmo aula;\nprincipal\n@@\nfimPrincipal",
+            3,
+            Language::Calango,
+        );
+        let (_, unknown_concept, unknown_experiment) =
+            learning_copy(&unknown, UiLanguage::Portuguese);
+        assert_eq!(unknown.topic, LearningTopic::Unrecognized);
+        assert!(unknown_concept.is_empty());
+        assert!(unknown_experiment.is_empty());
+    }
+
+    #[test]
+    fn mapler_declarations_use_mapler_type_spelling_and_explain_the_value() {
+        let source = "variaveis\nativo: logico;\ninicio\nfim.";
+        let hint = learning_hint(source, 2, Language::Mapler);
+
+        assert_eq!(hint.topic, LearningTopic::Variable);
+        assert_eq!(hint.variables[0].type_name, "logico");
+        let (explanation, _, _) = learning_copy(&hint, UiLanguage::Portuguese);
+        assert!(explanation.contains("`logico`"), "{explanation}");
+        assert!(
+            explanation.contains("valor verdadeiro ou falso"),
+            "{explanation}"
+        );
+        let (english, _, _) = learning_copy(&hint, UiLanguage::English);
+        assert!(english.contains("`logico`"), "{english}");
+        assert!(english.contains("true or false value"), "{english}");
+        let (spanish, _, _) = learning_copy(&hint, UiLanguage::Spanish);
+        assert!(spanish.contains("`logico`"), "{spanish}");
+        assert!(spanish.contains("valor verdadero o falso"), "{spanish}");
+    }
+
+    #[test]
+    fn mapler_module_calls_use_semicolon_syntax_and_module_guidance() {
+        let source = "variaveis executar: modulo;\ninicio\nexecutar;\nfim.\nmodulo executar;\nescrever \"feito\";\nfim modulo;";
+        let hint = learning_hint(source, 3, Language::Mapler);
+
+        assert_eq!(hint.topic, LearningTopic::Call);
+        assert_eq!(
+            hint.call.as_ref().map(|call| call.member.as_str()),
+            Some("executar")
+        );
+        assert!(hint.call.as_ref().unwrap().arguments.is_empty());
+        let (explanation, concept, experiment) = learning_copy(&hint, UiLanguage::Portuguese);
+        assert!(explanation.contains("`executar;`"), "{explanation}");
+        assert!(!explanation.contains("executar()"), "{explanation}");
+        assert!(concept.contains("módulo"), "{concept}");
+        assert!(experiment.contains("módulo"), "{experiment}");
+        let (english_explanation, english_concept, english_experiment) =
+            learning_copy(&hint, UiLanguage::English);
+        assert!(english_explanation.contains("calls the module"));
+        assert!(english_concept.contains("In Mapler"));
+        assert!(english_experiment.contains("instruction in the module"));
+        let (spanish_explanation, spanish_concept, spanish_experiment) =
+            learning_copy(&hint, UiLanguage::Spanish);
+        assert!(spanish_explanation.contains("llama al módulo"));
+        assert!(spanish_concept.contains("En Mapler"));
+        assert!(spanish_experiment.contains("instrucción del módulo"));
     }
 
     #[test]
@@ -499,6 +1305,8 @@ fim";
             assert!(explanation.contains(description));
             assert!(concept.contains("tipo solicitado"));
             assert!(experiment.contains("Digite outro valor"));
+            assert!(explanation.contains("valor"), "{command}: {explanation}");
+            assert!(experiment.contains("valor"), "{command}: {experiment}");
         }
 
         let cases = [
@@ -538,6 +1346,7 @@ fim";
             assert_eq!(hint.topic, LearningTopic::Input, "{dialect:?}: {source}");
             let (explanation, _, _) = learning_copy(&hint, UiLanguage::Portuguese);
             assert!(explanation.contains(command), "{dialect:?}: {explanation}");
+            assert!(explanation.contains("valor"), "{dialect:?}: {explanation}");
         }
     }
 
@@ -614,8 +1423,60 @@ fim";
                 loop_text.contains("testa a condição"),
                 "{dialect:?}: {loop_text}"
             );
+            assert!(loop_text.contains("idade > 0"), "{dialect:?}: {loop_text}");
+            assert!(
+                loop_experiment.contains("idade > 0"),
+                "{dialect:?}: {loop_experiment}"
+            );
             assert!(!loop_experiment.is_empty(), "{dialect:?}");
         }
+    }
+
+    #[test]
+    fn potigol_classic_and_jerimum_copy_remain_import_aware() {
+        let assignment = learning_copy(
+            &learning_hint("pontos := pontos + 1", 1, Language::Potigol),
+            UiLanguage::Portuguese,
+        );
+        assert!(assignment.0.contains("`:=`"));
+        assert!(assignment.0.contains("`pontos`"));
+
+        let typed_input =
+            learning_hint("var idade: Inteiro := leia_inteiro()", 1, Language::Potigol);
+        assert_eq!(typed_input.topic, LearningTopic::Input);
+        let input_copy = learning_copy(&typed_input, UiLanguage::Portuguese);
+        assert!(input_copy.0.contains("`leia_inteiro`"));
+        assert!(input_copy.0.contains("`idade`"));
+
+        let unimported = learning_hint("g.setColor(Cor.VERDE.color)", 1, Language::Potigol);
+        assert_eq!(unimported.topic, LearningTopic::Call);
+        assert_eq!(
+            unimported
+                .call
+                .as_ref()
+                .and_then(|call| call.library.as_deref()),
+            None
+        );
+        let unimported_copy = learning_copy(&unimported, UiLanguage::Portuguese);
+        assert!(!unimported_copy.0.contains("biblioteca Jerimum"));
+        assert!(!unimported_copy.1.to_lowercase().contains("jerimum"));
+        assert!(unimported_copy.2.contains("`g.setColor(Cor.VERDE.color)`"));
+
+        let imported =
+            "use \"jerimum\"\ndef desenhe(g: Graphics2D): Nada\n  g.setColor(Cor.VERDE.color)\nfim";
+        let import_copy = learning_copy(
+            &learning_hint(imported, 1, Language::Potigol),
+            UiLanguage::Portuguese,
+        );
+        assert!(import_copy.0.contains("jerimum"));
+
+        let jerimum = learning_copy(
+            &learning_hint(imported, 3, Language::Potigol),
+            UiLanguage::Portuguese,
+        );
+        assert!(jerimum.0.contains("setColor define"));
+        assert!(jerimum.1.contains("contexto gráfico"));
+        assert!(jerimum.2.contains("Troque o argumento de cor"));
     }
 
     #[test]
@@ -642,6 +1503,20 @@ fim";
         assert!(comment.1.is_empty());
         assert!(comment.2.is_empty());
 
+        let import = learning_copy(
+            &learning_hint("use \"jerimum\"", 1, Language::Potigol),
+            UiLanguage::Portuguese,
+        );
+        assert!(import.0.contains("jerimum"));
+        assert!(!import.1.is_empty());
+        assert!(import.2.is_empty());
+
+        let call_hint = learning_hint("somar(2, 3)", 1, Language::Potigol);
+        assert_eq!(call_hint.topic, LearningTopic::Call);
+        let call = learning_copy(&call_hint, UiLanguage::Portuguese);
+        assert!(call.0.contains("somar(2, 3)"));
+        assert!(call.2.contains("somar(2, 3)"));
+
         let jerimum = learning_copy(
             &learning_hint(
                 "use \"jerimum\"\ndesenhe_personagem(g: Graphics2D): Nada\n  g.setColor(Cor.VERDE.color)\nfim",
@@ -665,6 +1540,22 @@ fim";
         assert!(fill_rect.0.contains("filled rectangle"));
         assert!(fill_rect.2.contains("last two arguments"));
 
+        let mut unknown_library_hint = learning_hint("g.mystery(1)", 1, Language::Potigol);
+        unknown_library_hint.topic = LearningTopic::LibraryCall;
+        unknown_library_hint
+            .call
+            .as_mut()
+            .expect("the call should be recovered")
+            .library = Some("jerimum".to_owned());
+        let unknown_library_call = learning_copy(&unknown_library_hint, UiLanguage::Portuguese);
+        assert!(
+            unknown_library_call
+                .0
+                .contains("a IDE ainda não tem uma descrição verificada")
+        );
+        assert!(unknown_library_call.1.is_empty());
+        assert!(unknown_library_call.2.is_empty());
+
         let game_start = learning_copy(
             &learning_hint(
                 "use \"jerimum\"\njogo.iniciar(\"Jogo\", 320, 200, atualize, desenhe, 60)",
@@ -684,7 +1575,15 @@ fim";
             topic: LearningTopic::Procedure,
             name: Some("registrar".to_owned()),
             return_type: None,
-            parameters: Vec::new(),
+            target: None,
+            parameters: vec![LearningSymbol {
+                name: "valor".to_owned(),
+                type_name: "inteiro".to_owned(),
+                is_constant: false,
+                by_reference: false,
+                dimensions: Vec::new(),
+                initializer: None,
+            }],
             variables: Vec::new(),
             expression: None,
             experiment_expression: None,
@@ -694,6 +1593,7 @@ fim";
         let procedure = learning_copy(&procedure_hint, UiLanguage::Portuguese);
         assert!(procedure.1.contains("rotina"));
         assert!(!procedure.1.contains("VisuAlg"));
+        assert!(procedure.2.contains("valor"));
     }
 
     #[test]
@@ -718,6 +1618,34 @@ fim";
         let mut other_line = learning_hint(source, 1, Language::Potigol);
         merge_editor_diagnostics(&mut other_line, &diagnostics);
         assert!(other_line.problems.is_empty());
+    }
+
+    #[test]
+    fn learning_panel_keeps_one_gportugol_open_comment_warning_after_editor_merge() {
+        let source = "algoritmo aula;\ninício\n  /* comentário aberto";
+        let diagnostics = crate::features::diagnostics::analyze(
+            2,
+            "principal.gpt",
+            None,
+            Language::GPortugol,
+            source,
+        );
+        let mut hint = learning_hint(source, 3, Language::GPortugol);
+        merge_editor_diagnostics(&mut hint, &diagnostics);
+
+        let warnings = hint
+            .problems
+            .iter()
+            .filter(|problem| {
+                problem.kind == crate::features::learning::LearningProblemKind::StaticAnalysis
+                    && problem.message == "Comentário de bloco sem fechamento"
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(
+            warnings[0].suggestion.as_deref(),
+            Some("Adicione `*/` para fechar o comentário de bloco.")
+        );
     }
 
     #[test]

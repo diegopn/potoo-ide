@@ -1,122 +1,240 @@
 use std::ops::Range;
 
-use super::lexer::{self, TokenKind};
+use super::lexer;
+use crate::languages::source::{
+    SourceIndex, SourceToken, SourceTokenKind, StatementRules, mask_range_preserving_positions,
+    statement_range_with_next_line_continuations, token_text,
+};
+use potoo_potigol_interpreter::parse;
 
-pub(super) fn statement_range(source: &str, line: usize, column: usize) -> Range<usize> {
-    let line_start = source
-        .split_inclusive('\n')
-        .take(line.saturating_sub(1))
-        .map(str::len)
-        .sum::<usize>();
-    let selected_line = source
-        .split_inclusive('\n')
-        .nth(line.saturating_sub(1))
-        .unwrap_or("");
-    let column_offset = selected_line
-        .char_indices()
-        .nth(column.saturating_sub(1))
-        .map_or(
-            selected_line.trim_end_matches(['\r', '\n']).len(),
-            |(offset, _)| offset,
-        );
-    let target = line_start + column_offset;
-    let line_end = line_start + selected_line.trim_end_matches(['\r', '\n']).len();
+const NEXT_LINE_CONTINUATIONS: &[&str] = &[
+    "+", "-", "*", "/", "^", "=", "<", ">", ":", ".", "(", "[", "e", "ou", "div", "mod", "formato",
+];
+
+const STATEMENT_RULES: StatementRules<'static> = StatementRules {
+    semicolon_separator: false,
+    block_pairs: &[],
+    root_pairs: &[],
+    multiline_continuations: &[],
+    brace_delimited_blocks: false,
+    case_sensitive_keywords: true,
+};
+
+pub(crate) fn statement_range(source: &str, line: usize, column: usize) -> Option<Range<usize>> {
     let tokens = lexer::tokens(source);
-
-    let mut start = line_start;
-    let mut paren_depth = 0usize;
-    let mut bracket_depth = 0usize;
-    for token in tokens
-        .iter()
-        .filter(|token| token.start >= line_start && token.start < target)
-    {
-        match token.kind {
-            TokenKind::Symbol('(') => paren_depth += 1,
-            TokenKind::Symbol(')') => paren_depth = paren_depth.saturating_sub(1),
-            TokenKind::Symbol('[') => bracket_depth += 1,
-            TokenKind::Symbol(']') => bracket_depth = bracket_depth.saturating_sub(1),
-            TokenKind::Symbol(';') if paren_depth == 0 && bracket_depth == 0 => {
-                start = token.end;
-            }
-            _ => {}
-        }
-    }
-
-    let mut end = line_end;
-    paren_depth = 0;
-    bracket_depth = 0;
-    for token in tokens
-        .iter()
-        .filter(|token| token.start >= target && token.start <= line_end)
-    {
-        match token.kind {
-            TokenKind::Symbol('(') => paren_depth += 1,
-            TokenKind::Symbol(')') => paren_depth = paren_depth.saturating_sub(1),
-            TokenKind::Symbol('[') => bracket_depth += 1,
-            TokenKind::Symbol(']') => bracket_depth = bracket_depth.saturating_sub(1),
-            TokenKind::Symbol(';') if paren_depth == 0 && bracket_depth == 0 => {
-                end = token.end;
-                break;
-            }
-            _ => {}
-        }
-    }
-
-    start.min(end)..end
+    let index = SourceIndex::new(source);
+    statement_range_with_next_line_continuations(
+        source,
+        &tokens,
+        line,
+        column,
+        &STATEMENT_RULES,
+        NEXT_LINE_CONTINUATIONS,
+        &index,
+    )
 }
 
-pub(super) fn mask_diagnostic_statement(source: &str, line: usize, column: usize) -> String {
-    lexer::mask_range(source, statement_range(source, line, column))
-}
-
-pub(super) fn debugger_prefix(source: &str, line: usize, column: usize) -> String {
-    let range = statement_range(source, line, column);
-    source[..range.start.min(source.len())].to_owned()
-}
-
-pub(super) fn words(source: &str) -> Vec<String> {
-    lexer::tokens(source)
-        .into_iter()
-        .filter(|token| token.kind == TokenKind::Word)
-        .map(|token| token.text)
-        .collect()
-}
-
-pub(super) fn close_blocks(
+pub(super) fn mask_diagnostic_statement(
     source: &str,
-    pairs: &[(&str, &str)],
-    root: Option<(&str, &str)>,
-) -> String {
-    let source_words = words(source);
-    let mut stack = Vec::<&str>::new();
-    let mut index = 0usize;
-    while index < source_words.len() {
-        let word = &source_words[index];
-        let closer = pairs
-            .iter()
-            .find(|(opener, _)| *opener == word.as_str())
-            .map(|(_, closer)| *closer)
-            .or_else(|| {
-                root.filter(|(opener, _)| *opener == word.as_str())
-                    .map(|(_, closer)| closer)
-            });
-        if let Some(closer) = closer {
-            stack.push(closer);
-        } else if let Some(closer) = stack.last() {
-            let closer_words = words(closer);
-            if source_words[index..].starts_with(&closer_words) {
-                stack.pop();
-                index += closer_words.len().saturating_sub(1);
+    line: usize,
+    column: usize,
+) -> Option<String> {
+    let range = statement_range(source, line, column)?;
+    mask_range_preserving_positions(source, range)
+}
+
+pub(crate) fn debugger_prefix(source: &str, line: usize, column: usize) -> Option<String> {
+    statement_range(source, line, column)?;
+    let index = SourceIndex::new(source);
+    let target = index.line_column_to_byte(line, column)?;
+    let prefix = source.get(..target)?;
+    let tokens = lexer::tokens(prefix);
+    let safe_closures = unmatched_safe_conditionals(prefix, &tokens)?;
+    let mut executable = prefix.to_owned();
+    for _ in 0..safe_closures {
+        if !executable.is_empty() && !executable.ends_with('\n') && !executable.ends_with('\r') {
+            executable.push('\n');
+        }
+        executable.push_str("fim\n");
+    }
+    parse(&executable).ok()?;
+    Some(executable)
+}
+
+fn unmatched_safe_conditionals(source: &str, tokens: &[SourceToken]) -> Option<usize> {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Scope {
+        Conditional,
+        Unsafe,
+    }
+
+    let mut stack = Vec::<Scope>::new();
+    for (index, token) in tokens.iter().enumerate() {
+        if token.kind != SourceTokenKind::Word {
+            continue;
+        }
+        let Some(word) = token_text(source, token) else {
+            return None;
+        };
+        match word {
+            "se" => stack.push(Scope::Conditional),
+            "enquanto" | "para" | "escolha" => stack.push(Scope::Unsafe),
+            "def" | "tipo" if !has_same_line_equals(source, tokens, index) => {
+                stack.push(Scope::Unsafe);
             }
+            "fim" => {
+                stack.pop();
+            }
+            _ => {}
         }
-        index += 1;
     }
-    let mut result = source.to_owned();
-    for closer in stack.into_iter().rev() {
-        if !result.ends_with('\n') {
-            result.push('\n');
+
+    stack
+        .iter()
+        .all(|scope| *scope == Scope::Conditional)
+        .then(|| stack.len())
+}
+
+fn has_same_line_equals(source: &str, tokens: &[SourceToken], start: usize) -> bool {
+    let line = tokens[start].line;
+    tokens[start + 1..]
+        .iter()
+        .take_while(|token| token.line == line && token.kind != SourceTokenKind::Newline)
+        .any(|token| token_text(source, token) == Some("="))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{debugger_prefix, mask_diagnostic_statement, statement_range};
+    use crate::languages::source::SourceIndex;
+    use potoo_potigol_interpreter::parse;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn statement_range_selects_a_line_statement_and_preserves_unicode_positions() {
+        let source = "escreva \"ação\"\n@\nescreva 2";
+        let diagnostic = parse(source)
+            .expect_err("the middle statement contains an invalid token")
+            .remove(0);
+        let range = statement_range(
+            source,
+            diagnostic.span.start.line,
+            diagnostic.span.start.column,
+        )
+        .expect("the invalid statement has a precise range");
+        assert_eq!(&source[range], "@", "{diagnostic:?}");
+
+        let masked = mask_diagnostic_statement(
+            source,
+            diagnostic.span.start.line,
+            diagnostic.span.start.column,
+        )
+        .expect("the invalid statement can be masked");
+        assert_eq!(masked.len(), source.len());
+        assert!(parse(&masked).is_ok(), "{masked}");
+        assert_eq!(
+            SourceIndex::new(&masked).byte_to_line_column(source.find("escreva 2").unwrap()),
+            Some((3, 1))
+        );
+    }
+
+    #[test]
+    fn debugger_prefix_closes_nested_conditionals_but_rejects_open_loops() {
+        let source = "se verdadeiro entao\n  se falso entao\n    escreva 1\n    @\n  fim\nfim";
+        let diagnostic = parse(source)
+            .expect_err("the selected statement contains an invalid token")
+            .remove(0);
+        let prefix = debugger_prefix(
+            source,
+            diagnostic.span.start.line,
+            diagnostic.span.start.column,
+        )
+        .expect("nested conditional blocks can be closed safely");
+        assert!(prefix.ends_with("fim\nfim\n"), "{prefix:?}");
+        assert!(parse(&prefix).is_ok(), "{prefix:?}");
+
+        let source = "para i de 1 ate 2 faca\n  escreva i\n  @\nfim";
+        let diagnostic = parse(source)
+            .expect_err("the loop body contains an invalid token")
+            .remove(0);
+        assert!(
+            debugger_prefix(
+                source,
+                diagnostic.span.start.line,
+                diagnostic.span.start.column,
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn debugger_prefix_preserves_empty_and_ambiguous_outcomes() {
+        let source = "@\nescreva 1";
+        let diagnostic = parse(source)
+            .expect_err("the first statement contains an invalid token")
+            .remove(0);
+        assert_eq!(
+            debugger_prefix(
+                source,
+                diagnostic.span.start.line,
+                diagnostic.span.start.column,
+            ),
+            Some(String::new())
+        );
+
+        assert!(statement_range("escreva (\n  1", 2, 3).is_none());
+    }
+
+    #[test]
+    fn statement_range_keeps_parser_supported_leading_operator_continuations_together() {
+        let source = "escreva 1\n+ @\nescreva 2";
+        let diagnostic = parse(source)
+            .expect_err("the continued expression contains an invalid token")
+            .remove(0);
+        let range = statement_range(
+            source,
+            diagnostic.span.start.line,
+            diagnostic.span.start.column,
+        )
+        .expect("the continued expression has a safe statement boundary");
+        assert_eq!(&source[range.clone()], "escreva 1\n+ @");
+
+        let masked = mask_diagnostic_statement(
+            source,
+            diagnostic.span.start.line,
+            diagnostic.span.start.column,
+        )
+        .expect("the complete continued expression can be masked");
+        assert!(parse(&masked).is_ok(), "{masked:?}");
+    }
+
+    #[test]
+    fn long_comment_runs_keep_potigol_continuation_scanning_linear() {
+        fn median_scan_time(comment_lines: usize) -> Duration {
+            let source = format!(
+                "escreva 1\n{}+ @\nescreva 2",
+                "# comentário\n".repeat(comment_lines)
+            );
+            let line = comment_lines + 2;
+            let mut samples = Vec::with_capacity(3);
+            for _ in 0..3 {
+                let started = Instant::now();
+                let range =
+                    statement_range(&source, line, 3).expect("the continued statement has a range");
+                assert!(source[range].starts_with("escreva 1\n"));
+                samples.push(started.elapsed());
+            }
+            samples.sort_unstable();
+            samples[1]
         }
-        result.push_str(closer);
+
+        let _ = median_scan_time(1_000);
+        let small = median_scan_time(12_000);
+        let large = median_scan_time(24_000);
+
+        assert!(
+            large < small.saturating_mul(3),
+            "doubling the comment run should stay near linear: 12k={small:?}, 24k={large:?}"
+        );
     }
-    result
 }

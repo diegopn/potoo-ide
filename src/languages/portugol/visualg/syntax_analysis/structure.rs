@@ -1,122 +1,101 @@
 use std::ops::Range;
 
-use super::lexer::{self, TokenKind};
+use super::lexer;
+use crate::languages::source::{
+    SourceIndex, StatementRules, close_open_blocks, mask_range_preserving_positions,
+    statement_range as shared_statement_range,
+};
 
-pub(super) fn statement_range(source: &str, line: usize, column: usize) -> Range<usize> {
-    let line_start = source
-        .split_inclusive('\n')
-        .take(line.saturating_sub(1))
-        .map(str::len)
-        .sum::<usize>();
-    let selected_line = source
-        .split_inclusive('\n')
-        .nth(line.saturating_sub(1))
-        .unwrap_or("");
-    let column_offset = selected_line
-        .char_indices()
-        .nth(column.saturating_sub(1))
-        .map_or(
-            selected_line.trim_end_matches(['\r', '\n']).len(),
-            |(offset, _)| offset,
-        );
-    let target = line_start + column_offset;
-    let line_end = line_start + selected_line.trim_end_matches(['\r', '\n']).len();
-    let tokens = lexer::tokens(source);
+const STATEMENT_RULES: StatementRules<'static> = StatementRules {
+    // VisuAlg uses line endings to separate statements. A semicolon is optional only for
+    // declarations and never separates two statements on one line.
+    semicolon_separator: false,
+    block_pairs: &[],
+    root_pairs: &[],
+    multiline_continuations: &[],
+    brace_delimited_blocks: false,
+    case_sensitive_keywords: false,
+};
 
-    let mut start = line_start;
-    let mut paren_depth = 0usize;
-    let mut bracket_depth = 0usize;
-    for token in tokens
-        .iter()
-        .filter(|token| token.start >= line_start && token.start < target)
-    {
-        match token.kind {
-            TokenKind::Symbol('(') => paren_depth += 1,
-            TokenKind::Symbol(')') => paren_depth = paren_depth.saturating_sub(1),
-            TokenKind::Symbol('[') => bracket_depth += 1,
-            TokenKind::Symbol(']') => bracket_depth = bracket_depth.saturating_sub(1),
-            TokenKind::Symbol(';') if paren_depth == 0 && bracket_depth == 0 => {
-                start = token.end;
-            }
-            _ => {}
-        }
-    }
+const DEBUGGER_CLOSE_RULES: StatementRules<'static> = StatementRules {
+    semicolon_separator: false,
+    // An unfinished branch may safely stop after the statements before the diagnostic.
+    // Loops, selections, and routines are intentionally left open and fail parser validation.
+    block_pairs: &[("se", "fimse")],
+    root_pairs: &[("algoritmo", "fimalgoritmo")],
+    multiline_continuations: &[],
+    brace_delimited_blocks: false,
+    case_sensitive_keywords: false,
+};
 
-    let mut end = line_end;
-    paren_depth = 0;
-    bracket_depth = 0;
-    for token in tokens
-        .iter()
-        .filter(|token| token.start >= target && token.start <= line_end)
-    {
-        match token.kind {
-            TokenKind::Symbol('(') => paren_depth += 1,
-            TokenKind::Symbol(')') => paren_depth = paren_depth.saturating_sub(1),
-            TokenKind::Symbol('[') => bracket_depth += 1,
-            TokenKind::Symbol(']') => bracket_depth = bracket_depth.saturating_sub(1),
-            TokenKind::Symbol(';') if paren_depth == 0 && bracket_depth == 0 => {
-                end = token.end;
-                break;
-            }
-            _ => {}
-        }
-    }
-
-    start.min(end)..end
+pub(crate) fn statement_range(source: &str, line: usize, column: usize) -> Option<Range<usize>> {
+    shared_statement_range(
+        source,
+        &lexer::tokens(source),
+        line,
+        column,
+        &STATEMENT_RULES,
+    )
 }
 
-pub(super) fn mask_diagnostic_statement(source: &str, line: usize, column: usize) -> String {
-    lexer::mask_range(source, statement_range(source, line, column))
-}
-
-pub(super) fn debugger_prefix(source: &str, line: usize, column: usize) -> String {
-    let range = statement_range(source, line, column);
-    source[..range.start.min(source.len())].to_owned()
-}
-
-pub(super) fn words(source: &str) -> Vec<String> {
-    lexer::tokens(source)
-        .into_iter()
-        .filter(|token| token.kind == TokenKind::Word)
-        .map(|token| token.text)
-        .collect()
-}
-
-pub(super) fn close_blocks(
+pub(super) fn mask_diagnostic_statement(
     source: &str,
-    pairs: &[(&str, &str)],
-    root: Option<(&str, &str)>,
-) -> String {
-    let source_words = words(source);
-    let mut stack = Vec::<&str>::new();
-    let mut index = 0usize;
-    while index < source_words.len() {
-        let word = &source_words[index];
-        let closer = pairs
-            .iter()
-            .find(|(opener, _)| *opener == word.as_str())
-            .map(|(_, closer)| *closer)
-            .or_else(|| {
-                root.filter(|(opener, _)| *opener == word.as_str())
-                    .map(|(_, closer)| closer)
-            });
-        if let Some(closer) = closer {
-            stack.push(closer);
-        } else if let Some(closer) = stack.last() {
-            let closer_words = words(closer);
-            if source_words[index..].starts_with(&closer_words) {
-                stack.pop();
-                index += closer_words.len().saturating_sub(1);
-            }
-        }
-        index += 1;
+    line: usize,
+    column: usize,
+) -> Option<String> {
+    let range = statement_range(source, line, column)?;
+    mask_range_preserving_positions(source, range)
+}
+
+pub(super) fn debugger_prefix(source: &str, line: usize, column: usize) -> Option<String> {
+    // Require an unambiguous statement boundary, then cut exactly at the parser's original
+    // scalar-column coordinate. The worker validates this candidate before running it.
+    statement_range(source, line, column)?;
+    let target = SourceIndex::new(source).line_column_to_byte(line, column)?;
+    let prefix = source.get(..target)?;
+    close_open_blocks(prefix, &lexer::tokens(prefix), &DEBUGGER_CLOSE_RULES)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{debugger_prefix, statement_range};
+    use potoo_visualg_interpreter::parse;
+
+    #[test]
+    fn visualg_statement_range_keeps_a_multiline_expression_together() {
+        let source = "algoritmo \"linhas\"\ninicio\nescreval(\n  1 +\n  @\n  2\n)\nfimalgoritmo";
+        let diagnostic = parse(source)
+            .expect_err("the parser reports the newline that interrupts this expression")
+            .remove(0);
+        let range = statement_range(source, diagnostic.line, diagnostic.column)
+            .expect("balanced parentheses define one source statement range");
+
+        assert_eq!(&source[range], "escreval(\n  1 +\n  @\n  2\n)");
     }
-    let mut result = source.to_owned();
-    for closer in stack.into_iter().rev() {
-        if !result.ends_with('\n') {
-            result.push('\n');
-        }
-        result.push_str(closer);
+
+    #[test]
+    fn debugger_prefix_closes_if_and_algorithm_but_leaves_loops_open() {
+        let source = "algoritmo \"if\"\ninicio\nse verdadeiro entao\nescreval(\"ANTES\")\n@\nescreval(\"DEPOIS\")\nfimse\nfimalgoritmo";
+        let diagnostic = parse(source)
+            .expect_err("the conditional body contains an invalid character")
+            .remove(0);
+        let prefix = debugger_prefix(source, diagnostic.line, diagnostic.column)
+            .expect("the if and algorithm can be closed safely");
+
+        assert!(parse(&prefix).is_ok(), "{prefix:?}");
+        assert!(prefix.ends_with("fimse\nfimalgoritmo"), "{prefix:?}");
+
+        let source = "algoritmo \"loop\"\nvar\ni: inteiro\ninicio\ni <- 0\nenquanto i < 1 faca\ni <- i + 1\nescreval(\"DENTRO\")\n@\nescreval(\"DEPOIS\")\nfimenquanto\nfimalgoritmo";
+        let diagnostic = parse(source)
+            .expect_err("the loop body contains an invalid character")
+            .remove(0);
+        let prefix = debugger_prefix(source, diagnostic.line, diagnostic.column)
+            .expect("the candidate boundary is known even though the loop is incomplete");
+
+        assert!(
+            parse(&prefix).is_err(),
+            "an unfinished loop must fail validation"
+        );
+        assert!(!prefix.contains("fimenquanto"), "{prefix:?}");
     }
-    result
 }

@@ -1,40 +1,84 @@
-use crate::languages::model::{
-    SourceCall, SourceConstruct, SourceDimension, SourceLineAnalysis, SourceSymbol,
-};
-use potoo_mapler_interpreter::{Diagnostic, ast::*, parse};
+use std::collections::{HashMap, HashSet};
 
-pub(crate) fn analyze_source_line_cancellable(
+use crate::languages::array_bounds::insert_unique_bounds;
+use crate::languages::model::{
+    SourceCall, SourceConstruct, SourceDiagnostic, SourceDiagnosticKind, SourceDimension,
+    SourceLineAnalysis, SourceLineAnalysisOutcome, SourceSymbol,
+};
+use crate::languages::source::{RecoveryStatus, SourceIndex, recover_parse};
+use potoo_mapler_interpreter::{Diagnostic, DiagnosticKind, ast::*, parse};
+
+pub(crate) fn profile_adapter(
     source: &str,
     one_based_line: usize,
-    is_cancelled: impl Fn() -> bool,
-) -> Result<Option<SourceLineAnalysis>, Vec<Diagnostic>> {
-    if is_cancelled() || one_based_line == 0 || one_based_line > source.lines().count() {
-        return Ok(None);
-    }
-    let (program, diagnostics) = parse_recovering(source, &is_cancelled);
+    is_cancelled: &dyn Fn() -> bool,
+) -> SourceLineAnalysisOutcome {
     if is_cancelled() {
-        return Ok(None);
+        return SourceLineAnalysisOutcome::Cancelled;
     }
-    if diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.line == one_based_line)
-    {
-        return Err(diagnostics);
-    }
-    let Some(program) = program else {
-        return if diagnostics.is_empty() {
-            Ok(None)
-        } else {
-            Err(diagnostics)
+    let source_index = SourceIndex::new_lf_only(source);
+    if one_based_line == 0 || one_based_line > source_index.line_count() {
+        return SourceLineAnalysisOutcome::Complete {
+            analysis: None,
+            diagnostics: Vec::new(),
         };
-    };
+    }
 
+    let recovered = recover_parse(
+        source,
+        parse,
+        |diagnostic: &Diagnostic| (diagnostic.line, diagnostic.column),
+        crate::languages::portugol::mapler::syntax_analysis::views::mask_diagnostic_statement,
+        is_cancelled,
+    );
+    let diagnostics = recovered
+        .diagnostics
+        .into_iter()
+        .map(to_source_diagnostic)
+        .collect::<Vec<_>>();
+
+    match recovered.status {
+        RecoveryStatus::Cancelled => SourceLineAnalysisOutcome::Cancelled,
+        RecoveryStatus::Stalled | RecoveryStatus::LimitReached => {
+            SourceLineAnalysisOutcome::Incomplete { diagnostics }
+        }
+        RecoveryStatus::Complete => {
+            let Some(program) = recovered.program else {
+                return SourceLineAnalysisOutcome::Incomplete { diagnostics };
+            };
+            let analysis = if diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.line == one_based_line)
+            {
+                None
+            } else {
+                analyze_program_line(&program, one_based_line)
+            };
+            SourceLineAnalysisOutcome::Complete {
+                analysis,
+                diagnostics,
+            }
+        }
+    }
+}
+
+fn to_source_diagnostic(diagnostic: Diagnostic) -> SourceDiagnostic {
+    let kind = match diagnostic.kind {
+        DiagnosticKind::Lexical => SourceDiagnosticKind::Lexical,
+        DiagnosticKind::Syntax => SourceDiagnosticKind::Syntax,
+        DiagnosticKind::Type => SourceDiagnosticKind::Type,
+        DiagnosticKind::Runtime => SourceDiagnosticKind::Runtime,
+    };
+    SourceDiagnostic::at_line(kind, diagnostic.message, diagnostic.line, diagnostic.column)
+}
+
+fn analyze_program_line(program: &Program, one_based_line: usize) -> Option<SourceLineAnalysis> {
     if let Some(variable) = program
         .variables
         .iter()
         .find(|variable| variable.line == one_based_line)
     {
-        return Ok(Some(SourceLineAnalysis {
+        return Some(SourceLineAnalysis {
             line: variable.line,
             column: variable.column,
             construct: SourceConstruct::VariableDeclaration,
@@ -48,7 +92,7 @@ pub(crate) fn analyze_source_line_cancellable(
                 .map(source_variable)
                 .collect(),
             call: None,
-        }));
+        });
     }
 
     if let Some(module) = program
@@ -56,7 +100,7 @@ pub(crate) fn analyze_source_line_cancellable(
         .iter()
         .find(|module| module.line == one_based_line)
     {
-        return Ok(Some(SourceLineAnalysis {
+        return Some(SourceLineAnalysis {
             line: module.line,
             column: module.column,
             construct: SourceConstruct::Unrecognized,
@@ -65,53 +109,15 @@ pub(crate) fn analyze_source_line_cancellable(
             parameters: Vec::new(),
             variables: Vec::new(),
             call: None,
-        }));
+        });
     }
 
     for module in &program.modules {
         if let Some(analysis) = analyze_statements(&module.statements, one_based_line) {
-            return Ok(Some(analysis));
+            return Some(analysis);
         }
     }
-    Ok(analyze_statements(&program.statements, one_based_line))
-}
-
-fn parse_recovering<F>(source: &str, is_cancelled: &F) -> (Option<Program>, Vec<Diagnostic>)
-where
-    F: Fn() -> bool,
-{
-    let mut candidate = source.to_owned();
-    let mut diagnostics = Vec::new();
-    for attempt in 0..=64 {
-        if is_cancelled() {
-            return (None, diagnostics);
-        }
-        match parse(&candidate) {
-            Ok(program) => return (Some(program), diagnostics),
-            Err(parse_diagnostics) => {
-                let Some(diagnostic) = parse_diagnostics.into_iter().next() else {
-                    return (None, diagnostics);
-                };
-                let line = diagnostic.line;
-                let column = diagnostic.column;
-                if attempt == 64 {
-                    diagnostics.push(diagnostic);
-                    break;
-                }
-                let recovered = crate::languages::portugol::mapler::syntax_analysis::views::mask_diagnostic_statement(
-                    &candidate,
-                    line,
-                    column,
-                );
-                diagnostics.push(diagnostic);
-                if recovered == candidate {
-                    break;
-                }
-                candidate = recovered;
-            }
-        }
-    }
-    (None, diagnostics)
+    analyze_statements(&program.statements, one_based_line)
 }
 
 fn analyze_statements(statements: &[Statement], line: usize) -> Option<SourceLineAnalysis> {
@@ -191,7 +197,7 @@ fn source_variable(variable: &VariableDeclaration) -> SourceSymbol {
         type_name: match variable.data_type {
             Type::Integer => "inteiro",
             Type::Real => "real",
-            Type::Logical => "lógico",
+            Type::Logical => "logico",
             Type::Chain => "cadeia",
             Type::Character => "caractere",
         }
@@ -211,10 +217,56 @@ fn source_variable(variable: &VariableDeclaration) -> SourceSymbol {
     }
 }
 
+pub(crate) fn profile_declared_array_bounds(
+    source: &str,
+    _masked_source: &str,
+    is_cancelled: &dyn Fn() -> bool,
+) -> Option<HashMap<String, Vec<SourceDimension>>> {
+    if is_cancelled() {
+        return None;
+    }
+    let program = parse(source).ok();
+    if is_cancelled() {
+        return None;
+    }
+    let Some(program) = program else {
+        return Some(HashMap::new());
+    };
+
+    let mut bounds = HashMap::new();
+    let mut ambiguous = HashSet::new();
+    for variable in &program.variables {
+        if is_cancelled() {
+            return None;
+        }
+        let symbol = source_variable(variable);
+        if symbol.dimensions.is_empty()
+            || symbol
+                .dimensions
+                .iter()
+                .any(|dimension| dimension.lower_bound.is_none() || dimension.upper_bound.is_none())
+        {
+            continue;
+        }
+        insert_unique_bounds(
+            &mut bounds,
+            &mut ambiguous,
+            &symbol.name,
+            symbol.dimensions,
+            crate::languages::model::Language::Mapler
+                .profile()
+                .case_sensitive_identifiers,
+        );
+    }
+    if is_cancelled() { None } else { Some(bounds) }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::features::learning::{LearningTopic, learning_hint};
-    use crate::languages::model::Language;
+    use crate::languages::model::{Language, SourceConstruct, SourceLineAnalysisOutcome};
+
+    use super::profile_adapter;
 
     #[test]
     fn recognizes_mapler_output_and_module_calls() {
@@ -223,5 +275,59 @@ mod tests {
             learning_hint(source, 4, Language::Mapler).topic,
             LearningTopic::Output
         );
+    }
+
+    #[test]
+    fn shared_learning_recovery_preserves_mapler_error_kinds_and_later_lines() {
+        let cases = [
+            (
+                "variaveis\nx: inteiro;\ninicio\n@;\nescrever \"depois\";\nfim.",
+                4,
+                5,
+                potoo_mapler_interpreter::DiagnosticKind::Lexical,
+            ),
+            (
+                "variaveis\nx inteiro;\ninicio\nescrever \"depois\";\nfim.",
+                2,
+                4,
+                potoo_mapler_interpreter::DiagnosticKind::Syntax,
+            ),
+        ];
+
+        for (source, error_line, analysis_line, expected_kind) in cases {
+            let expected = potoo_mapler_interpreter::parse(source)
+                .expect_err("the fixture has one original parser diagnostic")
+                .remove(0);
+            assert_eq!(expected.kind, expected_kind);
+            let outcome = profile_adapter(source, analysis_line, &|| false);
+            let SourceLineAnalysisOutcome::Complete {
+                analysis: Some(analysis),
+                diagnostics,
+            } = outcome
+            else {
+                panic!("recovery should analyze a valid later line: {outcome:?}");
+            };
+
+            assert_eq!(analysis.construct, SourceConstruct::Output);
+            let recovered_diagnostic = diagnostics
+                .iter()
+                .find(|diagnostic| diagnostic.line == error_line)
+                .expect("the original error remains visible after recovery");
+            assert_eq!(recovered_diagnostic.message, expected.message);
+            assert_eq!(recovered_diagnostic.column, expected.column);
+            assert_eq!(recovered_diagnostic.byte_range, None);
+            assert_eq!(
+                recovered_diagnostic.kind,
+                match expected_kind {
+                    potoo_mapler_interpreter::DiagnosticKind::Lexical => {
+                        crate::languages::model::SourceDiagnosticKind::Lexical
+                    }
+                    potoo_mapler_interpreter::DiagnosticKind::Syntax => {
+                        crate::languages::model::SourceDiagnosticKind::Syntax
+                    }
+                    _ => unreachable!("the fixture covers lexical and syntax errors only"),
+                }
+            );
+        }
     }
 }

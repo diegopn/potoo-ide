@@ -1,5 +1,5 @@
 use super::{CurrentLearningAnalysis, LearningAnalysisIdentity, invalidate_learning_hint};
-use crate::features::learning::learning_hint;
+use crate::features::learning::{LearningTopic, learning_hint};
 use crate::languages::model::Language;
 
 fn current(language: Language, document_id: u64, line: usize) -> CurrentLearningAnalysis {
@@ -67,4 +67,23 @@ fn beginning_a_refresh_clears_the_previous_line_hint_and_invalidates_its_generat
     assert_eq!(next_generation, 7);
     assert_eq!(generation, 7);
     assert!(hint.is_none());
+}
+
+#[test]
+fn repeated_learning_requests_use_each_source_revision_without_reusing_previous_facts() {
+    let first_revision = learning_hint("escreva \"versão antiga\"", 1, Language::Potigol);
+    let next_revision = learning_hint("idade := 42", 1, Language::Potigol);
+    let other_document = learning_hint("leia_inteiro()", 1, Language::Potigol);
+
+    assert_eq!(first_revision.topic, LearningTopic::Output);
+    assert_eq!(next_revision.topic, LearningTopic::Assignment);
+    assert_eq!(next_revision.name.as_deref(), Some("idade"));
+    assert_eq!(other_document.topic, LearningTopic::Input);
+    assert_eq!(other_document.name.as_deref(), Some("leia_inteiro"));
+
+    let mut current_revision = current(Language::Potigol, 42, 1);
+    current_revision.revision += 1;
+    assert!(!current_revision.accepts(result(Language::Potigol, 42, 1)));
+    let other_document_state = current(Language::Potigol, 43, 1);
+    assert!(!other_document_state.accepts(result(Language::Potigol, 42, 1)));
 }

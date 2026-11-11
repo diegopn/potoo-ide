@@ -8,7 +8,7 @@ Potoo IDE has not published stable releases yet. While the project is under deve
 
 Do not publish vulnerability details in issues, pull requests, discussions, or public comments.
 
-If GitHub shows **Report a vulnerability** on the repository's security page, use the private reporting form. If that option is unavailable, use the [contact page](https://diegopn.github.io/#contato) only to request a private channel. Do not include technical details in that first message or send a proof of concept through a public channel.
+If GitHub shows **Report a vulnerability** on the repository's security page, use the private reporting form. If it is unavailable, use the [contact page](https://diegopn.github.io/#contato) only to request a private channel. Do not include technical details in that first message or send a proof of concept through a public channel.
 
 After arranging a private channel, include the following where possible:
 
@@ -17,4 +17,6 @@ After arranging a private channel, include the following where possible:
 - steps to reproduce the issue and its impact;
 - a minimal proof of concept without credentials, personal data, or other secrets.
 
-There is no formal response deadline. Maintainers will privately coordinate next steps and disclosure, aiming to align it with a fix or mitigation.
+There is no formal response deadline. The maintainer will privately coordinate next steps and disclosure, aiming to align it with a fix or mitigation.
+
+For non-security problems, use [CONTRIBUTING.md](CONTRIBUTING.md). For conduct concerns, see [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).

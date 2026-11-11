@@ -1,72 +1,139 @@
-use crate::languages::model::{SourceConstruct, SourceDimension, SourceLineAnalysis, SourceSymbol};
-use potoo_gportugol_interpreter::{DataType, Diagnostic, ast::*, parse};
-pub(crate) fn analyze_source_line_cancellable(
+use std::collections::{HashMap, HashSet};
+
+use crate::languages::array_bounds::insert_unique_bounds;
+use crate::languages::model::{
+    SourceConstruct, SourceDiagnostic, SourceDiagnosticKind, SourceDimension, SourceLineAnalysis,
+    SourceLineAnalysisOutcome, SourceSymbol,
+};
+use crate::languages::source::{RecoveryStatus, SourceIndex, recover_parse};
+use potoo_gportugol_interpreter::{DataType, Diagnostic, DiagnosticKind, ast::*, parse};
+
+pub(crate) fn profile_adapter(
     source: &str,
     one_based_line: usize,
-    is_cancelled: impl Fn() -> bool,
-) -> Result<Option<SourceLineAnalysis>, Vec<Diagnostic>> {
+    is_cancelled: &dyn Fn() -> bool,
+) -> SourceLineAnalysisOutcome {
     if is_cancelled() {
-        return Ok(None);
+        return SourceLineAnalysisOutcome::Cancelled;
     }
-    if one_based_line == 0 || one_based_line > source.lines().count() {
-        return Ok(None);
+    let source_index = SourceIndex::new_ignoring_leading_bom(source);
+    if one_based_line == 0 || one_based_line > source_index.line_count() {
+        return SourceLineAnalysisOutcome::Complete {
+            analysis: None,
+            diagnostics: Vec::new(),
+        };
     }
 
-    let Some((program, diagnostics)) = parse_recovering(source, &is_cancelled) else {
-        return Ok(None);
-    };
-    if is_cancelled() {
-        return Ok(None);
-    }
-    if diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.span.start.line == one_based_line)
+    let recovered = recover_parse(
+        source,
+        parse,
+        |diagnostic: &Diagnostic| (diagnostic.span.start.line, diagnostic.span.start.column),
+        crate::languages::portugol::g_portugol::syntax_analysis::views::mask_diagnostic_statement,
+        is_cancelled,
+    );
+    let mut diagnostics = recovered
+        .diagnostics
+        .into_iter()
+        .map(to_source_diagnostic)
+        .collect::<Vec<_>>();
+    if !is_cancelled()
+        && let Some(warning) =
+            crate::languages::portugol::g_portugol::diagnostics::unclosed_block_comment_diagnostic(
+                source,
+            )
     {
-        return Err(diagnostics);
+        diagnostics.push(warning);
     }
-    let Some(program) = program else {
-        return Err(diagnostics);
-    };
-    Ok(analyze_program_line(&program, one_based_line))
-}
 
-fn parse_recovering<F>(source: &str, is_cancelled: &F) -> Option<(Option<Program>, Vec<Diagnostic>)>
-where
-    F: Fn() -> bool,
-{
-    let mut candidate = source.to_owned();
-    let mut diagnostics = Vec::new();
-    // shortcut: bound recovery work so repeated editor refreshes stay responsive.
-    for attempt in 0..=64 {
-        if is_cancelled() {
-            return None;
+    match recovered.status {
+        RecoveryStatus::Cancelled => SourceLineAnalysisOutcome::Cancelled,
+        RecoveryStatus::Stalled | RecoveryStatus::LimitReached => {
+            SourceLineAnalysisOutcome::Incomplete { diagnostics }
         }
-        match parse(&candidate) {
-            Ok(program) => return Some((Some(program), diagnostics)),
-            Err(parse_diagnostics) => {
-                let Some(diagnostic) = parse_diagnostics.into_iter().next() else {
-                    return Some((None, diagnostics));
-                };
-                let line = diagnostic.span.start.line;
-                let column = diagnostic.span.start.column;
-                if attempt == 64 {
-                    diagnostics.push(diagnostic);
-                    break;
-                }
-                let recovered = crate::languages::portugol::g_portugol::syntax_analysis::views::mask_diagnostic_statement(
-                    &candidate,
-                    line,
-                    column,
-                );
-                diagnostics.push(diagnostic);
-                if recovered == candidate {
-                    break;
-                }
-                candidate = recovered;
+        RecoveryStatus::Complete => {
+            let Some(program) = recovered.program else {
+                return SourceLineAnalysisOutcome::Incomplete { diagnostics };
+            };
+            let analysis = if diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.line == one_based_line)
+            {
+                None
+            } else {
+                analyze_program_line(&program, one_based_line)
+            };
+            SourceLineAnalysisOutcome::Complete {
+                analysis,
+                diagnostics,
             }
         }
     }
-    Some((None, diagnostics))
+}
+
+pub(crate) fn profile_declared_array_bounds(
+    source: &str,
+    _masked_source: &str,
+    is_cancelled: &dyn Fn() -> bool,
+) -> Option<HashMap<String, Vec<SourceDimension>>> {
+    if is_cancelled() {
+        return None;
+    }
+    let program = parse(source).ok();
+    if is_cancelled() {
+        return None;
+    }
+    let Some(program) = program else {
+        return Some(HashMap::new());
+    };
+
+    let mut bounds = HashMap::new();
+    let mut ambiguous = HashSet::new();
+    for declaration in program.globals.iter().chain(
+        program
+            .functions
+            .iter()
+            .flat_map(|function| function.locals.iter()),
+    ) {
+        if is_cancelled() {
+            return None;
+        }
+        for symbol in source_symbols(declaration) {
+            if symbol.dimensions.is_empty()
+                || symbol
+                    .dimensions
+                    .iter()
+                    .any(|dimension| dimension.upper_bound.is_none())
+            {
+                continue;
+            }
+            insert_unique_bounds(
+                &mut bounds,
+                &mut ambiguous,
+                &symbol.name,
+                symbol.dimensions,
+                crate::languages::model::Language::GPortugol
+                    .profile()
+                    .case_sensitive_identifiers,
+            );
+        }
+    }
+    if is_cancelled() { None } else { Some(bounds) }
+}
+
+fn to_source_diagnostic(diagnostic: Diagnostic) -> SourceDiagnostic {
+    let kind = match diagnostic.kind {
+        DiagnosticKind::Lexical => SourceDiagnosticKind::Lexical,
+        DiagnosticKind::Syntax => SourceDiagnosticKind::Syntax,
+        DiagnosticKind::Type => SourceDiagnosticKind::Type,
+        DiagnosticKind::Runtime => SourceDiagnosticKind::Runtime,
+    };
+    SourceDiagnostic {
+        kind,
+        message: diagnostic.message,
+        line: diagnostic.span.start.line,
+        column: diagnostic.span.start.column,
+        byte_range: Some(diagnostic.span.start.byte_offset..diagnostic.span.end.byte_offset),
+    }
 }
 
 fn analyze_program_line(program: &Program, line: usize) -> Option<SourceLineAnalysis> {

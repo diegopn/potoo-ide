@@ -1,74 +1,5 @@
 use super::*;
 
-pub(super) fn learning_problem_kind(
-    category: crate::features::diagnostics::DiagnosticCategory,
-) -> LearningProblemKind {
-    match category {
-        crate::features::diagnostics::DiagnosticCategory::Lexical
-        | crate::features::diagnostics::DiagnosticCategory::Syntax => LearningProblemKind::Syntax,
-        crate::features::diagnostics::DiagnosticCategory::Type => LearningProblemKind::Type,
-        crate::features::diagnostics::DiagnosticCategory::Runtime => LearningProblemKind::Runtime,
-        crate::features::diagnostics::DiagnosticCategory::StaticAnalysis => {
-            LearningProblemKind::PossibleLogic
-        }
-    }
-}
-
-pub(super) fn diagnostic_problem(
-    kind: LearningProblemKind,
-    line: usize,
-    column: usize,
-    message: String,
-) -> LearningProblem {
-    LearningProblem {
-        kind,
-        severity: LearningSeverity::Error,
-        line,
-        column,
-        text: LearningProblemText::InterpreterDiagnostic,
-        message,
-        suggestion: None,
-    }
-}
-
-pub(super) fn map_calango_diagnostic_kind(
-    kind: potoo_calango_interpreter::DiagnosticKind,
-) -> crate::features::diagnostics::DiagnosticCategory {
-    match kind {
-        potoo_calango_interpreter::DiagnosticKind::Lexical => {
-            crate::features::diagnostics::DiagnosticCategory::Lexical
-        }
-        potoo_calango_interpreter::DiagnosticKind::Syntax => {
-            crate::features::diagnostics::DiagnosticCategory::Syntax
-        }
-        potoo_calango_interpreter::DiagnosticKind::Type => {
-            crate::features::diagnostics::DiagnosticCategory::Type
-        }
-        potoo_calango_interpreter::DiagnosticKind::Runtime => {
-            crate::features::diagnostics::DiagnosticCategory::Runtime
-        }
-    }
-}
-
-pub(super) fn map_mapler_diagnostic_kind(
-    kind: potoo_mapler_interpreter::DiagnosticKind,
-) -> crate::features::diagnostics::DiagnosticCategory {
-    match kind {
-        potoo_mapler_interpreter::DiagnosticKind::Lexical => {
-            crate::features::diagnostics::DiagnosticCategory::Lexical
-        }
-        potoo_mapler_interpreter::DiagnosticKind::Syntax => {
-            crate::features::diagnostics::DiagnosticCategory::Syntax
-        }
-        potoo_mapler_interpreter::DiagnosticKind::Type => {
-            crate::features::diagnostics::DiagnosticCategory::Type
-        }
-        potoo_mapler_interpreter::DiagnosticKind::Runtime => {
-            crate::features::diagnostics::DiagnosticCategory::Runtime
-        }
-    }
-}
-
 pub(super) fn constant_condition_problem(
     line: &str,
     line_number: usize,
@@ -101,18 +32,17 @@ pub(super) fn constant_condition_problem(
 
 pub(super) fn constant_index_problems(
     source: &str,
-    selected_line: &str,
+    selected_statement: &str,
     line_number: usize,
+    statement_column: usize,
     language: Language,
     is_cancelled: &impl Fn() -> bool,
 ) -> Option<Vec<LearningProblem>> {
-    let source_code = without_literals_and_comments(source, language);
-    let arrays = declared_array_bounds(&source_code, language, is_cancelled)?;
-    let code = source_code
-        .lines()
-        .nth(line_number.saturating_sub(1))
-        .unwrap_or(selected_line);
+    let source_code = (language.profile().without_literals_and_comments)(source);
+    let arrays = declared_array_bounds(source, &source_code, language, is_cancelled)?;
+    let code = (language.profile().without_literals_and_comments)(selected_statement);
     let characters = code.chars().collect::<Vec<_>>();
+    let positions = statement_positions(&characters, line_number, statement_column, language);
     let mut problems = Vec::new();
     let mut index = 0;
     while index < characters.len() {
@@ -125,7 +55,12 @@ pub(super) fn constant_index_problems(
             index += 1;
             continue;
         };
-        let Some(dimensions) = arrays.get(&name.to_lowercase()) else {
+        let array_name = if language.profile().case_sensitive_identifiers {
+            name.clone()
+        } else {
+            name.to_lowercase()
+        };
+        let Some(dimensions) = arrays.get(&array_name) else {
             continue;
         };
         skip_spaces(&characters, &mut index);
@@ -148,8 +83,12 @@ pub(super) fn constant_index_problems(
                 problems.push(LearningProblem {
                     kind: LearningProblemKind::Logic,
                     severity: LearningSeverity::Error,
-                    line: line_number,
-                    column: name_start + 1,
+                    line: positions
+                        .get(name_start)
+                        .map_or(line_number, |(line, _)| *line),
+                    column: positions
+                        .get(name_start)
+                        .map_or(statement_column + name_start, |(_, column)| *column),
                     text: LearningProblemText::ConstantIndex {
                         index: value,
                         name: name.clone(),
@@ -159,10 +98,9 @@ pub(super) fn constant_index_problems(
                     message: format!(
                         "O índice {value} está fora dos limites de `{name}` ({lower} a {upper})."
                     ),
-                    suggestion: Some(
-                        "Use um índice dentro da faixa declarada para esse vetor ou matriz."
-                            .to_owned(),
-                    ),
+                    suggestion: Some(format!(
+                        "Use um índice entre {lower} e {upper} em `{name}`."
+                    )),
                 });
             }
             dimension_index += 1;
@@ -172,49 +110,50 @@ pub(super) fn constant_index_problems(
     Some(problems)
 }
 
+fn statement_positions(
+    characters: &[char],
+    first_line: usize,
+    first_column: usize,
+    language: Language,
+) -> Vec<(usize, usize)> {
+    let universal_line_endings = !matches!(language, Language::Calango | Language::Mapler);
+    let mut positions = Vec::with_capacity(characters.len());
+    let (mut line, mut column) = (first_line, first_column);
+    let mut previous_was_carriage_return = false;
+
+    for character in characters {
+        positions.push((line, column));
+        match character {
+            '\r' if universal_line_endings => {
+                line += 1;
+                column = 1;
+                previous_was_carriage_return = true;
+            }
+            '\n' => {
+                if !(universal_line_endings && previous_was_carriage_return) {
+                    line += 1;
+                }
+                column = 1;
+                previous_was_carriage_return = false;
+            }
+            _ => {
+                column += 1;
+                previous_was_carriage_return = false;
+            }
+        }
+    }
+    positions
+}
+
 fn declared_array_bounds(
     source: &str,
+    masked_source: &str,
     language: Language,
     is_cancelled: &impl Fn() -> bool,
 ) -> Option<HashMap<String, Vec<SourceDimension>>> {
-    match language {
-        Language::Portugol => {
-            crate::languages::portugol::studio_20::learning::declared_array_bounds(
-                source,
-                is_cancelled,
-            )
-        }
-        Language::Visualg => crate::languages::portugol::visualg::learning::declared_array_bounds(
-            source,
-            is_cancelled,
-        ),
-        Language::Calango => {
-            crate::languages::calango::learning::declared_array_bounds(source, is_cancelled)
-        }
-        Language::Potigol | Language::GPortugol | Language::Mapler => Some(HashMap::new()),
-    }
-}
-
-fn without_literals_and_comments(source: &str, language: Language) -> String {
-    match language {
-        Language::Portugol => {
-            crate::languages::portugol::studio_20::syntax_analysis::views::without_literals_and_comments(source)
-        }
-        Language::Visualg => {
-            crate::languages::portugol::visualg::syntax_analysis::views::without_literals_and_comments(source)
-        }
-        Language::GPortugol => {
-            crate::languages::portugol::g_portugol::syntax_analysis::views::without_literals_and_comments(source)
-        }
-        Language::Potigol => {
-            crate::languages::potigol::syntax_analysis::views::without_literals_and_comments(source)
-        }
-        Language::Calango => {
-            crate::languages::calango::syntax_analysis::views::without_literals_and_comments(source)
-        }
-        Language::Mapler => {
-            crate::languages::portugol::mapler::syntax_analysis::views::without_literals_and_comments(source)
-        }
+    match language.profile().declared_array_bounds {
+        Some(adapter) => adapter(source, masked_source, is_cancelled),
+        None => Some(HashMap::new()),
     }
 }
 
@@ -249,27 +188,123 @@ pub(super) fn extract_condition(line: &str) -> String {
 }
 
 pub(super) fn suggest_condition_change(condition: &str) -> Option<String> {
-    let (start, number) = condition.char_indices().find_map(|(index, character)| {
-        if character.is_ascii_digit() {
-            let end = condition[index..]
-                .find(|next: char| !next.is_ascii_digit())
-                .map_or(condition.len(), |offset| index + offset);
-            condition[index..end]
-                .parse::<i64>()
-                .ok()
-                .map(|number| (index, number))
-        } else {
-            None
+    let mut index = 0;
+    let mut quote: Option<char> = None;
+    while index < condition.len() {
+        let character = condition[index..].chars().next()?;
+        let next_index = index + character.len_utf8();
+
+        if let Some(active_quote) = quote {
+            if character == '\\' {
+                index = condition[next_index..]
+                    .chars()
+                    .next()
+                    .map_or(next_index, |escaped| next_index + escaped.len_utf8());
+            } else {
+                if character == active_quote {
+                    quote = None;
+                }
+                index = next_index;
+            }
+            continue;
         }
-    })?;
-    let end = condition[start..]
-        .find(|next: char| !next.is_ascii_digit())
-        .map_or(condition.len(), |offset| start + offset);
-    let replacement = number.saturating_sub(2).to_string();
-    Some(format!(
-        "{}{}{}",
-        &condition[..start],
-        replacement,
-        &condition[end..]
-    ))
+
+        if matches!(character, '\'' | '"') {
+            quote = Some(character);
+            index = next_index;
+            continue;
+        }
+        if character == '#'
+            || condition[index..].starts_with("//")
+            || condition[index..].starts_with("/*")
+        {
+            break;
+        }
+        if !character.is_ascii_digit() {
+            index = next_index;
+            continue;
+        }
+
+        let end = condition[index..]
+            .find(|next: char| !next.is_ascii_digit())
+            .map_or(condition.len(), |offset| index + offset);
+        let previous = condition[..index].chars().next_back();
+        let next = condition[end..].chars().next();
+        let is_exponent_continuation = matches!(previous, Some('+' | '-'))
+            && condition[..index]
+                .chars()
+                .rev()
+                .nth(1)
+                .is_some_and(|character| matches!(character, 'e' | 'E'));
+        let is_identifier_continuation = previous.is_some_and(is_identifier_character)
+            || next.is_some_and(is_identifier_character)
+            || is_exponent_continuation;
+
+        if !is_identifier_continuation && let Ok(number) = condition[index..end].parse::<i64>() {
+            let replacement = if number > 2 {
+                number.saturating_sub(2)
+            } else {
+                number.saturating_add(2)
+            }
+            .to_string();
+            return Some(format!(
+                "{}{}{}",
+                &condition[..index],
+                replacement,
+                &condition[end..]
+            ));
+        }
+        index = end;
+    }
+    None
+}
+
+fn is_identifier_character(character: char) -> bool {
+    character.is_alphanumeric() || character == '_'
+}
+
+#[cfg(test)]
+mod condition_suggestion_tests {
+    use super::suggest_condition_change;
+
+    #[test]
+    fn does_not_change_digits_in_identifiers_strings_or_comments() {
+        assert_eq!(
+            suggest_condition_change("nota1 > 0"),
+            Some("nota1 > 2".to_owned())
+        );
+        assert_eq!(suggest_condition_change("texto == \"nota1\""), None);
+        assert_eq!(suggest_condition_change("texto == palavra // nota1"), None);
+    }
+}
+
+#[cfg(test)]
+mod constant_index_location_tests {
+    use super::constant_index_problems;
+    use crate::languages::model::Language;
+
+    #[test]
+    fn constant_index_location_tracks_lf_only_and_universal_line_endings() {
+        let calango = constant_index_problems(
+            "algoritmo dados;\nprincipal\ninteiro dados[3];\nfimPrincipal",
+            "escreva(\r\n dados[3]\r\n)",
+            4,
+            2,
+            Language::Calango,
+            &|| false,
+        )
+        .expect("the analysis is not cancelled");
+        assert_eq!((calango[0].line, calango[0].column), (5, 2));
+
+        let visualg = constant_index_problems(
+            "dados: vetor[1..3] de inteiro",
+            "escreva(\r\n  dados[0]\r\n)",
+            4,
+            1,
+            Language::Visualg,
+            &|| false,
+        )
+        .expect("the analysis is not cancelled");
+        assert_eq!((visualg[0].line, visualg[0].column), (5, 3));
+    }
 }

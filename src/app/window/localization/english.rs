@@ -195,6 +195,14 @@ pub(super) fn translate(portuguese: &'static str) -> &'static str {
         "Erro de execução" => "Runtime error",
         "Análise estática" => "Static analysis",
         "Erro durante a execução" => "Runtime error",
+        "Análise incompleta" => "Analysis incomplete",
+        "Aviso de análise" => "Analysis warning",
+        "A análise foi interrompida antes de recuperar toda a estrutura do programa." => {
+            "Analysis stopped before the full program structure could be recovered."
+        }
+        "A análise encontrou um aviso nesta linha." => {
+            "The analysis found a warning on this line."
+        }
         "Possível problema lógico" => "Possible logic issue",
         "Índice fora dos limites" => "Index out of bounds",
         "A condição é sempre verdadeira; o ramo alternativo pode nunca ser executado." => {
@@ -206,11 +214,23 @@ pub(super) fn translate(portuguese: &'static str) -> &'static str {
         "Confira se a condição deveria comparar uma variável." => {
             "Check whether the condition should compare a variable."
         }
+        "Confira se o divisor pode ser zero antes de fazer a divisão." => {
+            "Check whether the divisor can be zero before dividing."
+        }
+        "Adicione `*/` para fechar o comentário de bloco." => {
+            "Add `*/` to close the block comment."
+        }
+        "Informe o valor ou a expressão que será exibida após `escreva`." => {
+            "Provide the value or expression to display after `escreva`."
+        }
+        "Informe o valor ou a expressão que será exibida após `imprima`." => {
+            "Provide the value or expression to display after `imprima`."
+        }
         "O índice {value} está fora dos limites de `{name}` ({lower} a {upper})." => {
             "Index {value} is outside the bounds of `{name}` ({lower} to {upper})."
         }
-        "Use um índice dentro da faixa declarada para esse vetor ou matriz." => {
-            "Use an index within the declared range for this array or matrix."
+        "Use um índice entre {lower} e {upper} em `{name}`." => {
+            "Use an index between {lower} and {upper} in `{name}`."
         }
         "Há um problema de sintaxe nesta linha." => "There is a syntax problem on this line.",
         "O interpretador encontrou uma incompatibilidade de tipos nesta linha." => {
@@ -350,9 +370,15 @@ pub(super) fn translate(portuguese: &'static str) -> &'static str {
         "lê uma lista de inteiros" => "reads a list of integers",
         "lê uma lista de números reais" => "reads a list of real numbers",
         "lê uma lista de textos" => "reads a list of text values",
+        "e fornece o valor a" => "and provides the value to",
+        "lê um valor" => "reads a value",
         "A instrução" => "The instruction",
         "armazena o valor informado na variável de destino" => {
             "stores the entered value in the target variable"
+        }
+        "armazena o valor informado em" => "stores the entered value in",
+        "a IDE ainda não tem uma descrição verificada desta operação" => {
+            "the IDE does not yet have a verified description for this operation"
         }
         "fornece um valor para a expressão que a utiliza" => {
             "provides a value to the expression that uses it"
@@ -371,6 +397,57 @@ pub(super) fn translate(portuguese: &'static str) -> &'static str {
         }
         "O operador" => "The operator",
         "atribui o valor à variável" => "assigns the value to variable",
+        "atribui a expressão" => "assigns the expression",
+        "à variável" => "to the variable",
+        "apresenta na saída" => "displays in the output",
+        "e encerra a linha" => "and ends the line",
+        "sem encerrar a linha" => "without ending the line",
+        "testa a condição" => "tests the condition",
+        "antes de cada repetição" => "before each iteration",
+        "Altere o valor usado na condição" => "Change the value used in the condition",
+        "Mude o argumento de" => "Change the argument of",
+        "para" => "for",
+        "Altere o parâmetro" => "Change the parameter",
+        "ao chamar" => "when calling",
+        "Chame" => "Call",
+        "com outro valor para" => "with a different value for",
+        "e observe as ações que a função executa" => {
+            "and observe the actions performed by the function"
+        }
+        "Altere o valor do parâmetro" => "Change the value of the parameter",
+        "Altere a expressão" => "Change the expression",
+        "e execute duas instruções de saída seguidas para observar" => {
+            "and run two output statements in a row to see"
+        }
+        "em quais linhas aparecem" => "which lines they appear on",
+        "se ficam na mesma linha" => "whether they stay on the same line",
+        "e observe a saída" => "and observe the output",
+        "Passe um valor ao comando" => "Pass a value to the command",
+        "e observe o que aparece na saída" => "and observe what appears in the output",
+        "Digite outro valor para" => "Enter a different value for",
+        "Altere um elemento de" => "Change an element of",
+        "e observe o resultado" => "and observe the result",
+        "Altere o valor inicial de" => "Change the initial value of",
+        "e compare os resultados" => "and compare the results",
+        "Altere o valor de" => "Change the value of",
+        "antes de executar e observe onde ele é usado" => {
+            "before running and see where it is used"
+        }
+        "e observe o novo valor de" => "and observe the new value of",
+        "Altere um argumento da chamada" => "Change an argument in the call",
+        "e acompanhe as instruções seguintes" => "and follow the next instructions",
+        "Altere a expressão devolvida" => "Change the returned expression",
+        "e compare o resultado obtido por quem chamou a função" => {
+            "and compare the result received by the caller"
+        }
+        "O retorno entrega a expressão" => "The return sends the expression",
+        "como resultado do tipo" => "as a value of type",
+        "ao ponto que chamou a rotina" => "back to the calling routine",
+        "Esta linha marca uma parte estrutural do programa." => {
+            "This line marks part of the program structure."
+        }
+        "A linha estrutural" => "The structural line",
+        "organiza o programa" => "organizes the program",
         "A expressão à direita do operador produz o valor armazenado." => {
             "The expression to the right of the operator produces the stored value."
         }
@@ -410,6 +487,14 @@ pub(super) fn translate(portuguese: &'static str) -> &'static str {
         "importação" => "import",
         "não identificada" => "unrecognized",
         "A chamada" => "The call",
+        "chama o módulo e continua a execução depois que ele termina" => {
+            "calls the module and resumes execution when it finishes"
+        }
+        "No Mapler, um módulo reúne instruções que podem ser executadas em diferentes pontos do algoritmo." => {
+            "In Mapler, a module groups instructions that can run at different points in the algorithm."
+        }
+        "Altere uma instrução do módulo" => "Change an instruction in the module",
+        "e acompanhe a execução depois da chamada" => "and follow execution after the call",
         "obtém dados de entrada para o programa" => "reads input for the program",
         "A instrução de entrada fornece valores para o programa usar." => {
             "An input instruction provides values for the program to use."
@@ -606,6 +691,9 @@ pub(super) fn translate(portuguese: &'static str) -> &'static str {
         "passo a passo" => "step",
         "pausa" => "pause",
         "ponto de depuração" => "debug point",
+        "erro encontrado; trecho anterior não executado" => {
+            "error found; earlier code was not executed"
+        }
         "depuração" => "debugging",
         "Digite um valor e pressione Enter" => "Enter a value and press Enter",
         "O interpretador foi encerrado antes de concluir o programa." => {

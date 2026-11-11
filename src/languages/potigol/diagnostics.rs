@@ -16,12 +16,13 @@ pub(crate) fn analyze(source: &str) -> Vec<SourceDiagnostic> {
                 potoo_potigol_interpreter::DiagnosticKind::Type => SourceDiagnosticKind::Type,
                 potoo_potigol_interpreter::DiagnosticKind::Runtime => SourceDiagnosticKind::Runtime,
             };
-            let (line, column, byte_range) = if let Some((line, column)) = missing_output_argument(
-                source,
-                kind,
-                &diagnostic.message,
-                diagnostic.span.start.line,
-            ) {
+            let (line, column, byte_range) = if let Some((line, column)) =
+                missing_output_argument_location(
+                    source,
+                    kind,
+                    &diagnostic.message,
+                    diagnostic.span.start.line,
+                ) {
                 (line, column, None)
             } else {
                 (
@@ -65,7 +66,7 @@ pub(crate) fn adapt_message(source: &str, message: &str, line: usize, column: us
     }
 }
 
-fn missing_output_argument(
+pub(crate) fn missing_output_argument_location(
     source: &str,
     kind: SourceDiagnosticKind,
     message: &str,
@@ -83,7 +84,7 @@ fn missing_output_argument(
         .enumerate()
         .rev()
         .find(|(_, line)| !line.trim().is_empty())?;
-    if command_line.trim() != "escreva" {
+    if !matches!(command_line.trim(), "escreva" | "imprima") {
         return None;
     }
     let line = command_index + 1;

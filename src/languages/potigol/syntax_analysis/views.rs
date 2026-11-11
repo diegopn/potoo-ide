@@ -1,89 +1,76 @@
-use super::structure;
+use super::{lexer, structure};
+use crate::languages::source::SourceIndex;
 
 pub(crate) fn without_literals_and_comments(source: &str) -> String {
-    super::lexer::without_literals_and_comments(source)
+    lexer::without_literals_and_comments(source)
 }
 
 pub(crate) fn is_blank_or_line_comment(source: &str, line_number: usize) -> bool {
-    let line = source
-        .lines()
-        .nth(line_number.saturating_sub(1))
-        .unwrap_or("")
-        .trim_start();
-    if line.is_empty() {
-        return true;
+    if hash_comment_has_invalid_terminator(source, line_number) {
+        return false;
     }
-
-    line.starts_with('#')
-        && source
-            .split_inclusive('\n')
-            .nth(line_number.saturating_sub(1))
-            .is_some_and(|line| line.ends_with('\n'))
+    let line = lexer::source_line_code(source, line_number);
+    line.trim().is_empty()
 }
 
-pub(crate) fn mask_diagnostic_statement(source: &str, line: usize, column: usize) -> String {
+fn hash_comment_has_invalid_terminator(source: &str, line_number: usize) -> bool {
+    let index = SourceIndex::new(source);
+    let Some(start) = index.line_column_to_byte(line_number, 1) else {
+        return false;
+    };
+    if !index
+        .line_text(line_number)
+        .is_some_and(|line| line.trim_start().starts_with('#'))
+    {
+        return false;
+    }
+
+    let Some(remaining) = source.get(start..) else {
+        return true;
+    };
+    let Some((offset, terminator)) = remaining
+        .char_indices()
+        .find(|(_, character)| matches!(character, '\r' | '\n'))
+    else {
+        return true;
+    };
+    terminator == '\r' && !remaining[offset..].starts_with("\r\n")
+}
+
+pub(crate) fn mask_diagnostic_statement(
+    source: &str,
+    line: usize,
+    column: usize,
+) -> Option<String> {
     structure::mask_diagnostic_statement(source, line, column)
 }
 
 pub(crate) fn source_line_code(source: &str, line: usize) -> String {
-    super::lexer::line_without_comments(source, line)
+    lexer::source_line_code(source, line)
 }
 
-pub(crate) fn debugger_prefix(source: &str, line: usize, column: usize) -> String {
-    structure::close_blocks(
-        &structure::debugger_prefix(source, line, column),
-        &[
-            ("def", "fim"),
-            ("se", "fim"),
-            ("enquanto", "fim"),
-            ("para", "fim"),
-            ("faca", "fim"),
-        ],
-        None,
-    )
+pub(crate) fn debugger_prefix(source: &str, line: usize, column: usize) -> Option<String> {
+    structure::debugger_prefix(source, line, column)
 }
 
-use super::lexer::{self, TokenKind};
+#[cfg(test)]
+mod tests {
+    use super::{is_blank_or_line_comment, source_line_code, without_literals_and_comments};
 
-pub(crate) fn is_jerimum_import(source: &str) -> bool {
-    let tokens = lexer::tokens(source);
-    let mut block_depth = 0usize;
-    let mut current_line = 0usize;
-    let mut first_on_line = true;
-
-    for (index, token) in tokens.iter().enumerate() {
-        if token.line != current_line {
-            current_line = token.line;
-            first_on_line = true;
-        }
-        if token.kind == TokenKind::Newline {
-            continue;
-        }
-
-        if first_on_line
-            && block_depth == 0
-            && token.kind == TokenKind::Word
-            && token.text == "use"
-            && token.column == 1
-            && tokens[index + 1..]
-                .iter()
-                .take_while(|next| next.line == token.line)
-                .find(|next| next.kind != TokenKind::Newline)
-                .is_some_and(|next| {
-                    next.kind == TokenKind::String && next.text.eq_ignore_ascii_case("jerimum")
-                })
-        {
-            return true;
-        }
-
-        if token.kind == TokenKind::Word {
-            match token.text.as_str() {
-                "def" | "se" | "enquanto" | "para" | "faca" => block_depth += 1,
-                "fim" => block_depth = block_depth.saturating_sub(1),
-                _ => {}
-            }
-        }
-        first_on_line = false;
+    #[test]
+    fn hash_comments_are_hidden_but_block_comment_markers_remain_code() {
+        let source = "# comentário\nescreva \"# literal\"\n/* não é comentário */";
+        assert!(is_blank_or_line_comment(source, 1));
+        assert!(source_line_code(source, 2).contains("# literal"));
+        assert_eq!(source_line_code(source, 3).trim(), "/* não é comentário */");
+        assert!(without_literals_and_comments(source).contains("/* não é comentário */"));
     }
-    false
+
+    #[test]
+    fn unterminated_hash_comment_remains_selectable_as_an_error() {
+        assert!(!is_blank_or_line_comment("# comentário", 1));
+        assert!(is_blank_or_line_comment("# comentário\r\n", 1));
+        assert!(!is_blank_or_line_comment("# comentário\r", 1));
+        assert!(!is_blank_or_line_comment("# comentário\r@\n", 1));
+    }
 }

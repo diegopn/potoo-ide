@@ -1,6 +1,10 @@
 use super::structure;
 
-pub(crate) fn mask_diagnostic_statement(source: &str, line: usize, column: usize) -> String {
+pub(crate) fn mask_diagnostic_statement(
+    source: &str,
+    line: usize,
+    column: usize,
+) -> Option<String> {
     structure::mask_diagnostic_statement(source, line, column)
 }
 
@@ -21,13 +25,6 @@ pub(crate) fn is_blank_or_line_comment(source: &str, line_number: usize) -> bool
     line.is_empty() || line.starts_with("//")
 }
 
-pub(crate) fn debugger_prefix(source: &str, line: usize, column: usize) -> String {
-    let mut prefix = structure::debugger_prefix(source, line, column);
-    for _ in 0..structure::unmatched_braces(&prefix) {
-        if !prefix.ends_with('\n') {
-            prefix.push('\n');
-        }
-        prefix.push('}');
-    }
-    prefix
+pub(crate) fn debugger_prefix(source: &str, line: usize, column: usize) -> Option<String> {
+    structure::debugger_prefix(source, line, column)
 }

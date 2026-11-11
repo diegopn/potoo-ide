@@ -1,7 +1,45 @@
 use crate::languages::completion::{
-    CompletionCatalog, CompletionSnippet, CompletionSyntax, CursorLexicalContext,
-    LibraryImportContext, cursor_lexical_context_for, identifier_at_start, line_bounds,
+    CompletionAdapter, CompletionCatalog, CompletionSnippet, CompletionSyntax,
+    CursorLexicalContext, LibraryImportContext, cursor_lexical_context_for, identifier_at_start,
+    line_bounds,
 };
+
+pub(crate) const LANGUAGE_KEYWORDS: &[&str] = &[
+    "def",
+    "var",
+    "tipo",
+    "escreva",
+    "imprima",
+    "retorne",
+    "enquanto",
+    "para",
+    "faça",
+    "faca",
+    "de",
+    "até",
+    "ate",
+    "passo",
+    "em",
+    "se",
+    "então",
+    "entao",
+    "senãose",
+    "senaose",
+    "senão",
+    "senao",
+    "escolha",
+    "caso",
+    "gere",
+    "fim",
+    "verdadeiro",
+    "falso",
+    "e",
+    "ou",
+    "não",
+    "nao",
+    "div",
+    "mod",
+];
 
 pub(crate) fn catalog() -> CompletionCatalog {
     let (keywords, functions, snippets) = (
@@ -225,3 +263,12 @@ fn potigol_members(owner: &str) -> &'static [&'static str] {
         _ => &[],
     }
 }
+
+pub(crate) static ADAPTER: CompletionAdapter = CompletionAdapter {
+    catalog,
+    cursor_lexical_context,
+    library_import_context: Some(library_import_context),
+    libraries: Some(libraries),
+    library_members: Some(library_members),
+    declared_identifiers,
+};

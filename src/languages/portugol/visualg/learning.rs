@@ -1,44 +1,92 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::languages::{
-    model::{SourceConstruct, SourceDimension, SourceLineAnalysis, SourceSymbol},
-    source::{read_identifier, read_integer, skip_spaces},
+    array_bounds::insert_unique_bounds,
+    model::{
+        SourceConstruct, SourceDiagnostic, SourceDiagnosticKind, SourceDimension,
+        SourceLineAnalysis, SourceLineAnalysisOutcome, SourceSymbol,
+    },
+    source::{
+        RecoveryStatus, SourceIndex, read_identifier, read_integer, recover_parse, skip_spaces,
+    },
 };
-use potoo_visualg_interpreter::{Diagnostic, ast::*, parse};
+use potoo_visualg_interpreter::{Diagnostic, DiagnosticKind, ast::*, parse};
 
-/// Parses source with the interpreter AST and describes the construct at `one_based_line`.
-pub(crate) fn analyze_source_line_cancellable(
+pub(crate) fn profile_adapter(
     source: &str,
     one_based_line: usize,
-    is_cancelled: impl Fn() -> bool,
-) -> Result<Option<SourceLineAnalysis>, Vec<Diagnostic>> {
+    is_cancelled: &dyn Fn() -> bool,
+) -> SourceLineAnalysisOutcome {
     if is_cancelled() {
-        return Ok(None);
+        return SourceLineAnalysisOutcome::Cancelled;
     }
-    if one_based_line == 0 || one_based_line > source.lines().count() {
-        return Ok(None);
+    let source_index = SourceIndex::new(source);
+    if one_based_line == 0 || one_based_line > source_index.line_count() {
+        return SourceLineAnalysisOutcome::Complete {
+            analysis: None,
+            diagnostics: Vec::new(),
+        };
     }
 
-    let (program, diagnostics) = parse_recovering(source, &is_cancelled);
-    if is_cancelled() {
-        return Ok(None);
+    let recovered = recover_parse(
+        source,
+        parse,
+        |diagnostic: &Diagnostic| (diagnostic.line, diagnostic.column),
+        crate::languages::portugol::visualg::syntax_analysis::views::mask_diagnostic_statement,
+        || is_cancelled(),
+    );
+    let diagnostics = recovered
+        .diagnostics
+        .into_iter()
+        .map(to_source_diagnostic)
+        .collect::<Vec<_>>();
+
+    match recovered.status {
+        RecoveryStatus::Cancelled => SourceLineAnalysisOutcome::Cancelled,
+        RecoveryStatus::Stalled | RecoveryStatus::LimitReached => {
+            SourceLineAnalysisOutcome::Incomplete { diagnostics }
+        }
+        RecoveryStatus::Complete => {
+            let Some(program) = recovered.program else {
+                return SourceLineAnalysisOutcome::Incomplete { diagnostics };
+            };
+            let analysis = if diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.line == one_based_line)
+            {
+                None
+            } else {
+                analyze_program_line(source, &program, one_based_line)
+            };
+            SourceLineAnalysisOutcome::Complete {
+                analysis,
+                diagnostics,
+            }
+        }
     }
-    if diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.line == one_based_line)
-    {
-        return Err(diagnostics);
-    }
-    let Some(program) = program else {
-        return Err(diagnostics);
+}
+
+fn to_source_diagnostic(diagnostic: Diagnostic) -> SourceDiagnostic {
+    let kind = match diagnostic.kind {
+        DiagnosticKind::Lexical => SourceDiagnosticKind::Lexical,
+        DiagnosticKind::Syntax => SourceDiagnosticKind::Syntax,
+        DiagnosticKind::Runtime => SourceDiagnosticKind::Runtime,
     };
-    if source
-        .lines()
-        .nth(one_based_line - 1)
-        .is_some_and(|line| line.trim_start().starts_with("algoritmo "))
+    SourceDiagnostic::at_line(kind, diagnostic.message, diagnostic.line, diagnostic.column)
+}
+
+fn analyze_program_line(
+    source: &str,
+    program: &Program,
+    line: usize,
+) -> Option<SourceLineAnalysis> {
+    if crate::languages::portugol::visualg::syntax_analysis::views::source_line_code(source, line)
+        .split_whitespace()
+        .next()
+        .is_some_and(|word| word.eq_ignore_ascii_case("algoritmo"))
     {
-        return Ok(Some(SourceLineAnalysis {
-            line: one_based_line,
+        return Some(SourceLineAnalysis {
+            line,
             column: 1,
             construct: SourceConstruct::Program,
             name: None,
@@ -46,51 +94,9 @@ pub(crate) fn analyze_source_line_cancellable(
             parameters: Vec::new(),
             variables: Vec::new(),
             call: None,
-        }));
+        });
     }
 
-    Ok(analyze_program_line(&program, one_based_line))
-}
-
-fn parse_recovering<F>(source: &str, is_cancelled: &F) -> (Option<Program>, Vec<Diagnostic>)
-where
-    F: Fn() -> bool,
-{
-    let mut candidate = source.to_owned();
-    let mut diagnostics = Vec::new();
-    for attempt in 0..=64 {
-        if is_cancelled() {
-            return (None, diagnostics);
-        }
-        match parse(&candidate) {
-            Ok(program) => return (Some(program), diagnostics),
-            Err(parse_diagnostics) => {
-                let Some(diagnostic) = parse_diagnostics.into_iter().next() else {
-                    return (None, diagnostics);
-                };
-                let line = diagnostic.line;
-                let column = diagnostic.column;
-                if attempt == 64 {
-                    diagnostics.push(diagnostic);
-                    break;
-                }
-                let recovered = crate::languages::portugol::visualg::syntax_analysis::views::mask_diagnostic_statement(
-                    &candidate,
-                    line,
-                    column,
-                );
-                diagnostics.push(diagnostic);
-                if recovered == candidate {
-                    break;
-                }
-                candidate = recovered;
-            }
-        }
-    }
-    (None, diagnostics)
-}
-
-fn analyze_program_line(program: &Program, line: usize) -> Option<SourceLineAnalysis> {
     if let Some(routine) = program.routines.iter().find(|routine| routine.line == line) {
         return Some(analyze_routine(routine));
     }
@@ -306,10 +312,12 @@ pub(crate) fn declared_array_bounds(
 ) -> Option<HashMap<String, Vec<SourceDimension>>> {
     let mut arrays = HashMap::new();
     let mut ambiguous = HashSet::new();
-    for source_line in source.lines() {
+    let source_index = SourceIndex::new(source);
+    for line in 1..=source_index.line_count() {
         if is_cancelled() {
             return None;
         }
+        let source_line = source_index.line_text(line).unwrap_or("");
         let characters = source_line.trim().chars().collect::<Vec<_>>();
         let mut cursor = 0;
         let mut variables = Vec::new();
@@ -344,7 +352,15 @@ pub(crate) fn declared_array_bounds(
             continue;
         }
         for name in variables {
-            insert_unique_array_bounds(&mut arrays, &mut ambiguous, &name, dimensions.clone());
+            insert_unique_bounds(
+                &mut arrays,
+                &mut ambiguous,
+                &name,
+                dimensions.clone(),
+                crate::languages::model::Language::Visualg
+                    .profile()
+                    .case_sensitive_identifiers,
+            );
         }
     }
     Some(arrays)
@@ -383,19 +399,10 @@ fn read_dimensions(characters: &[char], cursor: &mut usize) -> Option<Vec<Source
     }
 }
 
-fn insert_unique_array_bounds(
-    arrays: &mut HashMap<String, Vec<SourceDimension>>,
-    ambiguous: &mut HashSet<String>,
-    name: &str,
-    dimensions: Vec<SourceDimension>,
-) {
-    let name = name.to_lowercase();
-    if ambiguous.contains(&name) {
-        return;
-    }
-    if arrays.remove(&name).is_some() {
-        ambiguous.insert(name);
-    } else {
-        arrays.insert(name, dimensions);
-    }
+pub(crate) fn profile_declared_array_bounds(
+    _source: &str,
+    masked_source: &str,
+    is_cancelled: &dyn Fn() -> bool,
+) -> Option<HashMap<String, Vec<SourceDimension>>> {
+    declared_array_bounds(masked_source, &|| is_cancelled())
 }

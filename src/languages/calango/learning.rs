@@ -2,93 +2,100 @@ use std::collections::{HashMap, HashSet};
 
 use crate::features::learning::source_call;
 use crate::languages::{
-    model::{SourceCall, SourceConstruct, SourceDimension, SourceLineAnalysis, SourceSymbol},
-    source::{read_identifier, read_integer, skip_spaces, skip_to_top_level_comma},
+    array_bounds::insert_unique_bounds,
+    model::{
+        SourceCall, SourceConstruct, SourceDiagnostic, SourceDiagnosticKind, SourceDimension,
+        SourceLineAnalysis, SourceLineAnalysisOutcome, SourceSymbol,
+    },
+    source::{RecoveryStatus, SourceIndex, recover_parse},
 };
-use potoo_calango_interpreter::{Diagnostic, ast::*, parse};
+use potoo_calango_interpreter::{Diagnostic, DiagnosticKind, ast::*, parse};
 
-pub(crate) fn analyze_source_line_cancellable(
+pub(crate) fn profile_adapter(
     source: &str,
     one_based_line: usize,
-    is_cancelled: impl Fn() -> bool,
-) -> Result<Option<SourceLineAnalysis>, Vec<Diagnostic>> {
-    if is_cancelled() || one_based_line == 0 || one_based_line > source.lines().count() {
-        return Ok(None);
-    }
-    let (program, diagnostics) = parse_recovering(source, &is_cancelled);
+    is_cancelled: &dyn Fn() -> bool,
+) -> SourceLineAnalysisOutcome {
     if is_cancelled() {
-        return Ok(None);
+        return SourceLineAnalysisOutcome::Cancelled;
     }
-    if diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.line == one_based_line)
-    {
-        return Err(diagnostics);
-    }
-    let Some(program) = program else {
-        return if diagnostics.is_empty() {
-            Ok(None)
-        } else {
-            Err(diagnostics)
+    let source_index = SourceIndex::new_lf_only(source);
+    if one_based_line == 0 || one_based_line > source_index.line_count() {
+        return SourceLineAnalysisOutcome::Complete {
+            analysis: None,
+            diagnostics: Vec::new(),
         };
-    };
-    if source
-        .lines()
-        .nth(one_based_line - 1)
-        .is_some_and(|line| line.trim_start().starts_with("algoritmo "))
-    {
-        return Ok(Some(empty_analysis(
-            one_based_line,
-            1,
-            SourceConstruct::Program,
-        )));
     }
-    for routine in &program.routines {
-        if routine.line == one_based_line {
-            return Ok(Some(analyze_routine(routine)));
-        }
-        if let Some(analysis) = analyze_statements(source, &routine.body, one_based_line) {
-            return Ok(Some(analysis));
-        }
-    }
-    Ok(analyze_statements(source, &program.main, one_based_line))
-}
 
-fn parse_recovering<F>(source: &str, is_cancelled: &F) -> (Option<Program>, Vec<Diagnostic>)
-where
-    F: Fn() -> bool,
-{
-    let mut candidate = source.to_owned();
-    let mut diagnostics = Vec::new();
-    for attempt in 0..=64 {
-        if is_cancelled() {
-            return (None, diagnostics);
+    let recovered = recover_parse(
+        source,
+        parse,
+        |diagnostic: &Diagnostic| (diagnostic.line, diagnostic.column),
+        crate::languages::calango::syntax_analysis::views::mask_diagnostic_statement,
+        is_cancelled,
+    );
+    let diagnostics = recovered
+        .diagnostics
+        .into_iter()
+        .map(to_source_diagnostic)
+        .collect::<Vec<_>>();
+
+    match recovered.status {
+        RecoveryStatus::Cancelled => SourceLineAnalysisOutcome::Cancelled,
+        RecoveryStatus::Stalled | RecoveryStatus::LimitReached => {
+            SourceLineAnalysisOutcome::Incomplete { diagnostics }
         }
-        match parse(&candidate) {
-            Ok(program) => return (Some(program), diagnostics),
-            Err(parse_diagnostics) => {
-                let Some(diagnostic) = parse_diagnostics.into_iter().next() else {
-                    return (None, diagnostics);
-                };
-                let line = diagnostic.line;
-                let column = diagnostic.column;
-                if attempt == 64 {
-                    diagnostics.push(diagnostic);
-                    break;
-                }
-                let recovered =
-                    crate::languages::calango::syntax_analysis::views::mask_diagnostic_statement(
-                        &candidate, line, column,
-                    );
-                diagnostics.push(diagnostic);
-                if recovered == candidate {
-                    break;
-                }
-                candidate = recovered;
+        RecoveryStatus::Complete => {
+            let Some(program) = recovered.program else {
+                return SourceLineAnalysisOutcome::Incomplete { diagnostics };
+            };
+            let analysis = if diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.line == one_based_line)
+            {
+                None
+            } else {
+                analyze_program_line(source, &program, one_based_line)
+            };
+            SourceLineAnalysisOutcome::Complete {
+                analysis,
+                diagnostics,
             }
         }
     }
-    (None, diagnostics)
+}
+
+fn to_source_diagnostic(diagnostic: Diagnostic) -> SourceDiagnostic {
+    let kind = match diagnostic.kind {
+        DiagnosticKind::Lexical => SourceDiagnosticKind::Lexical,
+        DiagnosticKind::Syntax => SourceDiagnosticKind::Syntax,
+        DiagnosticKind::Type => SourceDiagnosticKind::Type,
+        DiagnosticKind::Runtime => SourceDiagnosticKind::Runtime,
+    };
+    SourceDiagnostic::at_line(kind, diagnostic.message, diagnostic.line, diagnostic.column)
+}
+
+fn analyze_program_line(
+    source: &str,
+    program: &Program,
+    line: usize,
+) -> Option<SourceLineAnalysis> {
+    if crate::languages::calango::syntax_analysis::views::source_line_code(source, line)
+        .split_whitespace()
+        .next()
+        == Some("algoritmo")
+    {
+        return Some(empty_analysis(line, 1, SourceConstruct::Program));
+    }
+    for routine in &program.routines {
+        if routine.line == line {
+            return Some(analyze_routine(routine));
+        }
+        if let Some(analysis) = analyze_statements(source, &routine.body, line) {
+            return Some(analysis);
+        }
+    }
+    analyze_statements(source, &program.main, line)
 }
 
 fn analyze_routine(routine: &Routine) -> SourceLineAnalysis {
@@ -328,91 +335,115 @@ fn empty_analysis(line: usize, column: usize, construct: SourceConstruct) -> Sou
     }
 }
 
-pub(crate) fn declared_array_bounds(
+fn collect_declared_array_bounds(
     source: &str,
-    is_cancelled: &impl Fn() -> bool,
+    is_cancelled: &dyn Fn() -> bool,
 ) -> Option<HashMap<String, Vec<SourceDimension>>> {
+    if is_cancelled() {
+        return None;
+    }
+    let program = match parse(source) {
+        Ok(program) => program,
+        Err(_) => return Some(HashMap::new()),
+    };
+    if is_cancelled() {
+        return None;
+    }
+
     let mut arrays = HashMap::new();
     let mut ambiguous = HashSet::new();
-    for source_line in source.lines() {
+    for routine in &program.routines {
+        for parameter in &routine.parameters {
+            if is_cancelled() {
+                return None;
+            }
+            insert_symbol_array_bounds(&source_parameter(parameter), &mut arrays, &mut ambiguous);
+        }
+        collect_statement_array_bounds(&routine.body, is_cancelled, &mut arrays, &mut ambiguous)?;
+    }
+    collect_statement_array_bounds(&program.main, is_cancelled, &mut arrays, &mut ambiguous)?;
+    if is_cancelled() { None } else { Some(arrays) }
+}
+
+fn collect_statement_array_bounds(
+    statements: &[Statement],
+    is_cancelled: &dyn Fn() -> bool,
+    arrays: &mut HashMap<String, Vec<SourceDimension>>,
+    ambiguous: &mut HashSet<String>,
+) -> Option<()> {
+    for statement in statements {
         if is_cancelled() {
             return None;
         }
-        let characters = source_line.trim().chars().collect::<Vec<_>>();
-        let mut cursor = 0;
-        let Some(type_name) = read_identifier(&characters, &mut cursor) else {
-            continue;
-        };
-        if !matches!(
-            type_name.to_lowercase().as_str(),
-            "inteiro" | "real" | "logico" | "caracter" | "caractere" | "cadeia"
-        ) {
-            continue;
-        }
-
-        read_array_declarations(&characters, cursor, &mut arrays, &mut ambiguous);
-    }
-    Some(arrays)
-}
-
-fn read_array_declarations(
-    characters: &[char],
-    mut cursor: usize,
-    arrays: &mut HashMap<String, Vec<SourceDimension>>,
-    ambiguous: &mut HashSet<String>,
-) {
-    loop {
-        skip_spaces(characters, &mut cursor);
-        let Some(name) = read_identifier(characters, &mut cursor) else {
-            break;
-        };
-        skip_spaces(characters, &mut cursor);
-        let mut dimensions = Vec::new();
-        while characters.get(cursor) == Some(&'[') {
-            cursor += 1;
-            skip_spaces(characters, &mut cursor);
-            let Some(size) = read_integer(characters, &mut cursor) else {
-                break;
-            };
-            skip_spaces(characters, &mut cursor);
-            if characters.get(cursor) != Some(&']') {
-                break;
+        match &statement.kind {
+            StatementKind::Declare(variables) => {
+                for variable in variables {
+                    if is_cancelled() {
+                        return None;
+                    }
+                    insert_symbol_array_bounds(&source_variable(variable), arrays, ambiguous);
+                }
             }
-            cursor += 1;
-            dimensions.push(SourceDimension {
-                lower_bound: (size > 0).then_some(0),
-                upper_bound: (size > 0).then_some(size - 1),
-            });
-            skip_spaces(characters, &mut cursor);
+            StatementKind::If {
+                branches,
+                otherwise,
+            } => {
+                for (_, body) in branches {
+                    collect_statement_array_bounds(body, is_cancelled, arrays, ambiguous)?;
+                }
+                collect_statement_array_bounds(otherwise, is_cancelled, arrays, ambiguous)?;
+            }
+            StatementKind::While { body, .. }
+            | StatementKind::DoWhile { body, .. }
+            | StatementKind::For { body, .. } => {
+                collect_statement_array_bounds(body, is_cancelled, arrays, ambiguous)?;
+            }
+            StatementKind::Choose {
+                cases, otherwise, ..
+            } => {
+                for (_, body) in cases {
+                    collect_statement_array_bounds(body, is_cancelled, arrays, ambiguous)?;
+                }
+                collect_statement_array_bounds(otherwise, is_cancelled, arrays, ambiguous)?;
+            }
+            _ => {}
         }
-        if !dimensions.is_empty()
-            && dimensions
-                .iter()
-                .all(|dimension| dimension.upper_bound.is_some())
-        {
-            insert_unique_array_bounds(arrays, ambiguous, &name, dimensions);
-        }
-        cursor = skip_to_top_level_comma(characters, cursor);
-        if characters.get(cursor) != Some(&',') {
-            break;
-        }
-        cursor += 1;
     }
+    Some(())
 }
 
-fn insert_unique_array_bounds(
+fn insert_symbol_array_bounds(
+    symbol: &SourceSymbol,
     arrays: &mut HashMap<String, Vec<SourceDimension>>,
     ambiguous: &mut HashSet<String>,
-    name: &str,
-    dimensions: Vec<SourceDimension>,
 ) {
-    let name = name.to_lowercase();
-    if ambiguous.contains(&name) {
+    if symbol.dimensions.is_empty()
+        || symbol
+            .dimensions
+            .iter()
+            .any(|dimension| dimension.lower_bound.is_none() || dimension.upper_bound.is_none())
+    {
         return;
     }
-    if arrays.remove(&name).is_some() {
-        ambiguous.insert(name);
-    } else {
-        arrays.insert(name, dimensions);
-    }
+    insert_unique_bounds(
+        arrays,
+        ambiguous,
+        &symbol.name,
+        symbol.dimensions.clone(),
+        crate::languages::model::Language::Calango
+            .profile()
+            .case_sensitive_identifiers,
+    );
 }
+
+pub(crate) fn profile_declared_array_bounds(
+    source: &str,
+    _masked_source: &str,
+    is_cancelled: &dyn Fn() -> bool,
+) -> Option<HashMap<String, Vec<SourceDimension>>> {
+    collect_declared_array_bounds(source, is_cancelled)
+}
+
+#[cfg(test)]
+#[path = "../../../tests/learning/calango_tests.rs"]
+mod tests;

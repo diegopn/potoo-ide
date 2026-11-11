@@ -1,6 +1,6 @@
 [package]
 name = "potoo-ide"
-version = "0.1.0"
+version = "0.2.0"
 description = "Uma IDE desktop para aprender lógica de programação com linguagens/pseudolinguagens"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/diegopn/potoo-ide"
