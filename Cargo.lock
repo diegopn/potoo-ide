@@ -601,7 +601,7 @@ source = "git+https://github.com/diegopn/potoo-gportugol-interpreter.git?rev=795
 
 [[package]]
 name = "potoo-ide"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "gtk4",
  "potoo-calango-interpreter",
