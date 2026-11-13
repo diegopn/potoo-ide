@@ -4,6 +4,9 @@
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <name>Potoo IDE</name>
+  <developer id="io.github.diegopn">
+    <name>Diego Pereira do Nascimento</name>
+  </developer>
   <summary>Aprenda lógica de programação com linguagens educacionais</summary>
   <description>
     <p>Uma IDE desktop para estudantes e professores praticarem lógica de programação com Portugol e VisuAlg.</p>
