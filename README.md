@@ -45,9 +45,15 @@ Pseudolanguages use educational notation to express algorithms. They run in Poto
 | --- | --- |
 | [Calango](https://github.com/diegopn/potoo-calango-interpreter) | `.clg` |
 
-Candidates being considered for development and integration:
+Pseudolanguages and algorithm notations under evaluation:
 
-- PSeInt
+- PSeInt (Spanish pseudolanguage)
+- SL (Spanish educational language for algorithmics)
+- AlgoBox (French algorithm-building environment)
+- LSE (historical French teaching language)
+- Glossa (Greek curriculum pseudolanguage)
+- AP CSP pseudocode (exam notation, not a standalone programming language)
+- Cambridge pseudocode (exam notation, not a standalone programming language)
 
 ### Programming languages
 
@@ -57,15 +63,20 @@ Potigol is an educational functional programming language with Portuguese syntax
 | --- | --- | --- |
 | [Potigol 1.0.0-RC2 core](https://github.com/diegopn/potoo-potigol-interpreter) | Functional | `.poti` |
 
-Candidates being considered for development and integration:
+Programming languages and educational environments under evaluation:
 
-- Linotte
+- Linotte (French educational programming language)
 - C0 (Simplified C)
 - Karel
 - Égua
 - Logic Basic
+- Kalimat (Arabic programming language)
+- Jeem (Arabic procedural programming language)
+- Kumir (Russian school algorithmic language and programming system)
+- Robot Karol (German educational programming environment)
+- Hedy (multilingual gradual programming language)
 
-These candidates are under evaluation and are not implementation commitments. The app interface is available in Portuguese, English, and Spanish.
+These candidates are under evaluation and are not implementation commitments. AP CSP and Cambridge pseudocode are assessment notations rather than standalone programming languages. Robot Karol is a separate German learning environment from the Karel the Robot reference already listed above. The app interface is available in Portuguese, English, and Spanish.
 
 ## Install
 
