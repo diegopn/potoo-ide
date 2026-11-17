@@ -17,8 +17,18 @@ permissions:
 jobs:
   linux-flatpak:
     if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
-    name: Linux x86_64 Flatpak
-    runs-on: ubuntu-24.04
+    name: Linux ${{ matrix.arch }} Flatpak
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    env:
+      FLATPAK_ARCH: ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v7
       - name: Install Flatpak tooling
@@ -56,14 +66,14 @@ jobs:
       - name: Build and smoke-check Flatpak bundle
         run: |
           packaging/linux/build-flatpak.sh
-          bundle="target/packages/linux-x86_64/Potoo-IDE-$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)-linux-x86_64.flatpak"
+          bundle="target/packages/linux-${FLATPAK_ARCH}/Potoo-IDE-$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)-linux-${FLATPAK_ARCH}.flatpak"
           flatpak --user install --assumeyes --noninteractive --bundle "$bundle"
           app_location="$(flatpak --user info --show-location io.github.diegopn.potooide)"
           test -x "$app_location/files/bin/potoo-ide"
       - uses: actions/upload-artifact@v7
         with:
-          name: package-linux-x86_64
-          path: target/packages/linux-x86_64/Potoo-IDE-*-linux-x86_64.flatpak
+          name: package-linux-${{ matrix.arch }}
+          path: target/packages/linux-${{ matrix.arch }}/Potoo-IDE-*-linux-${{ matrix.arch }}.flatpak
           if-no-files-found: error
           retention-days: 14
 
@@ -228,13 +238,84 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  macos-arm64-installer:
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    name: macOS Apple Silicon installer
+    runs-on: macos-15
+    env:
+      MACOS_ARCH: arm64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: melusina-org/setup-macports@v1
+        with:
+          parameters: .github/parameters/setup-macports.yaml
+      - name: Install GTK and media runtimes
+        run: sudo port install gtk4 gtksourceview5 adwaita-icon-theme gstreamer1 gstreamer1-gst-plugins-base gstreamer1-gst-plugins-good gstreamer1-gst-libav
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - name: Check and build application bundle
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "13.0"
+          GTK_PREFIX: /opt/local
+        run: |
+          cargo check --locked --target aarch64-apple-darwin
+          packaging/macos/build-dmg.sh
+      - name: Validate Apple Silicon app bundle
+        run: |
+          app="target/packages/macos-arm64/stage/Potoo IDE.app"
+          contents="$app/Contents"
+          frameworks="$contents/Frameworks"
+          resources="$contents/Resources"
+          executable="$contents/MacOS/PotooIDE"
+          plutil -lint "$contents/Info.plist"
+          test "$(lipo -archs "$executable")" = "arm64"
+          otool -l "$executable" | grep -Fq 'path @executable_path/../Frameworks '
+          while IFS= read -r -d '' binary; do
+            file "$binary" | grep -q 'Mach-O' || continue
+            test "$(lipo -archs "$binary")" = "arm64" || {
+              echo "Bundled macOS binary is not arm64: $binary" >&2
+              exit 1
+            }
+            while IFS= read -r dependency; do
+              case "$dependency" in
+                /System/Library/*|/usr/lib/*|/Library/Apple/System/*) ;;
+                @rpath/*)
+                  library="${dependency#@rpath/}"
+                  test -f "$frameworks/$library" || {
+                    echo "Bundled macOS dependency not found: $dependency (from $binary)" >&2
+                    exit 1
+                  }
+                  ;;
+                *)
+                  echo "Non-relocatable macOS dependency: $dependency (from $binary)" >&2
+                  exit 1
+                  ;;
+              esac
+            done < <(otool -L "$binary" | tail -n +2 | awk '{print $1}')
+          done < <(find "$contents" -type f -print0)
+          shopt -s nullglob
+          loaders=("$resources/lib/gdk-pixbuf-2.0/2.10.0/loaders/"*.so)
+          test "${#loaders[@]}" -gt 0
+          DYLD_LIBRARY_PATH="$frameworks${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" \
+            "$contents/MacOS/gdk-pixbuf-query-loaders" "${loaders[@]}" >/dev/null
+          hdiutil verify target/packages/macos-arm64/Potoo-IDE-*-macos-arm64.dmg
+          test -x "$contents/MacOS/PotooIDE"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: package-macos-arm64
+          path: target/packages/macos-arm64/Potoo-IDE-*-macos-arm64.dmg
+          if-no-files-found: error
+          retention-days: 14
+
   assemble:
-    if: always() && needs.linux-flatpak.result == 'success' && needs.windows-installer.result == 'success'
+    if: always() && needs.linux-flatpak.result == 'success' && needs.windows-installer.result == 'success' && needs.macos-arm64-installer.result == 'success'
     name: Assemble release archive
     needs:
       - linux-flatpak
       - windows-installer
       - macos-installer
+      - macos-arm64-installer
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -249,16 +330,25 @@ jobs:
           version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
           platforms=()
           macos_note=""
+          has_macos_package=false
           for package in package-files/Potoo-IDE-*; do
             case "$package" in
               *-windows-x64-setup.exe) platforms+=("Windows x64") ;;
               *-macos-x86_64.dmg)
                 platforms+=("Intel macOS")
-                macos_note="The Intel macOS build is not signed or notarized."
+                has_macos_package=true
+                ;;
+              *-macos-arm64.dmg)
+                platforms+=("Apple Silicon macOS")
+                has_macos_package=true
                 ;;
               *-linux-x86_64.flatpak) platforms+=("Linux x86_64 (Flatpak)") ;;
+              *-linux-aarch64.flatpak) platforms+=("Linux ARM64 (Flatpak)") ;;
             esac
           done
+          if [[ "$has_macos_package" == true ]]; then
+            macos_note="The macOS installers are not signed or notarized."
+          fi
           if ((${#platforms[@]} == 0)); then
             echo "No installer packages were downloaded." >&2
             exit 1

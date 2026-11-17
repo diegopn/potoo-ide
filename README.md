@@ -72,15 +72,19 @@ These candidates are under evaluation and are not implementation commitments. Th
 | Platform | Package |
 | --- | --- |
 | Linux x86_64 | Flatpak bundle. If needed, [set up Flatpak](https://flatpak.org/setup) first. |
+| Linux ARM64 | Flatpak bundle. If needed, [set up Flatpak](https://flatpak.org/setup) first. |
 | Windows x64 | Setup installer with the GTK, GtkSourceView, and GStreamer runtime files. Windows may warn that the installer is unsigned. |
-| macOS | Installers are not available yet. |
+| macOS Apple Silicon (ARM64) | DMG installer. The build is not signed or notarized. |
+| macOS Intel | Installer is not available yet. |
 
 Download the [latest release](https://github.com/diegopn/potoo-ide/releases/latest). To install the Linux bundle:
 
 ```sh
-flatpak install --user --bundle ./Potoo-IDE-<version>-linux-x86_64.flatpak
+flatpak install --user --bundle ./Potoo-IDE-<version>-linux-<arch>.flatpak
 flatpak run io.github.diegopn.potooide
 ```
+
+For `<arch>`, use `x86_64` or `aarch64` to match your Linux computer.
 
 The first Flatpak installation may download the GNOME 51 runtime. Release downloads include `SHA256SUMS` for verification.
 

@@ -6,8 +6,26 @@ shopt -s nullglob
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 prefix="${GTK_PREFIX:-$(brew --prefix)}"
 version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$repo_root/Cargo.toml" | head -n1)"
-arch="x86_64"
-target="x86_64-apple-darwin"
+arch="${MACOS_ARCH:-$(uname -m)}"
+case "$arch" in
+    x86_64)
+        target="x86_64-apple-darwin"
+        binary_arch="x86_64"
+        host_arch="x86_64"
+        arch_label="Intel"
+        ;;
+    arm64|aarch64)
+        arch="arm64"
+        target="aarch64-apple-darwin"
+        binary_arch="arm64"
+        host_arch="arm64"
+        arch_label="Apple Silicon"
+        ;;
+    *)
+        echo "Unsupported macOS architecture: $arch (expected x86_64 or arm64)." >&2
+        exit 1
+        ;;
+esac
 package_root="$repo_root/target/packages/macos-${arch}"
 stage_root="$package_root/stage"
 app_bundle="$stage_root/Potoo IDE.app"
@@ -17,11 +35,11 @@ frameworks_dir="$contents_dir/Frameworks"
 resources_dir="$contents_dir/Resources"
 resource_bin_dir="$macos_dir"
 bundle_binary="$macos_dir/PotooIDE"
-release_binary="$repo_root/target/x86_64-apple-darwin/release/potoo-ide"
+release_binary="$repo_root/target/${target}/release/potoo-ide"
 deployment_target="${MACOSX_DEPLOYMENT_TARGET:-13.0}"
 
-if [[ "$(uname -m)" != "x86_64" ]]; then
-    echo "The macOS Intel bundle must be built on an x86_64 runner with matching GTK libraries." >&2
+if [[ "$(uname -m)" != "${host_arch}" ]]; then
+    echo "The macOS ${arch_label} bundle must be built on a matching ${arch_label} runner with matching GTK libraries." >&2
     exit 1
 fi
 
@@ -161,8 +179,8 @@ rm -rf "$package_root"
 mkdir -p "$macos_dir" "$frameworks_dir" "$resources_dir"
 cp "$release_binary" "$bundle_binary"
 chmod 0755 "$bundle_binary"
-if [[ "$(lipo -archs "$bundle_binary")" != "x86_64" ]]; then
-    echo "The macOS release executable is not an Intel x86_64 binary." >&2
+if [[ "$(lipo -archs "$bundle_binary")" != "${binary_arch}" ]]; then
+    echo "The macOS release executable does not match the requested ${arch} architecture." >&2
     exit 1
 fi
 create_info_plist

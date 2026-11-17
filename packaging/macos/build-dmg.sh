@@ -4,7 +4,18 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$repo_root/Cargo.toml" | head -n1)"
-arch="x86_64"
+arch="${MACOS_ARCH:-$(uname -m)}"
+case "$arch" in
+    x86_64) arch_label="Intel" ;;
+    arm64|aarch64)
+        arch="arm64"
+        arch_label="Apple Silicon"
+        ;;
+    *)
+        echo "Unsupported macOS architecture: $arch (expected x86_64 or arm64)." >&2
+        exit 1
+        ;;
+esac
 package_root="$repo_root/target/packages/macos-${arch}"
 app_bundle="$package_root/stage/Potoo IDE.app"
 dmg_root="$package_root/dmg"
@@ -21,10 +32,10 @@ rm -rf "$dmg_root"
 mkdir -p "$dmg_root"
 cp -R "$app_bundle" "$dmg_root/"
 cp "$repo_root/LICENSE" "$dmg_root/LICENSE.txt"
-cat > "$dmg_root/Install Potoo IDE.txt" <<'EOF'
+cat > "$dmg_root/Install Potoo IDE.txt" <<EOF
 Drag Potoo IDE.app to the Applications folder.
 
-This build targets Intel Macs. It is not signed or notarized. macOS may ask you
+This build targets ${arch_label} Macs. It is not signed or notarized. macOS may ask you
 to confirm the first launch in System Settings > Privacy & Security.
 EOF
 ln -s /Applications "$dmg_root/Applications"

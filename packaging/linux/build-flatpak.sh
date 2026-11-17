@@ -15,6 +15,7 @@ flatpak-builder \
     --user \
     --force-clean \
     --disable-rofiles-fuse \
+    --arch="$arch" \
     --default-branch=stable \
     --repo="$repo" \
     "$build_root" \
@@ -22,6 +23,7 @@ flatpak-builder \
 
 flatpak build-bundle \
     --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
+    --arch="$arch" \
     "$repo" \
     "$bundle" \
     io.github.diegopn.potooide \
