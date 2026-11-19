@@ -42,7 +42,17 @@ impl MainWindow {
         widgets: &mut MainUi,
         sender: ComponentSender<MainWindow>,
     ) {
+        super::workspace::initialize_workspace_if_needed(self, widgets, sender.clone());
         self.sync_new_item_context_view(widgets);
+        if widgets.workspace.is_none() {
+            let view = ViewContext::new(self);
+            self.sync_settings_view(widgets);
+            self.sync_workspace_view(widgets, &view, sender.clone());
+            self.sync_document_tabs_view(widgets, sender.clone());
+            self.sync_close_app_view(widgets);
+            return;
+        }
+
         let view = ViewContext::new(self);
         self.sync_completion_provider_view(widgets, &view);
         self.sync_tool_panels_view(widgets, &view);

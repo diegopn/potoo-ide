@@ -1,7 +1,9 @@
 mod init;
 mod update;
 mod view;
+mod workspace;
 
+use self::workspace::WorkspaceUi;
 use super::settings::SettingsUi;
 use super::*;
 
@@ -25,47 +27,12 @@ pub struct MainUi {
     pub(super) new_file_button: gtk::MenuButton,
     pub(super) empty_state: gtk::Widget,
     pub(super) expanded_folders: sidebar::ExpandedFolders,
-    pub(super) editor_tabs: gtk::Box,
+    pub(super) sidebar_widget: gtk::Widget,
+    pub(super) workspace_host: gtk::Box,
+    pub(super) workspace: Option<WorkspaceUi>,
     pub(super) status_language: gtk::Label,
     pub(super) status_details: gtk::Label,
     pub(super) status_position: gtk::Label,
-    pub(super) code_buffer: gtk::TextBuffer,
-    pub(super) code_view: sourceview5::View,
-    pub(super) completion_provider: content_panel::CompletionProvider,
-    pub(super) syntax_tags: SyntaxTags,
-    pub(super) output_buffer: gtk::TextBuffer,
-    pub(super) output_view: gtk::TextView,
-    pub(super) problems_tab: gtk::Button,
-    pub(super) problems_list: gtk::Box,
-    pub(super) input_entry: gtk::Entry,
-    pub(super) output_status: gtk::Label,
-    pub(super) debugger_start: gtk::Button,
-    pub(super) debugger_controls: gtk::Stack,
-    pub(super) debugger_step: gtk::Button,
-    pub(super) debugger_stop: gtk::Button,
-    pub(super) debugger_position: gtk::Label,
-    pub(super) debugger_variables: gtk::TextBuffer,
-    pub(super) debugger_learning: content_panel::DebuggerLearningUi,
-    pub(super) tools_panel: gtk::Box,
-    pub(super) right_panel_revealer: gtk::Revealer,
-    pub(super) right_panel_stack: gtk::Stack,
-    pub(super) learning_tool_button: gtk::Button,
-    pub(super) debugger_tool_button: gtk::Button,
-    pub(super) game_preview_button: gtk::Button,
-    pub(super) game_preview_stack: gtk::Stack,
-    pub(super) game_preview_area: gtk::DrawingArea,
-    pub(super) game_preview_open_button: gtk::Button,
-    pub(super) learning_spinner: gtk::Spinner,
-    pub(super) learning_analysis_stack: gtk::Stack,
-    pub(super) learning_line_title: gtk::Label,
-    pub(super) learning_explanation: gtk::Label,
-    pub(super) learning_experiment: gtk::Label,
-    pub(super) learning_concept_section: gtk::Box,
-    pub(super) learning_experiment_section: gtk::Box,
-    pub(super) learning_concept_title: gtk::Label,
-    pub(super) learning_concept_text: gtk::Label,
-    pub(super) learning_problem_list: gtk::Box,
-    pub(super) learning_problem_empty: gtk::Label,
     pub(super) displayed_language: Option<Language>,
     pub(super) displayed_active_document_id: Option<u64>,
     pub(super) displayed_project_name: String,
@@ -106,6 +73,14 @@ pub struct MainUi {
     pub(super) displayed_right_panel_section: Option<RightPanelSection>,
     pub(super) displayed_right_panel_collapsed: bool,
     pub(super) displayed_game_preview_active: bool,
+}
+
+impl MainUi {
+    pub(super) fn workspace_ui(&self) -> &WorkspaceUi {
+        self.workspace
+            .as_ref()
+            .expect("workspace widgets must exist before workspace view synchronization")
+    }
 }
 
 impl SimpleComponent for MainWindow {

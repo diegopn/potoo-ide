@@ -204,21 +204,21 @@ pub(super) fn init(
         preferences,
         initial_dark,
     );
-    model
-        .graphics_host
-        .set_jerimum_preview_area(widgets.game_preview_area.clone());
+    super::workspace::initialize_workspace_if_needed(&model, &mut widgets, sender.clone());
     root.set_child(Some(&widgets.content));
     if let Some(project_root) = model.project_root.clone() {
         model.schedule_project_scan(project_root, false, sender.clone());
     }
-    content_panel::rebuild_editor_tabs(
-        &widgets.editor_tabs,
-        &model.documents,
-        model.active_document_id,
-        model.ui_language,
-        sender.clone(),
-    );
-    sender.input(MainWindowMsg::CursorMoved(1));
+    if let Some(workspace) = widgets.workspace.as_ref() {
+        content_panel::rebuild_editor_tabs(
+            &workspace.editor_tabs,
+            &model.documents,
+            model.active_document_id,
+            model.ui_language,
+            sender.clone(),
+        );
+        sender.input(MainWindowMsg::CursorMoved(1));
+    }
     let recent_preview = &model.recent_paths[..model.recent_paths.len().min(2)];
     widgets
         .start_page
@@ -241,18 +241,20 @@ pub(super) fn init(
         .recent_more_button
         .set_visible(model.recent_paths.len() > 2);
     model.ensure_diagnostics_for_active_document(sender.clone());
-    widgets.displayed_tabs = model
-        .documents
-        .iter()
-        .map(|document| {
-            (
-                document.id,
-                document.name.clone(),
-                document.is_dirty(),
-                Some(document.id) == model.active_document_id,
-            )
-        })
-        .collect();
+    if widgets.workspace.is_some() {
+        widgets.displayed_tabs = model
+            .documents
+            .iter()
+            .map(|document| {
+                (
+                    document.id,
+                    document.name.clone(),
+                    document.is_dirty(),
+                    Some(document.id) == model.active_document_id,
+                )
+            })
+            .collect();
+    }
 
     if !unreadable_session {
         if let Err(error) = persist_session(&model, false, false) {

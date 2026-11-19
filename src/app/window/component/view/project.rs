@@ -7,6 +7,7 @@ impl MainWindow {
             .replace(self.project_root.clone());
         ui.project_files_for_new_items
             .replace(self.project_files.clone());
+        ui.default_new_language.set(self.new_file_language);
     }
     pub(super) fn sync_workspace_view(
         &self,
@@ -16,7 +17,8 @@ impl MainWindow {
     ) {
         let ui = widgets;
         let active_document = view.active_document;
-        if ui.displayed_start_page != self.start_page_visible {
+        let workspace_can_be_shown = self.start_page_visible || ui.workspace.is_some();
+        if ui.displayed_start_page != self.start_page_visible && workspace_can_be_shown {
             if ui.displayed_start_page && !self.start_page_visible {
                 ui.window.maximize();
             }

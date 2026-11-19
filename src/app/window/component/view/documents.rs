@@ -8,11 +8,13 @@ impl MainWindow {
     ) {
         let ui = widgets;
         let active_language = view.active_language;
-        ui.completion_provider.set_language(
+        ui.workspace_ui().completion_provider.set_language(
             active_language
                 .filter(|language| crate::languages::completion::is_available(*language)),
         );
-        ui.completion_provider.set_ui_language(self.ui_language);
+        ui.workspace_ui()
+            .completion_provider
+            .set_ui_language(self.ui_language);
     }
     pub(super) fn sync_active_document_view(
         &self,
@@ -25,20 +27,25 @@ impl MainWindow {
         let active_document_id = active_document.map(|document| document.id);
         let active_document_changed = ui.displayed_active_document_id != active_document_id;
         if active_document_changed {
-            ui.code_view.completion().hide();
-            ui.code_buffer.set_text(
-                active_document
-                    .map(|document| document.contents.as_str())
-                    .unwrap_or_default(),
-            );
+            if let Some(workspace) = ui.workspace.as_ref() {
+                workspace.code_view.completion().hide();
+                workspace.code_buffer.set_text(
+                    active_document
+                        .map(|document| document.contents.as_str())
+                        .unwrap_or_default(),
+                );
+            }
             ui.displayed_active_document_id = active_document_id;
         }
         if active_document_changed || ui.displayed_execution_line != self.execution_line {
             if self.execution_document_id == self.active_document_id
                 && let Some(line) = self.execution_line
-                && let Some(iter) = ui.code_buffer.iter_at_line(line.saturating_sub(1) as i32)
+                && let Some(iter) = ui
+                    .workspace_ui()
+                    .code_buffer
+                    .iter_at_line(line.saturating_sub(1) as i32)
             {
-                ui.code_buffer.place_cursor(&iter);
+                ui.workspace_ui().code_buffer.place_cursor(&iter);
             }
             ui.displayed_execution_line = self.execution_line;
         }
@@ -48,7 +55,6 @@ impl MainWindow {
             ui.status_language.set_visible(active_language.is_some());
             ui.displayed_language = active_language;
         }
-        ui.default_new_language.set(self.new_file_language);
         active_document_changed
     }
     pub(super) fn sync_document_tabs_view(
@@ -69,9 +75,11 @@ impl MainWindow {
                 )
             })
             .collect::<Vec<_>>();
-        if ui.displayed_tabs != tab_signature {
+        if let Some(workspace) = ui.workspace.as_ref()
+            && ui.displayed_tabs != tab_signature
+        {
             content_panel::rebuild_editor_tabs(
-                &ui.editor_tabs,
+                &workspace.editor_tabs,
                 &self.documents,
                 self.active_document_id,
                 self.ui_language,
@@ -152,7 +160,7 @@ impl MainWindow {
         let diagnostics_changed = ui.displayed_diagnostics != editor_diagnostics;
         if diagnostics_changed {
             content_panel::show_diagnostics(
-                &ui.problems_list,
+                &ui.workspace_ui().problems_list,
                 &editor_diagnostics,
                 self.ui_language,
                 sender.clone(),
@@ -164,7 +172,7 @@ impl MainWindow {
             if self.execution_diagnostics_document_id.is_some()
                 && self.execution_diagnostics_document_id == self.active_document_id
             {
-                ui.problems_tab.emit_clicked();
+                ui.workspace_ui().problems_tab.emit_clicked();
             }
             ui.displayed_execution_diagnostics_document_id = self.execution_diagnostics_document_id;
         }
@@ -185,21 +193,24 @@ impl MainWindow {
             && target.serial != ui.displayed_navigation_serial
             && self.active_document_id == Some(target.document_id)
         {
-            let mut iter = ui.code_buffer.iter_at_offset(
+            let mut iter = ui.workspace_ui().code_buffer.iter_at_offset(
                 target
                     .offset
-                    .min(ui.code_buffer.char_count().max(0) as usize) as i32,
+                    .min(ui.workspace_ui().code_buffer.char_count().max(0) as usize)
+                    as i32,
             );
-            ui.code_buffer.place_cursor(&iter);
-            ui.code_view.scroll_to_iter(&mut iter, 0.2, false, 0.0, 0.0);
-            ui.code_view.grab_focus();
+            ui.workspace_ui().code_buffer.place_cursor(&iter);
+            ui.workspace_ui()
+                .code_view
+                .scroll_to_iter(&mut iter, 0.2, false, 0.0, 0.0);
+            ui.workspace_ui().code_view.grab_focus();
             ui.displayed_navigation_serial = target.serial;
         }
 
         content_panel::highlight_buffer(
-            &ui.code_buffer,
+            &ui.workspace_ui().code_buffer,
             active_language.unwrap_or(self.new_file_language),
-            &ui.syntax_tags,
+            &ui.workspace_ui().syntax_tags,
         );
         if active_document_changed || diagnostics_changed {
             let active_diagnostics = editor_diagnostics
@@ -208,14 +219,18 @@ impl MainWindow {
                 .cloned()
                 .collect::<Vec<_>>();
             content_panel::apply_diagnostics(
-                &ui.code_view,
-                &ui.code_buffer,
+                &ui.workspace_ui().code_view,
+                &ui.workspace_ui().code_buffer,
                 &active_diagnostics,
-                &ui.syntax_tags,
+                &ui.workspace_ui().syntax_tags,
                 self.dark,
             );
         }
-        update_cursor_position(&ui.code_buffer, &ui.status_position, self.ui_language);
+        update_cursor_position(
+            &ui.workspace_ui().code_buffer,
+            &ui.status_position,
+            self.ui_language,
+        );
         ui.status_position.set_visible(active_document.is_some());
     }
 }

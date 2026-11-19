@@ -152,7 +152,7 @@ impl GraphicsHost {
             area.set_content_width(width);
             area.set_content_height(height);
         }
-        if let Some(area) = &self.preview_area
+        if let Some(area) = self.preview_area.borrow().as_ref()
             && let Some(frame) = preview_aspect_frame(area)
         {
             frame.set_ratio(width as f32 / height as f32);

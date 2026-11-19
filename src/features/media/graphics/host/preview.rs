@@ -1,7 +1,7 @@
 use super::*;
 
 impl GraphicsHost {
-    pub(crate) fn set_jerimum_preview_area(&mut self, area: gtk::DrawingArea) {
+    pub(crate) fn set_jerimum_preview_area(&self, area: gtk::DrawingArea) {
         area.set_focusable(true);
         let state_for_draw = self.state.clone();
         area.set_draw_func(move |_, context, width, height| {
@@ -14,12 +14,13 @@ impl GraphicsHost {
             let state = self.state.borrow();
             frame.set_ratio(state.width as f32 / state.height as f32);
         }
-        self.preview_area = Some(area);
+        self.preview_area.replace(Some(area));
     }
 
     pub(crate) fn start_jerimum_preview(&mut self) -> Result<HostValue, String> {
         let area = self
             .preview_area
+            .borrow()
             .clone()
             .ok_or_else(|| "a prévia do jogo não está disponível".to_owned())?;
         self.ensure_surface()?;

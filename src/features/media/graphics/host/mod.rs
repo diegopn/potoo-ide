@@ -9,7 +9,7 @@ use super::*;
 pub(crate) struct GraphicsHost {
     parent: gtk::ApplicationWindow,
     state: Rc<RefCell<GraphicsState>>,
-    preview_area: Option<gtk::DrawingArea>,
+    preview_area: RefCell<Option<gtk::DrawingArea>>,
     preview_window: Option<gtk::Window>,
     preview_window_area: Option<gtk::DrawingArea>,
     on_close: Rc<dyn Fn()>,
@@ -20,7 +20,7 @@ impl GraphicsHost {
         Self {
             parent,
             state: Rc::new(RefCell::new(GraphicsState::default())),
-            preview_area: None,
+            preview_area: RefCell::new(None),
             preview_window: None,
             preview_window_area: None,
             on_close: Rc::new(on_close),
@@ -41,7 +41,7 @@ impl GraphicsHost {
         }
         let window = state.window.take();
         *state = GraphicsState::default();
-        let area = self.preview_area.clone();
+        let area = self.preview_area.borrow().clone();
         let preview_window = self.preview_window.take();
         self.preview_window_area = None;
         drop(state);
