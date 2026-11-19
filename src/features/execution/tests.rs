@@ -1453,6 +1453,33 @@ fn runs_visualg_voting_sample_for_both_inputs() {
 }
 
 #[test]
+fn visualg_starter_sample_runs_for_both_result_branches() {
+    let source = crate::languages::portugol::visualg::examples::SAMPLE;
+    for (input, expected, unexpected) in [
+        (["8", "9", "7"], "Aprovado com média", "Estude mais: média"),
+        (["6", "6", "6"], "Estude mais: média", "Aprovado com média"),
+    ] {
+        let (output, _) = collect(
+            start(source.into(), Language::Visualg, None, None, false),
+            &input,
+            &[],
+        );
+        assert!(output.contains(expected), "{output:?}");
+        assert!(!output.contains(unexpected), "{output:?}");
+    }
+}
+
+#[test]
+fn potigol_jerimum_starter_sample_parses_and_typechecks() {
+    let source = crate::languages::potigol::jerimum::examples::SAMPLE;
+    let program =
+        potoo_potigol_interpreter::parse(source).expect("the Jerimum starter sample should parse");
+
+    potoo_potigol_interpreter::check(&program)
+        .expect("the Jerimum starter sample should pass static checks");
+}
+
+#[test]
 fn debugger_runs_portugol_if_after_typed_input_for_both_branches() {
     for (input, expected) in [
         ("21", "Qual é sua idade? Pode votar."),

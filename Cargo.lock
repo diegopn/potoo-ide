@@ -592,7 +592,7 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 [[package]]
 name = "potoo-calango-interpreter"
 version = "0.1.0"
-source = "git+https://github.com/diegopn/potoo-calango-interpreter.git?rev=e81b43757d77c8bd59a39163c76003d76d7e0761#e81b43757d77c8bd59a39163c76003d76d7e0761"
+source = "git+https://github.com/diegopn/potoo-calango-interpreter.git?rev=6084dc2bb085728e3aac49e95356abfc268b9bf9#6084dc2bb085728e3aac49e95356abfc268b9bf9"
 
 [[package]]
 name = "potoo-gportugol-interpreter"

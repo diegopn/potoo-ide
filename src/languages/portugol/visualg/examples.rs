@@ -3,7 +3,7 @@ var
     nota1, nota2, nota3, media: real
 funcao aprovado(media: real): logico
 inicio
-    retorne media >= 7
+    retorne media >= 7.0
 fimfuncao
 
 inicio
